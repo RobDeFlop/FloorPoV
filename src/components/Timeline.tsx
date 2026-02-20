@@ -1,19 +1,34 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Crosshair, Skull } from "lucide-react";
 import { mockEvents, GameEvent } from "../data/mockEvents";
 import { EventTooltip } from "./EventTooltip";
-
-const VIDEO_DURATION = 150;
+import { useVideo } from "../contexts/VideoContext";
 
 export function Timeline() {
-  const [currentTime] = useState("00:00");
-  const [duration] = useState("02:30");
-  const [progress] = useState(0);
+  const { currentTime, duration, seek } = useVideo();
   const [hoveredEvent, setHoveredEvent] = useState<GameEvent | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  const formatTime = (seconds: number) => {
+    if (isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressRef.current || duration === 0) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const clickPosition = (e.clientX - rect.left) / rect.width;
+    const newTime = clickPosition * duration;
+    seek(newTime);
+  };
 
   const handleEventClick = (timestamp: number) => {
-    console.log("Seek to:", timestamp);
+    seek(timestamp);
   };
 
   const handleEventHover = (event: GameEvent, e: React.MouseEvent) => {
@@ -27,11 +42,12 @@ export function Timeline() {
   return (
     <div className="bg-neutral-800 border-t border-neutral-700 p-3">
       <div className="timeline-container flex items-center gap-3 relative">
-        <button className="text-neutral-400 hover:text-neutral-100 transition-colors text-xl">
-          ▶
-        </button>
-        <span className="text-xs text-neutral-400 font-mono w-12">{currentTime}</span>
-        <div className="flex-1 h-2 bg-neutral-700 rounded-full cursor-pointer group relative">
+        <span className="text-xs text-neutral-400 font-mono w-12">{formatTime(currentTime)}</span>
+        <div
+          ref={progressRef}
+          className="flex-1 h-2 bg-neutral-700 rounded-full cursor-pointer group relative"
+          onClick={handleProgressClick}
+        >
           <div
             className="h-full bg-neutral-400 rounded-full relative group-hover:bg-neutral-300 transition-colors"
             style={{ width: `${progress}%` }}
@@ -39,14 +55,17 @@ export function Timeline() {
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           {mockEvents.map((event) => {
-            const position = (event.timestamp / VIDEO_DURATION) * 100;
+            const position = duration > 0 ? (event.timestamp / duration) * 100 : 0;
             const isDeath = event.type === "death";
             return (
               <div
                 key={event.id}
                 className="absolute top-1/2 -translate-y-1/2 cursor-pointer -ml-1.5"
                 style={{ left: `${position}%` }}
-                onClick={() => handleEventClick(event.timestamp)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEventClick(event.timestamp);
+                }}
                 onMouseEnter={(e) => handleEventHover(event, e)}
                 onMouseLeave={() => setHoveredEvent(null)}
               >
@@ -59,7 +78,7 @@ export function Timeline() {
             );
           })}
         </div>
-        <span className="text-xs text-neutral-400 font-mono w-12 text-right">{duration}</span>
+        <span className="text-xs text-neutral-400 font-mono w-12 text-right">{formatTime(duration)}</span>
         {hoveredEvent && <EventTooltip event={hoveredEvent} x={tooltipX} />}
       </div>
     </div>
