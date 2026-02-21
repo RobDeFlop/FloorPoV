@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
 import { VideoPlayer } from './VideoPlayer';
-import { Timeline } from './Timeline';
 import { GameEvents } from './GameEvents';
 import { RecordingControls } from './RecordingControls';
 import { RecordingsList } from './RecordingsList';
@@ -16,7 +15,56 @@ import { panelVariants, smoothTransition } from '../lib/motion';
 
 export function Layout() {
   const [currentView, setCurrentView] = useState<'main' | 'settings'>('main');
+  const [isResizingMedia, setIsResizingMedia] = useState(false);
+  const [mediaSectionHeight, setMediaSectionHeight] = useState(() =>
+    typeof window === 'undefined' ? 520 : Math.round(window.innerHeight * 0.52),
+  );
   const reduceMotion = useReducedMotion();
+
+  const clampMediaSectionHeight = (height: number, viewportHeight: number) => {
+    const minHeight = 320;
+    const maxHeight = Math.max(minHeight, Math.round(viewportHeight * 0.58));
+    return Math.min(maxHeight, Math.max(minHeight, height));
+  };
+
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setMediaSectionHeight((currentHeight) =>
+        clampMediaSectionHeight(currentHeight, window.innerHeight),
+      );
+    };
+
+    handleWindowResize();
+    window.addEventListener('resize', handleWindowResize);
+    return () => {
+      window.removeEventListener('resize', handleWindowResize);
+    };
+  }, []);
+
+  const handleMediaResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsResizingMedia(true);
+
+    const startY = event.clientY;
+    const startHeight = mediaSectionHeight;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const targetHeight = startHeight + deltaY;
+      setMediaSectionHeight(clampMediaSectionHeight(targetHeight, window.innerHeight));
+    };
+
+    const handlePointerEnd = () => {
+      setIsResizingMedia(false);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+  };
 
   return (
     <VideoProvider>
@@ -34,18 +82,33 @@ export function Layout() {
                   {currentView === 'main' ? (
                     <motion.div
                       key="main-view"
-                      className="flex-1 flex flex-col min-w-0"
+                      className={`flex-1 flex flex-col min-w-0 ${isResizingMedia ? 'select-none' : ''}`}
                       variants={panelVariants}
                       initial={reduceMotion ? false : 'initial'}
                       animate="animate"
                       exit={reduceMotion ? undefined : 'exit'}
                       transition={smoothTransition}
                     >
-                      <main className="flex-1 flex items-center justify-center bg-neutral-950/95">
-                        <VideoPlayer />
-                      </main>
-                      <Timeline />
-                      <RecordingControls />
+                      <section
+                        className="flex w-full shrink-0 flex-col overflow-hidden"
+                        style={{ height: mediaSectionHeight }}
+                      >
+                        <main className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-neutral-950/95">
+                          <VideoPlayer />
+                        </main>
+                        <RecordingControls />
+                      </section>
+                      <div
+                        className={`flex h-3 w-full cursor-row-resize items-center justify-center border-t border-neutral-800/80 bg-neutral-900 ${
+                          isResizingMedia ? 'bg-neutral-800/90' : 'hover:bg-neutral-800/70'
+                        }`}
+                        onPointerDown={handleMediaResizeStart}
+                        role="separator"
+                        aria-orientation="horizontal"
+                        aria-label="Resize media section"
+                      >
+                        <div className="h-0.5 w-24 rounded-full bg-neutral-600" />
+                      </div>
                       <RecordingsList />
                       <GameEvents />
                     </motion.div>
