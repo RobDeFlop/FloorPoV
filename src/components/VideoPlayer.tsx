@@ -44,8 +44,8 @@ export function VideoPlayer() {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
 
   const showCanvas = isPreviewing || isRecording;
   const showVideo = !showCanvas && videoSrc;
@@ -55,6 +55,15 @@ export function VideoPlayer() {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleVolumeToggle = () => {
+    if (volume === 0) {
+      setVolume(volumeBeforeMute > 0 ? volumeBeforeMute : 1);
+    } else {
+      setVolumeBeforeMute(volume);
+      setVolume(0);
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,7 +130,7 @@ export function VideoPlayer() {
 
       {videoSrc && (
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-6">
             <button
               onClick={togglePlay}
               className="text-white hover:text-neutral-300 transition-colors"
@@ -129,18 +138,15 @@ export function VideoPlayer() {
               {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
             </button>
 
-            <div
-              className="relative flex items-center"
-              onMouseEnter={() => setShowVolumeSlider(true)}
-              onMouseLeave={() => setShowVolumeSlider(false)}
-            >
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setVolume(volume === 0 ? 1 : 0)}
+                onClick={handleVolumeToggle}
                 className="text-white hover:text-neutral-300 transition-colors"
               >
                 {volume === 0 ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </button>
-              {showVolumeSlider && (
+              
+              <div className="flex items-center gap-2">
                 <input
                   type="range"
                   min="0"
@@ -148,14 +154,29 @@ export function VideoPlayer() {
                   step="0.05"
                   value={volume}
                   onChange={(e) => setVolume(parseFloat(e.target.value))}
-                  className="absolute left-7 w-20 h-1 accent-white cursor-pointer"
+                  className="w-20 h-3 appearance-none cursor-pointer bg-transparent
+                            [&::-webkit-slider-thumb]:appearance-none 
+                            [&::-webkit-slider-thumb]:w-3 
+                            [&::-webkit-slider-thumb]:h-3 
+                            [&::-webkit-slider-thumb]:rounded-full 
+                            [&::-webkit-slider-thumb]:bg-white
+                            [&::-webkit-slider-thumb]:cursor-pointer
+                            [&::-webkit-slider-thumb]:mt-[-4px]
+                            [&::-webkit-slider-runnable-track]:h-1
+                            [&::-webkit-slider-runnable-track]:bg-neutral-600
+                            [&::-webkit-slider-runnable-track]:rounded-full"
                 />
-              )}
+                <span className="text-xs text-neutral-300 font-mono w-8 text-right">
+                  {Math.round(volume * 100)}%
+                </span>
+              </div>
             </div>
 
             <span className="text-xs text-white font-mono">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
+
+            <div className="flex-1" />
 
             <div className="relative">
               <button
@@ -185,8 +206,6 @@ export function VideoPlayer() {
                 </div>
               )}
             </div>
-
-            <div className="flex-1" />
 
             <button
               onClick={toggleFullscreen}

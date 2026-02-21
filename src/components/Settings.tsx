@@ -5,7 +5,6 @@ import { ArrowLeft, Folder } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useRecording } from '../contexts/RecordingContext';
 import { RecordingSettings, QUALITY_SETTINGS, MIN_STORAGE_GB, MAX_STORAGE_GB, HOTKEY_OPTIONS } from '../types/settings';
-import { toast } from 'sonner';
 
 interface SettingsProps {
   onBack: () => void;
@@ -56,18 +55,15 @@ export function Settings({ onBack }: SettingsProps) {
       }
     } catch (error) {
       console.error('Failed to open folder picker:', error);
-      toast.error('Failed to open folder picker');
     }
   };
 
   const handleSave = async () => {
     if (formData.maxStorageGB < MIN_STORAGE_GB) {
-      toast.error(`Storage limit must be at least ${MIN_STORAGE_GB} GB`);
       return;
     }
     
     if (formData.maxStorageGB > MAX_STORAGE_GB) {
-      toast.error(`Storage limit cannot exceed ${MAX_STORAGE_GB} GB`);
       return;
     }
     
@@ -75,7 +71,7 @@ export function Settings({ onBack }: SettingsProps) {
       await updateSettings(formData);
       setHasChanges(false);
     } catch (error) {
-      // Error toast already shown in context
+      // Error already logged in context
     }
   };
 

@@ -2,7 +2,6 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { Store } from '@tauri-apps/plugin-store';
 import { invoke } from '@tauri-apps/api/core';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { toast } from 'sonner';
 
 interface SettingsContextType {
   settings: RecordingSettings;
@@ -51,7 +50,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await invoke('register_marker_hotkey', { hotkey: stored.markerHotkey });
           } catch (error) {
             console.error('Failed to register hotkey:', error);
-            toast.error(`Failed to register hotkey ${stored.markerHotkey}: ${error}`);
           }
         }
       } else {
@@ -66,13 +64,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await invoke('register_marker_hotkey', { hotkey: initialSettings.markerHotkey });
           } catch (error) {
             console.error('Failed to register hotkey:', error);
-            toast.error(`Failed to register hotkey ${initialSettings.markerHotkey}: ${error}`);
           }
         }
       }
     } catch (error) {
       console.error('Failed to load settings:', error);
-      toast.error('Failed to load settings');
     } finally {
       setIsLoading(false);
     }
@@ -95,7 +91,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await invoke('register_marker_hotkey', { hotkey: newHotkey });
           } catch (error) {
             console.error('Failed to register hotkey:', error);
-            toast.error(`Failed to register hotkey ${newHotkey}: ${error}`);
             throw error;
           }
         }
@@ -104,10 +99,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       await store.set('recording-settings', newSettings);
       await store.save();
       setSettings(newSettings);
-      toast.success('Settings saved successfully');
     } catch (error) {
       console.error('Failed to save settings:', error);
-      toast.error('Failed to save settings');
       throw error;
     }
   };

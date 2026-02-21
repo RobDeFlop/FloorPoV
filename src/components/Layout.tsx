@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Toaster } from 'sonner';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
 import { VideoPlayer } from './VideoPlayer';
@@ -20,7 +19,6 @@ export function Layout() {
       <SettingsProvider>
         <MarkerProvider>
           <RecordingProvider>
-            <Toaster position="top-right" richColors />
             <div className="h-screen w-screen flex flex-col bg-neutral-900 text-neutral-200 overflow-hidden">
               <TitleBar />
               <div className="flex flex-1 min-h-0">
@@ -33,8 +31,8 @@ export function Layout() {
                     <main className="flex-1 flex items-center justify-center bg-neutral-950">
                       <VideoPlayer />
                     </main>
-                    <RecordingControls />
                     <Timeline />
+                    <RecordingControls />
                     <GameEvents />
                   </div>
                 ) : (

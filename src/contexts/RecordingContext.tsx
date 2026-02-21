@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
 import { useSettings } from "./SettingsContext";
 import { useMarker } from "./MarkerContext";
 import { QUALITY_SETTINGS } from "../types/settings";
@@ -108,11 +107,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
     const unlistenCleanup = listen<CleanupResult>("storage-cleanup", (event) => {
       const { deleted_count, freed_bytes } = event.payload;
-      const freedGB = (freed_bytes / (1024 ** 3)).toFixed(2);
-      toast.info(
-        `Deleted ${deleted_count} old recording${deleted_count > 1 ? 's' : ''} (${freedGB} GB) to stay within storage limit`,
-        { duration: 5000 }
-      );
+      console.info(`Deleted ${deleted_count} old recording(s) (${(freed_bytes / (1024 ** 3)).toFixed(2)} GB) to stay within storage limit`);
     });
 
     const unlistenCombatEvent = listen<CombatEvent>("combat-event", (event) => {
@@ -140,7 +135,6 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         setIsInitializing(false);
       } catch (error) {
         console.error("Failed to auto-start preview:", error);
-        toast.error("Could not start preview automatically. Click 'Start Preview' to try again.");
         setIsInitializing(false);
       }
     };
@@ -159,7 +153,6 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       setCaptureHeight(result.height);
     } catch (error) {
       console.error("Failed to start preview:", error);
-      toast.error(error as string || "Failed to start preview");
       throw error;
     }
   };
@@ -175,7 +168,6 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error("Failed to stop preview:", error);
-      toast.error(error as string || "Failed to stop preview");
       throw error;
     }
   };
@@ -204,10 +196,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       setCaptureWidth(result.width);
       setCaptureHeight(result.height);
       setRecordingStartTime(Date.now());
-      toast.success("Recording started");
     } catch (error) {
       console.error("Failed to start recording:", error);
-      toast.error(error as string || "Failed to start recording");
       throw error;
     }
   };
@@ -218,10 +208,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       await invoke("stop_recording");
       setIsRecording(false);
       setRecordingStartTime(null);
-      toast.success("Recording stopped");
     } catch (error) {
       console.error("Failed to stop recording:", error);
-      toast.error(error as string || "Failed to stop recording");
       throw error;
     }
   };
