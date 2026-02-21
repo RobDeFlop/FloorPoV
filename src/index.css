@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+button:not(:disabled),
+a[href],
+summary,
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: theme("colors.emerald.500") transparent;
