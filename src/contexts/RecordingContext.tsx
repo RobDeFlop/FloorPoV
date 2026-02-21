@@ -32,6 +32,7 @@ interface CleanupResult {
 interface RecordingContextType {
   isRecording: boolean;
   isPreviewing: boolean;
+  isInitializing: boolean;
   previewFrameUrl: string | null;
   captureSource: string | null;
   captureWidth: number;
@@ -49,6 +50,7 @@ const RecordingContext = createContext<RecordingContextType | undefined>(undefin
 export function RecordingProvider({ children }: { children: ReactNode }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [previewFrameUrl, setPreviewFrameUrl] = useState<string | null>(null);
   const [captureSource, setCaptureSource] = useState<string | null>(null);
   const [captureWidth, setCaptureWidth] = useState(0);
@@ -131,6 +133,23 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     };
   }, [addEvent]);
 
+  useEffect(() => {
+    const initPreview = async () => {
+      try {
+        await startPreview();
+        setIsInitializing(false);
+      } catch (error) {
+        console.error("Failed to auto-start preview:", error);
+        toast.error("Could not start preview automatically. Click 'Start Preview' to try again.");
+        setIsInitializing(false);
+      }
+    };
+
+    const timeoutId = setTimeout(initPreview, 150);
+
+    return () => clearTimeout(timeoutId);
+  }, []);
+
   const startPreview = async () => {
     try {
       const result = await invoke<CaptureStartedPayload>("start_preview");
@@ -212,6 +231,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       value={{
         isRecording,
         isPreviewing,
+        isInitializing,
         previewFrameUrl,
         captureSource,
         captureWidth,

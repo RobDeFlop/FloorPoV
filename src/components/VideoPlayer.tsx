@@ -30,6 +30,7 @@ export function VideoPlayer() {
   const {
     isPreviewing,
     isRecording,
+    isInitializing,
     previewFrameUrl,
     captureWidth,
     captureHeight,
@@ -90,22 +91,31 @@ export function VideoPlayer() {
 
       {!videoSrc && !showCanvas && (
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <p className="text-neutral-500 mb-4">No video loaded</p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open File
-            </button>
-            <button
-              onClick={() => loadVideo(PLACEHOLDER_VIDEO)}
-              className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
-            >
-              Load Sample
-            </button>
-          </div>
+          {isInitializing ? (
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-neutral-400 text-sm">Starting preview...</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-neutral-500 mb-4">No video loaded</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Open File
+                </button>
+                <button
+                  onClick={() => loadVideo(PLACEHOLDER_VIDEO)}
+                  className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
+                >
+                  Load Sample
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 

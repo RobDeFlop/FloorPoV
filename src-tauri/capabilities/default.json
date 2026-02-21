@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "dialog:default",
+    "store:default",
+    "global-shortcut:default",
     "window-state:allow-restore-state",
     "window-state:allow-save-window-state",
     "core:window:allow-minimize",
