@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Crosshair, Skull, MapPin } from "lucide-react";
 import { EventTooltip } from "./EventTooltip";
 import { useVideo } from "../contexts/VideoContext";
@@ -8,6 +9,7 @@ import { GameEvent } from "../types/events";
 export function Timeline() {
   const { currentTime, duration, seek } = useVideo();
   const { events } = useMarker();
+  const reduceMotion = useReducedMotion();
   const [hoveredEvent, setHoveredEvent] = useState<GameEvent | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -42,26 +44,26 @@ export function Timeline() {
   };
 
   return (
-    <div className="bg-neutral-800 border-t border-neutral-700 p-3">
+    <div className="bg-neutral-900 border-t border-neutral-800/80 p-3">
       <div className="timeline-container flex items-center gap-3 relative">
         <span className="text-xs text-neutral-400 font-mono w-12">{formatTime(currentTime)}</span>
         <div
           ref={progressRef}
-          className="flex-1 h-2 bg-neutral-700 rounded-full cursor-pointer group relative"
+          className="flex-1 h-2 bg-neutral-800 rounded-full cursor-pointer group relative"
           onClick={handleProgressClick}
         >
           <div
-            className="h-full bg-neutral-400 rounded-full relative group-hover:bg-neutral-300 transition-colors"
+            className="h-full bg-emerald-400/80 rounded-full relative group-hover:bg-emerald-300 transition-colors"
             style={{ width: `${progress}%` }}
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
           {events.map((event) => {
             const position = duration > 0 ? (event.timestamp / duration) * 100 : 0;
             const isDeath = event.type === "death";
             const isManual = event.type === "manual";
             return (
-              <div
+              <motion.div
                 key={event.id}
                 className="absolute top-1/2 -translate-y-1/2 cursor-pointer -ml-1.5"
                 style={{ left: `${position}%` }}
@@ -71,20 +73,23 @@ export function Timeline() {
                 }}
                 onMouseEnter={(e) => handleEventHover(event, e)}
                 onMouseLeave={() => setHoveredEvent(null)}
+                initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
               >
                 {isManual ? (
-                  <MapPin className="w-3 h-3 text-blue-400 hover:scale-125 transition-transform" />
+                  <MapPin className="w-3 h-3 text-cyan-400 hover:scale-125 transition-transform" />
                 ) : isDeath ? (
-                  <Skull className="w-3 h-3 text-orange-400 hover:scale-125 transition-transform" />
+                  <Skull className="w-3 h-3 text-rose-400 hover:scale-125 transition-transform" />
                 ) : (
-                  <Crosshair className="w-3 h-3 text-emerald-400 hover:scale-125 transition-transform" />
+                  <Crosshair className="w-3 h-3 text-emerald-300 hover:scale-125 transition-transform" />
                 )}
-              </div>
+              </motion.div>
             );
           })}
         </div>
         <span className="text-xs text-neutral-400 font-mono w-12 text-right">{formatTime(duration)}</span>
-        {hoveredEvent && <EventTooltip event={hoveredEvent} x={tooltipX} />}
+        <AnimatePresence>{hoveredEvent && <EventTooltip event={hoveredEvent} x={tooltipX} />}</AnimatePresence>
       </div>
     </div>
   );

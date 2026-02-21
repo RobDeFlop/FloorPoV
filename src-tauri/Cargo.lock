@@ -940,6 +940,7 @@ dependencies = [
 name = "floorpov"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "lazy_static",
  "rand 0.8.5",

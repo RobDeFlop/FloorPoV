@@ -1,8 +1,11 @@
 import { Circle, Square } from "lucide-react";
+import { motion, useReducedMotion } from 'motion/react';
 import { useRecording } from "../contexts/RecordingContext";
 import { useSettings } from "../contexts/SettingsContext";
+import { panelVariants, smoothTransition } from '../lib/motion';
 
 export function RecordingControls() {
+  const reduceMotion = useReducedMotion();
   const {
     isRecording,
     isPreviewing,
@@ -45,26 +48,36 @@ export function RecordingControls() {
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-neutral-900 border-t border-neutral-800">
-      <button
+    <motion.div
+      className="flex items-center gap-3 px-4 py-2 bg-neutral-900 border-t border-neutral-800/80"
+      variants={panelVariants}
+      initial={reduceMotion ? false : 'initial'}
+      animate="animate"
+      transition={smoothTransition}
+    >
+      <motion.button
         onClick={handlePreviewToggle}
         disabled={isRecording}
         className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
           isPreviewing
-            ? "bg-orange-600 hover:bg-orange-700 text-white"
-            : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+            ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+            : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700"
         } disabled:opacity-50 disabled:cursor-not-allowed`}
+        whileHover={reduceMotion ? undefined : { y: -1 }}
+        whileTap={reduceMotion ? undefined : { scale: 0.98 }}
       >
         {isPreviewing ? "Stop Preview" : "Start Preview"}
-      </button>
+      </motion.button>
 
-      <button
+      <motion.button
         onClick={handleRecordingToggle}
         className={`flex items-center gap-2 px-4 py-2 rounded text-sm font-medium transition-colors ${
           isRecording
-            ? "bg-red-600 hover:bg-red-700 text-white"
-            : "bg-neutral-700 hover:bg-neutral-600 text-neutral-200"
+            ? "bg-red-600 hover:bg-red-500 text-white"
+            : "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-200 border border-emerald-400/30"
         }`}
+        whileHover={reduceMotion ? undefined : { y: -1 }}
+        whileTap={reduceMotion ? undefined : { scale: 0.98 }}
       >
         {isRecording ? (
           <>
@@ -77,7 +90,7 @@ export function RecordingControls() {
             Start Recording
           </>
         )}
-      </button>
+      </motion.button>
 
       {isRecording && (
         <div className="flex items-center gap-2 text-sm">
@@ -91,10 +104,10 @@ export function RecordingControls() {
       )}
 
       {!isRecording && settings.markerHotkey !== 'none' && (
-        <span className="text-xs text-neutral-500 ml-auto">
-          Press <kbd className="px-1.5 py-0.5 bg-neutral-800 border border-neutral-700 rounded text-neutral-300 font-mono">{settings.markerHotkey}</kbd> to add marker
-        </span>
-      )}
-    </div>
+          <span className="ml-auto mr-2 text-xs text-neutral-500">
+            Press <kbd className="px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-400/30 rounded text-emerald-200 font-mono">{settings.markerHotkey}</kbd> to add marker
+          </span>
+        )}
+    </motion.div>
   );
 }

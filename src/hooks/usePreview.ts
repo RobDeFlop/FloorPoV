@@ -27,12 +27,10 @@ export function usePreview({ previewFrameUrl, width, height, enabled }: UsePrevi
       canvas.width = width;
       canvas.height = height;
       ctx.drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(previewFrameUrl);
     };
 
     img.onerror = (error) => {
       console.error("Failed to load preview frame:", error);
-      URL.revokeObjectURL(previewFrameUrl);
     };
 
     img.src = previewFrameUrl;

@@ -1,4 +1,5 @@
 import { GameEvent } from "../types/events";
+import { motion, useReducedMotion } from 'motion/react';
 
 interface EventTooltipProps {
   event: GameEvent;
@@ -12,6 +13,7 @@ function formatTime(seconds: number): string {
 }
 
 export function EventTooltip({ event, x }: EventTooltipProps) {
+  const reduceMotion = useReducedMotion();
   const label = 
     event.type === "death" ? "Death" :
     event.type === "manual" ? "Manual Marker" :
@@ -23,13 +25,17 @@ export function EventTooltip({ event, x }: EventTooltipProps) {
     `${event.source} killed ${event.target}`;
 
   return (
-    <div
-      className="absolute bottom-full mb-2 px-2 py-1 bg-neutral-700 text-neutral-200 text-xs rounded whitespace-nowrap pointer-events-none z-10"
+    <motion.div
+      className="absolute bottom-full mb-2 px-2 py-1 bg-neutral-900 border border-neutral-700 text-neutral-200 text-xs rounded whitespace-nowrap pointer-events-none z-10"
       style={{ left: x }}
+      initial={reduceMotion ? false : { opacity: 0, y: 4, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={reduceMotion ? undefined : { opacity: 0, y: 4, scale: 0.98 }}
+      transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
     >
       <div className="font-medium">{label}</div>
       <div className="text-neutral-400">{description}</div>
       <div className="text-neutral-500">{formatTime(event.timestamp)}</div>
-    </div>
+    </motion.div>
   );
 }

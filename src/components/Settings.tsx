@@ -90,10 +90,10 @@ export function Settings({ onBack }: SettingsProps) {
     : 0;
 
   return (
-    <div className="flex-1 flex flex-col bg-neutral-900 relative">
+    <div className="flex-1 flex flex-col bg-neutral-950 relative">
       {isRecording && (
-        <div className="absolute inset-0 bg-neutral-900/90 z-50 flex items-center justify-center">
-          <div className="bg-neutral-800 border border-neutral-700 rounded-lg p-8 max-w-md text-center">
+        <div className="absolute inset-0 bg-neutral-950/90 z-50 flex items-center justify-center">
+          <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-8 max-w-md text-center">
             <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             </div>
@@ -105,7 +105,7 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       )}
 
-      <div className="px-6 py-4 border-b border-neutral-800 flex items-center gap-4">
+      <div className="px-6 py-4 border-b border-neutral-800/80 flex items-center gap-4">
         <button
           onClick={onBack}
           className="p-2 rounded hover:bg-neutral-800 transition-colors"
@@ -127,7 +127,7 @@ export function Settings({ onBack }: SettingsProps) {
                 <select
                   value={formData.videoQuality}
                   onChange={(e) => setFormData({ ...formData, videoQuality: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   {Object.entries(QUALITY_SETTINGS).map(([key, { label }]) => (
                     <option key={key} value={key}>{label}</option>
@@ -143,7 +143,7 @@ export function Settings({ onBack }: SettingsProps) {
                 <select
                   value={formData.frameRate}
                   onChange={(e) => setFormData({ ...formData, frameRate: parseInt(e.target.value) as any })}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   <option value={30}>30 FPS</option>
                   <option value={60}>60 FPS</option>
@@ -164,11 +164,11 @@ export function Settings({ onBack }: SettingsProps) {
                     type="text"
                     value={formData.outputFolder}
                     readOnly
-                    className="flex-1 px-3 py-2 bg-neutral-800 border border-neutral-700 rounded text-neutral-400"
+                    className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded text-neutral-400"
                   />
                   <button
                     onClick={handleBrowseFolder}
-                    className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded transition-colors flex items-center gap-2"
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded transition-colors flex items-center gap-2 border border-neutral-700"
                   >
                     <Folder className="w-4 h-4" />
                     Browse
@@ -189,7 +189,7 @@ export function Settings({ onBack }: SettingsProps) {
                   max={MAX_STORAGE_GB}
                   value={formData.maxStorageGB}
                   onChange={(e) => setFormData({ ...formData, maxStorageGB: parseInt(e.target.value) || MIN_STORAGE_GB })}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
                 <p className="text-xs text-neutral-500 mt-1">
                   Old recordings will be automatically deleted when this limit is reached (minimum {MIN_STORAGE_GB} GB)
@@ -208,7 +208,7 @@ export function Settings({ onBack }: SettingsProps) {
                 <select
                   value={formData.captureSource}
                   onChange={(e) => setFormData({ ...formData, captureSource: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   <option value="primary-monitor">Primary Monitor</option>
                   <option value="window" disabled>Specific Window (Coming Soon)</option>
@@ -227,7 +227,7 @@ export function Settings({ onBack }: SettingsProps) {
                 <select
                   value={formData.markerHotkey}
                   onChange={(e) => setFormData({ ...formData, markerHotkey: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  className="w-full px-3 py-2 bg-neutral-900 border border-neutral-700 rounded focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   {HOTKEY_OPTIONS.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
@@ -271,18 +271,18 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       </div>
 
-      <div className="px-6 py-4 border-t border-neutral-800 flex justify-end gap-3">
+      <div className="px-6 py-4 border-t border-neutral-800/80 flex justify-end gap-3">
         <button
           onClick={handleCancel}
           disabled={!hasChanges}
-          className="px-4 py-2 rounded text-sm font-medium transition-colors bg-neutral-700 hover:bg-neutral-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded text-sm font-medium transition-colors bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
           disabled={!hasChanges}
-          className="px-4 py-2 rounded text-sm font-medium transition-colors bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-4 py-2 rounded text-sm font-medium transition-colors bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save Changes
         </button>

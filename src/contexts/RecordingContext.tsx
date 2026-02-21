@@ -13,7 +13,7 @@ interface CaptureStartedPayload {
 }
 
 interface PreviewFramePayload {
-  data: number[];
+  dataBase64: string;
 }
 
 interface RecordingStartedPayload {
@@ -80,19 +80,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   }, [isRecording, recordingStartTime]);
 
   useEffect(() => {
-    let currentPreviewUrl: string | null = null;
-
     const unlistenPreviewFrame = listen<PreviewFramePayload>("preview-frame", (event) => {
-      const uint8Array = new Uint8Array(event.payload.data);
-      const blob = new Blob([uint8Array], { type: "image/jpeg" });
-      const url = URL.createObjectURL(blob);
-
-      if (currentPreviewUrl) {
-        URL.revokeObjectURL(currentPreviewUrl);
-      }
-      currentPreviewUrl = url;
-
-      setPreviewFrameUrl(url);
+      setPreviewFrameUrl(`data:image/jpeg;base64,${event.payload.dataBase64}`);
     });
 
     const unlistenCaptureStopped = listen("capture-stopped", () => {
@@ -121,10 +110,6 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       unlistenRecordingStopped.then((fn) => fn());
       unlistenCleanup.then((fn) => fn());
       unlistenCombatEvent.then((fn) => fn());
-
-      if (currentPreviewUrl) {
-        URL.revokeObjectURL(currentPreviewUrl);
-      }
     };
   }, [addEvent]);
 
@@ -146,7 +131,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   const startPreview = async () => {
     try {
-      const result = await invoke<CaptureStartedPayload>("start_preview");
+      const result = await invoke<CaptureStartedPayload>("start_preview", {
+        captureSource: settings.captureSource,
+        selectedWindow: settings.selectedWindow,
+      });
       setIsPreviewing(true);
       setCaptureSource(result.source);
       setCaptureWidth(result.width);
@@ -162,10 +150,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       await invoke("stop_preview");
       setIsPreviewing(false);
       setCaptureSource(null);
-      if (previewFrameUrl) {
-        URL.revokeObjectURL(previewFrameUrl);
-        setPreviewFrameUrl(null);
-      }
+      setPreviewFrameUrl(null);
     } catch (error) {
       console.error("Failed to stop preview:", error);
       throw error;
@@ -173,6 +158,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   };
 
   const startRecording = async () => {
+    let recordingStarted = false;
     try {
       clearEvents();
       
@@ -187,16 +173,26 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         settings: recordingSettings,
         outputFolder: settings.outputFolder,
         maxStorageBytes: settings.maxStorageGB * 1024 * 1024 * 1024,
+        captureSource: settings.captureSource,
+        selectedWindow: settings.selectedWindow,
       });
 
-      await invoke("start_combat_watch");
+      recordingStarted = true;
 
       setIsRecording(true);
       setRecordingPath(result.output_path);
       setCaptureWidth(result.width);
       setCaptureHeight(result.height);
       setRecordingStartTime(Date.now());
+
+      await invoke("start_combat_watch");
     } catch (error) {
+      if (recordingStarted) {
+        await invoke("stop_recording").catch(() => undefined);
+        await invoke("stop_combat_watch").catch(() => undefined);
+        setIsRecording(false);
+        setRecordingStartTime(null);
+      }
       console.error("Failed to start recording:", error);
       throw error;
     }
@@ -204,7 +200,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   const stopRecording = async () => {
     try {
-      await invoke("stop_combat_watch");
+      await invoke("stop_combat_watch").catch(() => undefined);
       await invoke("stop_recording");
       setIsRecording(false);
       setRecordingStartTime(null);

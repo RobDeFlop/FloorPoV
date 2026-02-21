@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect, ReactNode } from "react";
 
 interface VideoContextType {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -25,6 +25,7 @@ const VideoContext = createContext<VideoContextType | null>(null);
 
 export function VideoProvider({ children }: { children: ReactNode }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -82,10 +83,27 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadVideo = useCallback((src: string) => {
+    if (objectUrlRef.current && objectUrlRef.current !== src) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    if (src.startsWith("blob:")) {
+      objectUrlRef.current = src;
+    }
+
     setVideoSrc(src);
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+      }
+    };
   }, []);
 
   const toggleFullscreen = useCallback(() => {

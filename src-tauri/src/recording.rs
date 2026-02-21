@@ -28,14 +28,23 @@ struct RecordingHandler {
     app_handle: AppHandle,
     encoder: Option<VideoEncoder>,
     stop_rx: mpsc::Receiver<()>,
+    state: SharedRecordingState,
 }
 
 impl GraphicsCaptureApiHandler for RecordingHandler {
-    type Flags = (String, u32, u32, crate::settings::RecordingSettings, AppHandle, mpsc::Receiver<()>);
+    type Flags = (
+        String,
+        u32,
+        u32,
+        crate::settings::RecordingSettings,
+        AppHandle,
+        mpsc::Receiver<()>,
+        SharedRecordingState,
+    );
     type Error = Box<dyn std::error::Error + Send + Sync>;
 
     fn new(context: Context<Self::Flags>) -> Result<Self, Self::Error> {
-        let (output_path, width, height, settings, app_handle, stop_rx) = context.flags;
+        let (output_path, width, height, settings, app_handle, stop_rx, state) = context.flags;
 
         let video_settings = VideoSettingsBuilder::new(width, height)
             .sub_type(VideoSettingsSubType::H264)
@@ -56,6 +65,7 @@ impl GraphicsCaptureApiHandler for RecordingHandler {
             app_handle,
             encoder: Some(encoder),
             stop_rx,
+            state,
         })
     }
 
@@ -81,6 +91,11 @@ impl GraphicsCaptureApiHandler for RecordingHandler {
     fn on_closed(&mut self) -> Result<(), Self::Error> {
         if let Some(encoder) = self.encoder.take() {
             encoder.finish()?;
+        }
+        if let Ok(mut recording_state) = self.state.try_write() {
+            recording_state.is_recording = false;
+            recording_state.current_output_path = None;
+            recording_state.stop_tx = None;
         }
         self.app_handle.emit("recording-stopped", ())?;
         Ok(())
@@ -112,6 +127,8 @@ pub async fn start_recording(
     settings: crate::settings::RecordingSettings,
     output_folder: String,
     max_storage_bytes: u64,
+    capture_source: String,
+    selected_window: Option<String>,
 ) -> Result<RecordingStartedPayload, String> {
     let mut recording_state = state.write().await;
 
@@ -142,9 +159,20 @@ pub async fn start_recording(
     let output_path = std::path::Path::new(&output_folder).join(filename);
     let output_path_str = output_path.to_string_lossy().to_string();
 
-    let primary_monitor = Monitor::primary().map_err(|e| e.to_string())?;
-    let width = primary_monitor.width().map_err(|e| e.to_string())?;
-    let height = primary_monitor.height().map_err(|e| e.to_string())?;
+    let monitor = match capture_source.as_str() {
+        "primary-monitor" => Monitor::primary().map_err(|e| e.to_string())?,
+        "window" => {
+            let window_name = selected_window.unwrap_or_else(|| "selected window".to_string());
+            return Err(format!(
+                "Window capture is not implemented yet (requested: {}). Use Primary Monitor.",
+                window_name
+            ));
+        }
+        _ => return Err(format!("Unsupported capture source: {}", capture_source)),
+    };
+
+    let width = monitor.width().map_err(|e| e.to_string())?;
+    let height = monitor.height().map_err(|e| e.to_string())?;
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
@@ -153,19 +181,35 @@ pub async fn start_recording(
     recording_state.stop_tx = Some(stop_tx);
 
     let capture_settings = Settings::new(
-        primary_monitor,
+        monitor,
         CursorCaptureSettings::Default,
         DrawBorderSettings::WithoutBorder,
         SecondaryWindowSettings::Default,
         MinimumUpdateIntervalSettings::Default,
         DirtyRegionSettings::Default,
         ColorFormat::Bgra8,
-        (output_path_str.clone(), width, height, settings, app_handle.clone(), stop_rx),
+        (
+            output_path_str.clone(),
+            width,
+            height,
+            settings,
+            app_handle.clone(),
+            stop_rx,
+            state.inner().clone(),
+        ),
     );
+
+    let shared_state = state.inner().clone();
 
     tokio::spawn(async move {
         if let Err(e) = RecordingHandler::start(capture_settings) {
             eprintln!("Recording error: {}", e);
+            if let Ok(mut recording_state) = shared_state.try_write() {
+                recording_state.is_recording = false;
+                recording_state.current_output_path = None;
+                recording_state.stop_tx = None;
+            }
+            let _ = app_handle.emit("recording-stopped", ());
         }
     });
 
@@ -194,9 +238,6 @@ pub async fn stop_recording(
     if let Some(stop_tx) = recording_state.stop_tx.take() {
         let _ = stop_tx.send(()).await;
     }
-
-    recording_state.is_recording = false;
-    recording_state.current_output_path = None;
 
     Ok(output_path)
 }

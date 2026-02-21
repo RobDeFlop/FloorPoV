@@ -4,8 +4,6 @@ import { useRecording } from "../contexts/RecordingContext";
 import { usePreview } from "../hooks/usePreview";
 import { Play, Pause, Volume2, VolumeX, Maximize, FolderOpen } from "lucide-react";
 
-const PLACEHOLDER_VIDEO = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
-
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export function VideoPlayer() {
@@ -102,34 +100,26 @@ export function VideoPlayer() {
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           {isInitializing ? (
             <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
               <p className="text-neutral-400 text-sm">Starting preview...</p>
             </div>
           ) : (
             <>
               <p className="text-neutral-500 mb-4">No video loaded</p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
-                >
-                  <FolderOpen className="w-4 h-4" />
-                  Open File
-                </button>
-                <button
-                  onClick={() => loadVideo(PLACEHOLDER_VIDEO)}
-                  className="px-4 py-2 bg-neutral-700 hover:bg-neutral-600 rounded text-neutral-200 transition-colors"
-                >
-                  Load Sample
-                </button>
-              </div>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded text-neutral-200 transition-colors border border-neutral-700"
+              >
+                <FolderOpen className="w-4 h-4" />
+                Open File
+              </button>
             </>
           )}
         </div>
       )}
 
       {videoSrc && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-neutral-950/95 to-transparent p-4">
           <div className="flex items-center gap-6">
             <button
               onClick={togglePlay}
@@ -181,12 +171,12 @@ export function VideoPlayer() {
             <div className="relative">
               <button
                 onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                className="text-xs text-white hover:text-neutral-300 px-2 py-1 bg-neutral-700 rounded transition-colors"
+                className="text-xs text-neutral-100 hover:text-emerald-200 px-2 py-1 bg-neutral-800 rounded border border-neutral-700 transition-colors"
               >
                 {playbackRate}x
               </button>
               {showSpeedMenu && (
-                <div className="absolute bottom-full mb-2 left-0 bg-neutral-800 rounded shadow-lg py-1">
+                <div className="absolute bottom-full mb-2 left-0 bg-neutral-900 rounded shadow-lg py-1 border border-neutral-700">
                   {PLAYBACK_RATES.map((rate) => (
                     <button
                       key={rate}
@@ -196,8 +186,8 @@ export function VideoPlayer() {
                       }}
                       className={`block w-full text-left px-3 py-1 text-xs ${
                         playbackRate === rate
-                          ? "text-orange-400 bg-neutral-700"
-                          : "text-neutral-300 hover:bg-neutral-700"
+                          ? "text-emerald-300 bg-emerald-500/20"
+                          : "text-neutral-300 hover:bg-neutral-800"
                       }`}
                     >
                       {rate}x
