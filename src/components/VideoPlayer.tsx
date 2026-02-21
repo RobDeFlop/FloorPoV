@@ -102,6 +102,22 @@ export function VideoPlayer() {
             src={videoSrc || undefined}
             className="h-full w-full object-contain"
             preload="metadata"
+            onLoadStart={() => {
+              console.log("[VideoPlayer] Video load started", { src: videoSrc });
+            }}
+            onCanPlay={() => {
+              console.log("[VideoPlayer] Video can play");
+            }}
+            onError={(event) => {
+              const mediaError = event.currentTarget.error;
+              console.error("[VideoPlayer] Video load error", {
+                code: mediaError?.code,
+                message: mediaError?.message,
+                networkState: event.currentTarget.networkState,
+                readyState: event.currentTarget.readyState,
+                src: videoSrc,
+              });
+            }}
             onTimeUpdate={(e) => updateTime(e.currentTarget.currentTime)}
             onLoadedMetadata={(e) => updateDuration(e.currentTarget.duration)}
             onPlay={() => syncIsPlaying(true)}
@@ -132,9 +148,9 @@ export function VideoPlayer() {
           </div>
         )}
 
-        {videoSrc && (
+        {showVideo && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-neutral-950/95 to-transparent p-4">
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
               <button
                 onClick={togglePlay}
                 className="text-white hover:text-neutral-300 transition-colors"
@@ -182,7 +198,7 @@ export function VideoPlayer() {
 
               <div
                 ref={progressRef}
-                className="group relative h-2 min-w-[180px] flex-1 cursor-pointer rounded-full bg-neutral-700/80"
+                className="group relative h-2 min-w-0 flex-1 cursor-pointer rounded-full bg-neutral-700/80"
                 onClick={handleProgressClick}
               >
                 <div

@@ -34,6 +34,7 @@ impl RecordingSettings {
 #[derive(Serialize)]
 pub struct RecordingInfo {
     pub filename: String,
+    pub file_path: String,
     pub size_bytes: u64,
     pub created_at: u64,
 }
@@ -81,6 +82,10 @@ pub fn get_folder_size(path: String) -> Result<u64, String> {
 
 #[tauri::command]
 pub fn get_recordings_list(folder_path: String) -> Result<Vec<RecordingInfo>, String> {
+    read_recordings_list(&folder_path)
+}
+
+fn read_recordings_list(folder_path: &str) -> Result<Vec<RecordingInfo>, String> {
     let path = Path::new(&folder_path);
     if !path.exists() {
         return Ok(Vec::new());
@@ -103,6 +108,7 @@ pub fn get_recordings_list(folder_path: String) -> Result<Vec<RecordingInfo>, St
 
             recordings.push(RecordingInfo {
                 filename: path.file_name().unwrap().to_string_lossy().to_string(),
+                file_path: path.to_string_lossy().to_string(),
                 size_bytes: metadata.len(),
                 created_at,
             });
@@ -131,7 +137,7 @@ pub fn cleanup_old_recordings(
         });
     }
 
-    let mut recordings = get_recordings_list(folder_path.clone())?;
+    let mut recordings = read_recordings_list(&folder_path)?;
     let mut freed_bytes: u64 = 0;
     let mut deleted_files = Vec::new();
 

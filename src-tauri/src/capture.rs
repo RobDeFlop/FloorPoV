@@ -185,6 +185,8 @@ pub async fn stop_preview(
         return Err("No active capture to stop".to_string());
     }
 
+    capture_state.is_capturing = false;
+
     // Send stop signal to the capture handler
     if let Some(stop_tx) = capture_state.stop_tx.take() {
         let _ = stop_tx.send(()).await;

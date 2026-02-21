@@ -1,11 +1,14 @@
-import { Circle, Square } from "lucide-react";
+import { Circle, LoaderCircle, Square } from "lucide-react";
 import { motion, useReducedMotion } from 'motion/react';
+import { useState } from "react";
 import { useRecording } from "../contexts/RecordingContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { panelVariants, smoothTransition } from '../lib/motion';
 
 export function RecordingControls() {
   const reduceMotion = useReducedMotion();
+  const [isPreviewBusy, setIsPreviewBusy] = useState(false);
+  const [previewAction, setPreviewAction] = useState<'starting' | 'stopping' | null>(null);
   const {
     isRecording,
     isPreviewing,
@@ -24,14 +27,24 @@ export function RecordingControls() {
   };
 
   const handlePreviewToggle = async () => {
+    if (isPreviewBusy) {
+      return;
+    }
+
+    setIsPreviewBusy(true);
+    const shouldStopPreview = isPreviewing;
+    setPreviewAction(shouldStopPreview ? 'stopping' : 'starting');
     try {
-      if (isPreviewing) {
+      if (shouldStopPreview) {
         await stopPreview();
       } else {
         await startPreview();
       }
     } catch (error) {
       console.error("Preview toggle failed:", error);
+    } finally {
+      setIsPreviewBusy(false);
+      setPreviewAction(null);
     }
   };
 
@@ -57,8 +70,8 @@ export function RecordingControls() {
     >
       <motion.button
         onClick={handlePreviewToggle}
-        disabled={isRecording}
-        className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+        disabled={isRecording || isPreviewBusy}
+        className={`flex items-center gap-2 px-4 py-2 rounded text-sm font-medium transition-colors ${
           isPreviewing
             ? "bg-emerald-600 hover:bg-emerald-500 text-white"
             : "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700"
@@ -66,7 +79,16 @@ export function RecordingControls() {
         whileHover={reduceMotion ? undefined : { y: -1 }}
         whileTap={reduceMotion ? undefined : { scale: 0.98 }}
       >
-        {isPreviewing ? "Stop Preview" : "Start Preview"}
+        {previewAction ? (
+          <>
+            <LoaderCircle className="w-4 h-4 animate-spin" />
+            {previewAction === 'stopping' ? 'Stopping...' : 'Starting...'}
+          </>
+        ) : isPreviewing ? (
+          'Stop Preview'
+        ) : (
+          'Start Preview'
+        )}
       </motion.button>
 
       <motion.button

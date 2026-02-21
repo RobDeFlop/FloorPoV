@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "./SettingsContext";
@@ -57,8 +57,64 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const isRestartingPreviewRef = useRef(false);
+  const isStoppingPreviewRef = useRef(false);
   const { settings } = useSettings();
   const { addEvent, clearEvents } = useMarker();
+
+  const waitForCaptureStopped = async () => {
+    let done = false;
+    let disposeListener: (() => void) | null = null;
+
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        listen("capture-stopped", () => {
+          if (done) return;
+          done = true;
+          if (disposeListener) {
+            disposeListener();
+          }
+          resolve();
+        }).then((unlisten) => {
+          if (done) {
+            unlisten();
+            return;
+          }
+          disposeListener = unlisten;
+        });
+      }),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          if (done) return;
+          done = true;
+          if (disposeListener) {
+            disposeListener();
+          }
+          resolve();
+        }, 1200);
+      }),
+    ]);
+  };
+
+  const getErrorMessage = (error: unknown): string => {
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    if (error && typeof error === 'object') {
+      const maybeMessage = (error as { message?: unknown }).message;
+      if (typeof maybeMessage === 'string') {
+        return maybeMessage;
+      }
+
+      const maybeError = (error as { error?: unknown }).error;
+      if (typeof maybeError === 'string') {
+        return maybeError;
+      }
+    }
+
+    return String(error);
+  };
 
   useEffect(() => {
     let intervalId: number | undefined;
@@ -81,12 +137,20 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unlistenPreviewFrame = listen<PreviewFramePayload>("preview-frame", (event) => {
+      if (isStoppingPreviewRef.current) {
+        return;
+      }
       setPreviewFrameUrl(`data:image/jpeg;base64,${event.payload.dataBase64}`);
+      setIsPreviewing(true);
     });
 
     const unlistenCaptureStopped = listen("capture-stopped", () => {
-      setIsPreviewing(false);
-      setCaptureSource(null);
+      isStoppingPreviewRef.current = false;
+      if (!isRestartingPreviewRef.current) {
+        setIsPreviewing(false);
+        setCaptureSource(null);
+        setPreviewFrameUrl(null);
+      }
     });
 
     const unlistenRecordingStopped = listen("recording-stopped", () => {
@@ -130,28 +194,48 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startPreview = async () => {
+    isRestartingPreviewRef.current = true;
+    isStoppingPreviewRef.current = false;
     try {
-      const result = await invoke<CaptureStartedPayload>("start_preview", {
-        captureSource: settings.captureSource,
-        selectedWindow: settings.selectedWindow,
-      });
-      setIsPreviewing(true);
-      setCaptureSource(result.source);
-      setCaptureWidth(result.width);
-      setCaptureHeight(result.height);
-    } catch (error) {
-      console.error("Failed to start preview:", error);
-      throw error;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const result = await invoke<CaptureStartedPayload>("start_preview", {
+            captureSource: settings.captureSource,
+            selectedWindow: settings.selectedWindow,
+          });
+          setIsPreviewing(true);
+          setCaptureSource(result.source);
+          setCaptureWidth(result.width);
+          setCaptureHeight(result.height);
+          return;
+        } catch (error) {
+          const message = getErrorMessage(error);
+          const isCaptureBusy = message.includes("Capture already in progress");
+          const canRetry = isCaptureBusy && attempt === 0;
+
+          if (!canRetry) {
+            console.error("Failed to start preview:", error);
+            throw error;
+          }
+
+          await invoke("stop_preview").catch(() => undefined);
+          await waitForCaptureStopped();
+        }
+      }
+    } finally {
+      isRestartingPreviewRef.current = false;
     }
   };
 
   const stopPreview = async () => {
+    isStoppingPreviewRef.current = true;
     try {
-      await invoke("stop_preview");
       setIsPreviewing(false);
-      setCaptureSource(null);
+      await invoke("stop_preview");
+      await waitForCaptureStopped();
       setPreviewFrameUrl(null);
     } catch (error) {
+      isStoppingPreviewRef.current = false;
       console.error("Failed to stop preview:", error);
       throw error;
     }

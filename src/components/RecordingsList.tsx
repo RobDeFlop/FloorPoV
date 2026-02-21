@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { RefreshCw, Video } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
+import { useVideo } from '../contexts/VideoContext';
+import { useRecording } from '../contexts/RecordingContext';
 import { panelVariants, smoothTransition } from '../lib/motion';
 
 interface RecordingInfo {
   filename: string;
+  file_path: string;
   size_bytes: number;
   created_at: number;
 }
@@ -25,9 +28,12 @@ function formatDate(timestampSeconds: number): string {
 
 export function RecordingsList() {
   const { settings } = useSettings();
+  const { loadVideo } = useVideo();
+  const { isRecording, isPreviewing, stopPreview } = useRecording();
   const reduceMotion = useReducedMotion();
   const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingRecordingPath, setLoadingRecordingPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadRecordings = useCallback(async () => {
@@ -55,6 +61,34 @@ export function RecordingsList() {
   useEffect(() => {
     loadRecordings();
   }, [loadRecordings]);
+
+  const handleLoadRecording = useCallback(async (recording: RecordingInfo) => {
+    if (isRecording || loadingRecordingPath) {
+      return;
+    }
+
+    setLoadingRecordingPath(recording.file_path);
+    setError(null);
+
+    try {
+      if (isPreviewing) {
+        await stopPreview();
+      }
+
+      const recordingSource = convertFileSrc(recording.file_path);
+      console.log('[RecordingsList] Loading recording', {
+        filename: recording.filename,
+        originalPath: recording.file_path,
+        convertedSource: recordingSource,
+      });
+      loadVideo(recordingSource);
+    } catch (loadError) {
+      console.error('Failed to load recording:', loadError);
+      setError('Could not load the selected recording.');
+    } finally {
+      setLoadingRecordingPath(null);
+    }
+  }, [isPreviewing, isRecording, loadVideo, loadingRecordingPath, stopPreview]);
 
   useEffect(() => {
     const unlistenRecordingStopped = listen('recording-stopped', () => {
@@ -95,9 +129,12 @@ export function RecordingsList() {
           <p className="text-xs text-neutral-500">No recordings found in {settings.outputFolder}</p>
         ) : (
           recordings.map((recording) => (
-            <motion.div
+            <motion.button
               key={`${recording.filename}-${recording.created_at}`}
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded bg-neutral-800/60 px-2.5 py-1.5"
+              type="button"
+              onClick={() => handleLoadRecording(recording)}
+              disabled={isRecording || Boolean(loadingRecordingPath)}
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded bg-neutral-800/60 px-2.5 py-1.5 text-left transition-colors hover:bg-neutral-700/70 disabled:cursor-not-allowed disabled:opacity-60"
               initial={reduceMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
               transition={smoothTransition}
@@ -109,9 +146,11 @@ export function RecordingsList() {
                 </span>
               </div>
               <div className="text-[11px] text-neutral-400 shrink-0">
-                {formatBytes(recording.size_bytes)} · {formatDate(recording.created_at)}
+                {loadingRecordingPath === recording.file_path
+                  ? 'Loading...'
+                  : `${formatBytes(recording.size_bytes)} · ${formatDate(recording.created_at)}`}
               </div>
-            </motion.div>
+            </motion.button>
           ))
         )}
       </div>
