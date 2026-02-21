@@ -115,7 +115,7 @@ export function Layout() {
                   ) : (
                     <motion.div
                       key="settings-view"
-                      className="flex-1 min-w-0"
+                      className="h-full flex-1 min-w-0 min-h-0 flex flex-col"
                       variants={panelVariants}
                       initial={reduceMotion ? false : 'initial'}
                       animate="animate"

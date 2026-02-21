@@ -245,6 +245,13 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     let recordingStarted = false;
     try {
       clearEvents();
+
+      const wowFolderIsValid = await invoke<boolean>("validate_wow_folder", {
+        path: settings.wowFolder,
+      });
+      if (!wowFolderIsValid) {
+        throw new Error("Please set a valid WoW folder in Settings before recording.");
+      }
       
       const bitrateSettings = QUALITY_SETTINGS[settings.videoQuality];
       const recordingSettings = {
@@ -269,7 +276,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       setCaptureHeight(result.height);
       setRecordingStartTime(Date.now());
 
-      await invoke("start_combat_watch");
+      await invoke("start_combat_watch", { wowFolder: settings.wowFolder });
     } catch (error) {
       if (recordingStarted) {
         await invoke("stop_recording").catch(() => undefined);

@@ -39,15 +39,20 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const stored = await store.get<RecordingSettings>('recording-settings');
       
       if (stored) {
-        if (!stored.outputFolder) {
+        const mergedSettings: RecordingSettings = {
+          ...DEFAULT_SETTINGS,
+          ...stored,
+        };
+
+        if (!mergedSettings.outputFolder) {
           const defaultFolder = await invoke<string>('get_default_output_folder');
-          stored.outputFolder = defaultFolder;
+          mergedSettings.outputFolder = defaultFolder;
         }
-        setSettings(stored);
+        setSettings(mergedSettings);
         
-        if (stored.markerHotkey && stored.markerHotkey !== 'none') {
+        if (mergedSettings.markerHotkey && mergedSettings.markerHotkey !== 'none') {
           try {
-            await invoke('register_marker_hotkey', { hotkey: stored.markerHotkey });
+            await invoke('register_marker_hotkey', { hotkey: mergedSettings.markerHotkey });
           } catch (error) {
             console.error('Failed to register hotkey:', error);
           }

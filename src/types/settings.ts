@@ -7,6 +7,7 @@ export interface RecordingSettings {
   videoQuality: VideoQuality;
   frameRate: FrameRate;
   outputFolder: string;
+  wowFolder: string;
   maxStorageGB: number;
   captureSource: CaptureSource;
   selectedWindow?: string;
@@ -19,6 +20,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   videoQuality: 'high',
   frameRate: 30,
   outputFolder: '',
+  wowFolder: '',
   maxStorageGB: 30,
   captureSource: 'primary-monitor',
   enableSystemAudio: false,

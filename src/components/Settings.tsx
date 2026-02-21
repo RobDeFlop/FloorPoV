@@ -15,6 +15,7 @@ export function Settings({ onBack }: SettingsProps) {
   const { isRecording } = useRecording();
   const [formData, setFormData] = useState<RecordingSettings>(settings);
   const [folderSize, setFolderSize] = useState<number>(0);
+  const [isWowFolderValid, setIsWowFolderValid] = useState<boolean>(false);
   const [hasChanges, setHasChanges] = useState(false);
 
   useEffect(() => {
@@ -26,6 +27,40 @@ export function Settings({ onBack }: SettingsProps) {
       loadFolderSize();
     }
   }, [formData.outputFolder]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const validateWowFolder = async () => {
+      if (!formData.wowFolder) {
+        if (isMounted) {
+          setIsWowFolderValid(false);
+        }
+        return;
+      }
+
+      try {
+        const isValid = await invoke<boolean>('validate_wow_folder', {
+          path: formData.wowFolder,
+        });
+
+        if (isMounted) {
+          setIsWowFolderValid(isValid);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setIsWowFolderValid(false);
+        }
+        console.error('Failed to validate WoW folder:', error);
+      }
+    };
+
+    validateWowFolder();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [formData.wowFolder]);
 
   useEffect(() => {
     setHasChanges(JSON.stringify(formData) !== JSON.stringify(settings));
@@ -66,7 +101,7 @@ export function Settings({ onBack }: SettingsProps) {
     if (formData.maxStorageGB > MAX_STORAGE_GB) {
       return;
     }
-    
+
     try {
       await updateSettings(formData);
       setHasChanges(false);
@@ -80,6 +115,22 @@ export function Settings({ onBack }: SettingsProps) {
     setHasChanges(false);
   };
 
+  const handleBrowseWowFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: formData.wowFolder || formData.outputFolder,
+      });
+
+      if (selected && typeof selected === 'string') {
+        setFormData({ ...formData, wowFolder: selected });
+      }
+    } catch (error) {
+      console.error('Failed to open WoW folder picker:', error);
+    }
+  };
+
   const formatBytes = (bytes: number) => {
     const gb = bytes / (1024 ** 3);
     return gb.toFixed(2) + ' GB';
@@ -90,7 +141,7 @@ export function Settings({ onBack }: SettingsProps) {
     : 0;
 
   return (
-    <div className="flex-1 flex flex-col bg-neutral-950 relative">
+    <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-neutral-950 relative">
       {isRecording && (
         <div className="absolute inset-0 bg-neutral-950/90 z-50 flex items-center justify-center">
           <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-8 max-w-md text-center">
@@ -105,7 +156,7 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       )}
 
-      <div className="px-6 py-4 border-b border-neutral-800/80 flex items-center gap-4">
+      <div className="shrink-0 px-6 py-4 border-b border-neutral-800/80 flex items-center gap-4">
         <button
           onClick={onBack}
           className="p-2 rounded hover:bg-neutral-800 transition-colors"
@@ -115,7 +166,7 @@ export function Settings({ onBack }: SettingsProps) {
         <h1 className="text-xl font-semibold">Settings</h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6 pb-10">
         <div className="max-w-2xl space-y-8">
           
           <section>
@@ -219,6 +270,45 @@ export function Settings({ onBack }: SettingsProps) {
           </section>
 
           <section>
+            <h2 className="text-lg font-medium mb-4">Combat Log</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">WoW Folder</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={formData.wowFolder}
+                    readOnly
+                    className="flex-1 px-3 py-2 bg-neutral-900 border border-neutral-700 rounded text-neutral-400"
+                  />
+                  <button
+                    onClick={handleBrowseWowFolder}
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded transition-colors flex items-center gap-2 border border-neutral-700"
+                  >
+                    <Folder className="w-4 h-4" />
+                    Browse
+                  </button>
+                </div>
+                {!formData.wowFolder && (
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Select your WoW installation folder. Floorpov reads combat events from Logs/WoWCombatLog.txt.
+                  </p>
+                )}
+                {formData.wowFolder && isWowFolderValid && (
+                  <p className="text-xs text-emerald-400 mt-1">
+                    Combat log found at Logs/WoWCombatLog.txt.
+                  </p>
+                )}
+                {formData.wowFolder && !isWowFolderValid && (
+                  <p className="text-xs text-red-400 mt-1">
+                    Could not find Logs/WoWCombatLog.txt in this folder.
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section>
             <h2 className="text-lg font-medium mb-4">Hotkeys</h2>
             <div className="space-y-4">
               
@@ -271,7 +361,7 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       </div>
 
-      <div className="px-6 py-4 border-t border-neutral-800/80 flex justify-end gap-3">
+      <div className="shrink-0 px-6 py-4 border-t border-neutral-800/80 flex justify-end gap-3">
         <button
           onClick={handleCancel}
           disabled={!hasChanges}

@@ -88,6 +88,7 @@ pub fn run() {
             settings::cleanup_old_recordings,
             combat_log::start_combat_watch,
             combat_log::stop_combat_watch,
+            combat_log::validate_wow_folder,
             combat_log::emit_manual_marker,
             hotkey::register_marker_hotkey,
             hotkey::unregister_marker_hotkey,
