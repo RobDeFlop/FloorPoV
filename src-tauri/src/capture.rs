@@ -65,9 +65,48 @@ impl GraphicsCaptureApiHandler for PreviewCaptureHandler {
         let width = frame.width();
         let height = frame.height();
 
-        let frame_buffer = frame.buffer()?;
-        self.buffer.clear();
-        let pixels = frame_buffer.as_nopadding_buffer(&mut self.buffer);
+        let mut frame_buffer = frame.buffer()?;
+
+        let pixels: &[u8] = if frame_buffer.has_padding() {
+            let bytes_per_pixel = match frame_buffer.color_format() {
+                ColorFormat::Rgba16F => 8usize,
+                ColorFormat::Rgba8 | ColorFormat::Bgra8 => 4usize,
+            };
+
+            let width_usize = width as usize;
+            let height_usize = height as usize;
+            let row_bytes = width_usize * bytes_per_pixel;
+            let row_pitch = frame_buffer.row_pitch() as usize;
+
+            if row_bytes > row_pitch {
+                return Err(std::io::Error::other("Invalid frame row pitch for preview").into());
+            }
+
+            let frame_size = row_bytes * height_usize;
+            self.buffer.resize(frame_size, 0);
+
+            let raw_buffer = frame_buffer.as_raw_buffer();
+
+            for row in 0..height_usize {
+                let source_start = row * row_pitch;
+                let source_end = source_start + row_bytes;
+                let target_start = row * row_bytes;
+                let target_end = target_start + row_bytes;
+
+                if source_end > raw_buffer.len() || target_end > self.buffer.len() {
+                    return Err(
+                        std::io::Error::other("Invalid frame buffer bounds for preview").into(),
+                    );
+                }
+
+                self.buffer[target_start..target_end]
+                    .copy_from_slice(&raw_buffer[source_start..source_end]);
+            }
+
+            &self.buffer
+        } else {
+            frame_buffer.as_raw_buffer()
+        };
 
         let jpeg_bytes = self.encoder.encode(pixels, width, height)?;
         let data_base64 = base64::engine::general_purpose::STANDARD.encode(jpeg_bytes);

@@ -85,6 +85,25 @@ pub fn get_recordings_list(folder_path: String) -> Result<Vec<RecordingInfo>, St
     read_recordings_list(&folder_path)
 }
 
+#[tauri::command]
+pub fn delete_recording(file_path: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+
+    if !path.exists() {
+        return Err("Recording file does not exist".to_string());
+    }
+
+    if !path.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+
+    if path.extension().and_then(|value| value.to_str()) != Some("mp4") {
+        return Err("Only .mp4 recordings can be deleted".to_string());
+    }
+
+    std::fs::remove_file(path).map_err(|error| format!("Failed to delete recording: {error}"))
+}
+
 fn read_recordings_list(folder_path: &str) -> Result<Vec<RecordingInfo>, String> {
     let path = Path::new(&folder_path);
     if !path.exists() {

@@ -59,11 +59,14 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const appliedPreviewSettingsKeyRef = useRef<string>("");
+  const isApplyingPreviewSettingsRef = useRef(false);
   const shouldResumePreviewAfterRecordingRef = useRef(false);
   const isRestartingPreviewRef = useRef(false);
   const isStoppingPreviewRef = useRef(false);
   const { settings } = useSettings();
   const { addEvent, clearEvents } = useMarker();
+  const previewSettingsKey = `${settings.captureSource}::${settings.selectedWindow ?? ""}`;
 
   const waitForCaptureStopped = async () => {
     let done = false;
@@ -100,71 +103,48 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   };
 
   const waitForRecordingStopped = async () => {
-    let done = false;
-    let disposeListener: (() => void) | null = null;
-
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        listen("recording-stopped", () => {
-          if (done) return;
-          done = true;
-          if (disposeListener) {
-            disposeListener();
-          }
-          resolve();
-        }).then((unlisten) => {
-          if (done) {
-            unlisten();
-            return;
-          }
-          disposeListener = unlisten;
-        });
-      }),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          if (done) return;
-          done = true;
-          if (disposeListener) {
-            disposeListener();
-          }
-          resolve();
-        }, 1800);
-      }),
-    ]);
+    return waitForEvent("recording-stopped", 1200);
   };
 
   const waitForRecordingFinalized = async () => {
-    let done = false;
-    let disposeListener: (() => void) | null = null;
+    return waitForEvent("recording-finalized", 3000);
+  };
 
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        listen("recording-finalized", () => {
-          if (done) return;
-          done = true;
-          if (disposeListener) {
-            disposeListener();
-          }
-          resolve();
-        }).then((unlisten) => {
-          if (done) {
-            unlisten();
-            return;
-          }
-          disposeListener = unlisten;
-        });
-      }),
-      new Promise<void>((resolve) => {
-        setTimeout(() => {
-          if (done) return;
-          done = true;
-          if (disposeListener) {
-            disposeListener();
-          }
-          resolve();
-        }, 6000);
-      }),
-    ]);
+  const waitForEvent = async (eventName: string, timeoutMs: number): Promise<boolean> => {
+    return new Promise((resolve) => {
+      let settled = false;
+      let disposeListener: (() => void) | null = null;
+
+      const finish = (receivedEvent: boolean) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        clearTimeout(timeoutId);
+
+        if (disposeListener) {
+          disposeListener();
+        }
+
+        resolve(receivedEvent);
+      };
+
+      const timeoutId = window.setTimeout(() => {
+        finish(false);
+      }, timeoutMs);
+
+      listen(eventName, () => {
+        finish(true);
+      }).then((unlisten) => {
+        if (settled) {
+          unlisten();
+          return;
+        }
+
+        disposeListener = unlisten;
+      });
+    });
   };
 
   const getErrorMessage = (error: unknown): string => {
@@ -268,17 +248,21 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     setLastError(null);
     isRestartingPreviewRef.current = true;
     isStoppingPreviewRef.current = false;
+    const requestedCaptureSource = settings.captureSource;
+    const requestedSelectedWindow = settings.selectedWindow ?? "";
     try {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
           const result = await invoke<CaptureStartedPayload>("start_preview", {
-            captureSource: settings.captureSource,
-            selectedWindow: settings.selectedWindow,
+            captureSource: requestedCaptureSource,
+            selectedWindow: requestedSelectedWindow || null,
           });
           setIsPreviewing(true);
           setCaptureSource(result.source);
           setCaptureWidth(result.width);
           setCaptureHeight(result.height);
+          appliedPreviewSettingsKeyRef.current =
+            `${requestedCaptureSource}::${requestedSelectedWindow}`;
           return;
         } catch (error) {
           const message = getErrorMessage(error);
@@ -314,6 +298,41 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       throw error;
     }
   };
+
+  useEffect(() => {
+    const syncPreviewWithSettings = async () => {
+      if (isInitializing || isRecording || !isPreviewing) {
+        return;
+      }
+
+      if (isApplyingPreviewSettingsRef.current) {
+        return;
+      }
+
+      if (appliedPreviewSettingsKeyRef.current === previewSettingsKey) {
+        return;
+      }
+
+      isApplyingPreviewSettingsRef.current = true;
+      try {
+        await stopPreview();
+        await startPreview();
+      } catch (error) {
+        console.error("Failed to apply preview settings change:", error);
+      } finally {
+        isApplyingPreviewSettingsRef.current = false;
+      }
+    };
+
+    void syncPreviewWithSettings();
+  }, [
+    isInitializing,
+    isPreviewing,
+    isRecording,
+    previewSettingsKey,
+    startPreview,
+    stopPreview,
+  ]);
 
   const startRecording = async () => {
     setLastError(null);
@@ -405,10 +424,22 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     setLastError(null);
     try {
       const waitForFinalize = waitForRecordingFinalized();
+      const waitForStopped = waitForRecordingStopped();
       await invoke("stop_combat_watch").catch(() => undefined);
       await invoke("stop_recording");
-      await waitForFinalize;
-      await waitForRecordingStopped();
+
+      const [finalizedReceived, stoppedReceived] = await Promise.all([
+        waitForFinalize,
+        waitForStopped,
+      ]);
+
+      if (!finalizedReceived) {
+        console.warn("Timed out waiting for recording-finalized event");
+      }
+      if (!stoppedReceived) {
+        console.warn("Timed out waiting for recording-stopped event");
+      }
+
       setIsRecording(false);
       setRecordingStartTime(null);
 
