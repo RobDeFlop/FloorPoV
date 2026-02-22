@@ -12,6 +12,26 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 pub use model::RecordingState;
+use model::CaptureInput;
+
+fn sanitize_for_filename(input: &str) -> String {
+    let mut result = String::new();
+    let mut last_was_underscore = false;
+    
+    for c in input.chars() {
+        if c.is_whitespace() || c == '-' {
+            if !last_was_underscore && !result.is_empty() {
+                result.push('_');
+                last_was_underscore = true;
+            }
+        } else if c.is_alphanumeric() {
+            result.push(c.to_ascii_lowercase());
+            last_was_underscore = false;
+        }
+    }
+    
+    result.chars().take(30).collect()
+}
 
 #[tauri::command]
 pub fn list_capture_windows() -> Result<Vec<model::CaptureWindowInfo>, String> {
@@ -58,7 +78,22 @@ pub async fn start_recording(
     }
 
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("screen_recording_{timestamp}.mp4");
+    let prefix = match &capture_input {
+        CaptureInput::Monitor => "screen".to_string(),
+        CaptureInput::Window { window_title, .. } => {
+            if let Some(title) = window_title {
+                let clean_title = sanitize_for_filename(title);
+                if clean_title.is_empty() {
+                    "window".to_string()
+                } else {
+                    format!("window_{clean_title}")
+                }
+            } else {
+                "window".to_string()
+            }
+        }
+    };
+    let filename = format!("{prefix}_recording_{timestamp}.mp4");
     let output_path = Path::new(&output_folder).join(filename);
     let output_path_str = output_path.to_string_lossy().to_string();
 

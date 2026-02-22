@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
+import { GameModePage } from "../gamemodes/GameModePage";
 import { VideoPlayer } from "../playback/VideoPlayer";
-import { RecordingControls } from "../playback/RecordingControls";
+
 import { RecordingsList } from "../playback/RecordingsList";
 import { Settings } from "../settings/Settings";
 import { CombatLogDebug } from "../debug/CombatLogDebug";
@@ -14,7 +15,7 @@ import { SettingsProvider } from "../../contexts/SettingsContext";
 import { MarkerProvider } from "../../contexts/MarkerContext";
 import { panelVariants, smoothTransition } from "../../lib/motion";
 
-type AppView = "main" | "settings" | "debug";
+type AppView = "main" | "settings" | "debug" | "mythic-plus" | "raid" | "pvp";
 
 export function Layout() {
   const [currentView, setCurrentView] = useState<AppView>("main");
@@ -122,15 +123,14 @@ export function Layout() {
                       exit={reduceMotion ? undefined : "exit"}
                       transition={smoothTransition}
                     >
-                      <section
-                        className="flex w-full shrink-0 flex-col overflow-hidden"
-                        style={{ height: mediaSectionHeight }}
-                      >
-                        <main className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-neutral-950/70">
-                          <VideoPlayer />
-                        </main>
-                        <RecordingControls />
-                      </section>
+                       <section
+                         className="flex w-full shrink-0 flex-col overflow-hidden"
+                         style={{ height: mediaSectionHeight }}
+                       >
+                         <main className="flex-1 min-h-0 overflow-hidden flex items-center justify-center bg-neutral-950/70">
+                           <VideoPlayer />
+                         </main>
+                       </section>
                       <div
                         className={`flex h-3 w-full cursor-row-resize items-center justify-center border-y border-white/10 bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
                           isResizingMedia ? "bg-white/10" : "hover:bg-white/5"
@@ -173,9 +173,45 @@ export function Layout() {
                     >
                       <Settings onBack={() => setCurrentView("main")} />
                     </motion.div>
-                  ) : (
-                    <CombatLogDebug />
-                  )}
+      ) : currentView === "mythic-plus" ? (
+        <motion.div
+          key="mythic-plus-view"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden"
+          variants={panelVariants}
+          initial={reduceMotion ? false : "initial"}
+          animate="animate"
+          exit={reduceMotion ? undefined : "exit"}
+          transition={smoothTransition}
+        >
+          <GameModePage gameMode="mythic-plus" onBack={() => setCurrentView("main")} />
+        </motion.div>
+      ) : currentView === "raid" ? (
+        <motion.div
+          key="raid-view"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden"
+          variants={panelVariants}
+          initial={reduceMotion ? false : "initial"}
+          animate="animate"
+          exit={reduceMotion ? undefined : "exit"}
+          transition={smoothTransition}
+        >
+          <GameModePage gameMode="raid" onBack={() => setCurrentView("main")} />
+        </motion.div>
+      ) : currentView === "pvp" ? (
+        <motion.div
+          key="pvp-view"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden"
+          variants={panelVariants}
+          initial={reduceMotion ? false : "initial"}
+          animate="animate"
+          exit={reduceMotion ? undefined : "exit"}
+          transition={smoothTransition}
+        >
+          <GameModePage gameMode="pvp" onBack={() => setCurrentView("main")} />
+        </motion.div>
+      ) : (
+        <CombatLogDebug />
+      )}
                 </AnimatePresence>
               </div>
             </div>

@@ -1,23 +1,26 @@
-import { useState, type ComponentType } from "react";
+import { type ComponentType, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "../ui/Button";
 import {
   Activity,
   Bug,
+  Circle,
   ExternalLink,
   Github,
+  LoaderCircle,
   PanelLeft,
   Radar,
   SlidersHorizontal,
 } from "lucide-react";
 import { useRecording } from "../../contexts/RecordingContext";
 
+
 const gameModes = ["Mythic+", "Raid", "PvP"];
 const REPOSITORY_URL = "https://github.com/RobDeFlop/FloorPoV";
 
 interface SidebarProps {
-  onNavigate: (view: "main" | "settings" | "debug") => void;
-  currentView: "main" | "settings" | "debug";
+  onNavigate: (view: "main" | "settings" | "debug" | "mythic-plus" | "raid" | "pvp") => void;
+  currentView: "main" | "settings" | "debug" | "mythic-plus" | "raid" | "pvp";
   isDebugMode: boolean;
 }
 
@@ -55,17 +58,84 @@ function SidebarNavButton({
 }
 
 export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) {
-  const [activeMode, setActiveMode] = useState<string | null>(null);
+  const [isRecordingBusy, setIsRecordingBusy] = useState(false);
+  const [recordingAction, setRecordingAction] = useState<'starting' | 'stopping' | null>(null);
   const reduceMotion = useReducedMotion();
-  const { isRecording, recordingDuration } = useRecording();
+  const { isRecording, recordingDuration, startRecording, stopRecording } = useRecording();
   const isMain = currentView === "main";
   const isSettings = currentView === "settings";
   const isDebug = currentView === "debug";
+
+  const handleRecordingToggle = async () => {
+    if (isRecordingBusy) {
+      return;
+    }
+
+    setIsRecordingBusy(true);
+    const shouldStopRecording = isRecording;
+    setRecordingAction(shouldStopRecording ? 'stopping' : 'starting');
+    
+    try {
+      if (shouldStopRecording) {
+        await stopRecording();
+      } else {
+        await startRecording();
+      }
+    } catch (error) {
+      console.error("Recording toggle failed:", error);
+    } finally {
+      setIsRecordingBusy(false);
+      setRecordingAction(null);
+    }
+  };
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const getRecordingIcon = () => {
+    const iconClass = recordingAction 
+      ? "text-amber-300" 
+      : isRecording 
+        ? "text-rose-300" 
+        : "text-emerald-300";
+    
+    if (recordingAction) {
+      return <LoaderCircle className={`h-3 w-3 animate-spin ${iconClass}`} />;
+    }
+    
+    if (isRecording) {
+      return (
+        <motion.span
+          className="inline-flex h-3 w-3 rounded-full bg-rose-300"
+          animate={{
+            opacity: [0.55, 1, 0.55],
+            scale: [0.95, 1.05, 0.95],
+          }}
+          transition={{
+            duration: 1.2,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        />
+      );
+    }
+    
+    return <Circle className={`h-3 w-3 ${iconClass}`} fill="currentColor" />;
+  };
+
+  const getRecordingTooltip = () => {
+    if (recordingAction) {
+      return recordingAction === 'stopping' ? 'Stopping...' : 'Starting...';
+    }
+    
+    if (isRecording) {
+      return `Stop recording (${formatDuration(recordingDuration)})`;
+    }
+    
+    return 'Start recording';
   };
 
   return (
@@ -103,23 +173,44 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           Game Mode
         </div>
         <div className="space-y-1.5">
-          {gameModes.map((mode) => (
-            <motion.button
-              key={mode}
-              type="button"
-              onClick={() => setActiveMode(activeMode === mode ? null : mode)}
-              aria-pressed={activeMode === mode}
-              className={`w-full text-left px-3 py-2 rounded-sm text-sm border transition-colors ${
-                activeMode === mode
-                  ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
-                  : "border-transparent text-neutral-400 hover:text-neutral-100 hover:border-white/15 hover:bg-white/5"
-              }`}
-              whileHover={reduceMotion ? undefined : { x: 2 }}
-              whileTap={reduceMotion ? undefined : { scale: 0.99 }}
-            >
-              {mode}
-            </motion.button>
-          ))}
+           {gameModes.map((mode) => {
+            const isActive = 
+              (mode === "Mythic+" && currentView === "mythic-plus") ||
+              (mode === "Raid" && currentView === "raid") ||
+              (mode === "PvP" && currentView === "pvp");
+            
+            const navigateTo = () => {
+              switch (mode) {
+                case "Mythic+":
+                  onNavigate("mythic-plus");
+                  break;
+                case "Raid":
+                  onNavigate("raid");
+                  break;
+                case "PvP":
+                  onNavigate("pvp");
+                  break;
+              }
+            };
+            
+            return (
+              <motion.button
+                key={mode}
+                type="button"
+                onClick={navigateTo}
+                aria-pressed={isActive}
+                className={`w-full text-left px-3 py-2 rounded-sm text-sm border transition-colors ${
+                  isActive
+                    ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
+                    : "border-transparent text-neutral-400 hover:text-neutral-100 hover:border-white/15 hover:bg-white/5"
+                }`}
+                whileHover={reduceMotion ? undefined : { x: 2 }}
+                whileTap={reduceMotion ? undefined : { scale: 0.99 }}
+              >
+                {mode}
+              </motion.button>
+            );
+          })}
         </div>
       </nav>
 
@@ -141,17 +232,21 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           </div>
         )}
 
-        <motion.div
-          className={`relative rounded-sm px-3 py-2 transition-colors ${
+        <motion.button
+          type="button"
+          onClick={handleRecordingToggle}
+          disabled={isRecordingBusy}
+          className={`relative rounded-sm px-3 py-2 transition-colors cursor-pointer w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
             isRecording
-              ? "border border-rose-300/40 bg-rose-500/15 shadow-[0_0_0_1px_rgba(251,113,133,0.22)]"
-              : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)]"
-          }`}
-          initial={false}
-          animate={{ scale: isRecording ? [1, 1.008, 1] : [1, 1, 1] }}
-          transition={{ duration: 0.24, ease: "easeOut" }}
-          role="status"
-          aria-live="polite"
+              ? "border border-rose-300/40 bg-rose-500/15 shadow-[0_0_0_1px_rgba(251,113,133,0.22)] hover:bg-rose-500/20"
+              : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)] hover:bg-emerald-500/18"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          whileHover={reduceMotion ? undefined : { y: -1 }}
+          whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+          title={getRecordingTooltip()}
+          aria-label={getRecordingTooltip()}
+          role="button"
+          aria-pressed={isRecording}
         >
           <AnimatePresence>
             {isRecording && (
@@ -169,53 +264,52 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
             )}
           </AnimatePresence>
 
-          <div
-            className={`text-[11px] uppercase tracking-[0.12em] ${
-              isRecording ? "text-rose-200" : "text-emerald-300"
-            }`}
-          >
-            App Status
+          <div className="flex items-start gap-1.5">
+            <span className="mt-0.5 inline-flex h-3 w-3 shrink-0 items-center justify-center">
+              {getRecordingIcon()}
+            </span>
+            <div className="flex-1">
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={`text-[11px] uppercase tracking-[0.12em] ${
+                    isRecording ? "text-rose-200" : "text-emerald-300"
+                  }`}
+                >
+                  App Status
+                </div>
+              </div>
+              <div className="mt-1 h-4 overflow-hidden">
+                <AnimatePresence mode="wait" initial={false}>
+                  {isRecording ? (
+                    <motion.div
+                      key="recording-status"
+                      className="flex h-4 items-center whitespace-nowrap text-xs text-rose-100"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      <span>
+                        Recording <span className="font-mono">{formatDuration(recordingDuration)}</span>
+                      </span>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="idle-status"
+                      className="flex h-4 items-center whitespace-nowrap text-xs text-neutral-300"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                    >
+                      Ready to record.
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
           </div>
-          <AnimatePresence mode="wait" initial={false}>
-            {isRecording ? (
-              <motion.div
-                key="recording-status"
-                className="mt-1 inline-flex items-center gap-1.5 text-xs text-rose-100"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-              >
-                <motion.span
-                  className="h-2 w-2 rounded-full bg-rose-300"
-                  animate={{
-                    opacity: [0.55, 1, 0.55],
-                    scale: [0.95, 1.05, 0.95],
-                  }}
-                  transition={{
-                    duration: 1.2,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                />
-                <span>
-                  Recording <span className="font-mono">{formatDuration(recordingDuration)}</span>
-                </span>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="idle-status"
-                className="mt-1 text-xs text-neutral-300"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2, ease: "easeOut" }}
-              >
-                Ready to record.
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
+        </motion.button>
 
         <a
           href={REPOSITORY_URL}
