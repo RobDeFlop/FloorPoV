@@ -175,7 +175,7 @@ fn read_recordings_list(folder_path: &str) -> Result<Vec<RecordingInfo>, String>
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
-        if path.extension().map_or(false, |ext| ext == "mp4") {
+        if path.extension().is_some_and(|ext| ext == "mp4") {
             let metadata = entry.metadata().map_err(|e| e.to_string())?;
             let created_at = metadata
                 .created()

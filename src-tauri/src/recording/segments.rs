@@ -133,8 +133,7 @@ fn collect_non_empty_segments(segment_paths: &[PathBuf]) -> Vec<PathBuf> {
             segment_path.exists()
                 && segment_path
                     .metadata()
-                    .map(|metadata| metadata.len() > 0)
-                    .unwrap_or(false)
+                    .is_ok_and(|metadata| metadata.len() > 0)
         })
         .cloned()
         .collect()

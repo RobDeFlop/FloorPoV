@@ -111,7 +111,7 @@ pub(crate) fn run_system_audio_capture_to_queue(
                 }
                 Err(std_mpsc::TrySendError::Full(_)) => {
                     let dropped_chunks = stats.dropped_chunks.fetch_add(1, Ordering::Relaxed) + 1;
-                    if dropped_chunks % 64 == 0 {
+                    if dropped_chunks.is_multiple_of(64) {
                         tracing::warn!(
                             dropped_chunks,
                             "Dropping system audio chunks due to queue backpressure"

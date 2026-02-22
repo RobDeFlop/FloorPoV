@@ -723,8 +723,7 @@ pub(super) fn run_ffmpeg_recording_segment(
     let output_written = output_path.exists()
         && output_path
             .metadata()
-            .map(|metadata| metadata.len() > 0)
-            .unwrap_or(false);
+            .is_ok_and(|metadata| metadata.len() > 0);
 
     let transition = if stop_requested_by_user {
         SegmentTransition::Stop

@@ -43,7 +43,7 @@ fn parse_window_handle(raw_hwnd: &str) -> Option<usize> {
 
 fn normalize_capture_dimension(value: u32) -> u32 {
     let mut normalized = value.max(MIN_CAPTURE_DIMENSION);
-    if normalized % 2 != 0 {
+    if !normalized.is_multiple_of(2) {
         normalized = normalized.saturating_sub(1);
     }
     normalized.max(MIN_CAPTURE_DIMENSION)
@@ -380,7 +380,7 @@ pub(crate) fn evaluate_window_capture_availability(
 ) -> WindowCaptureAvailability {
     #[cfg(target_os = "windows")]
     {
-        return match capture_input {
+        match capture_input {
             CaptureInput::Window {
                 window_hwnd: Some(window_hwnd),
                 window_title,
@@ -400,7 +400,7 @@ pub(crate) fn evaluate_window_capture_availability(
             } => evaluate_window_capture_by_title(window_title),
             CaptureInput::Window { .. } => WindowCaptureAvailability::Closed,
             CaptureInput::Monitor => WindowCaptureAvailability::Available,
-        };
+        }
     }
 
     #[cfg(not(target_os = "windows"))]
