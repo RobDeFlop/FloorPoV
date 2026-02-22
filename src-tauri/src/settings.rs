@@ -9,6 +9,10 @@ pub struct RecordingSettings {
 }
 
 impl RecordingSettings {
+    const REFERENCE_WIDTH: u32 = 1920;
+    const REFERENCE_HEIGHT: u32 = 1080;
+    const REFERENCE_FRAME_RATE: u32 = 30;
+
     pub fn from_quality(quality: &str, frame_rate: u32) -> Self {
         let bitrate = match quality {
             "low" => 2_000_000,
@@ -25,8 +29,37 @@ impl RecordingSettings {
         }
     }
 
-    pub fn estimate_size_bytes(&self) -> u64 {
-        let size_per_hour = (self.bitrate as u64 * 3600) / 8;
+    fn bitrate_bounds_bps(quality: &str) -> (u32, u32) {
+        match quality {
+            "low" => (2_000_000, 8_000_000),
+            "medium" => (4_000_000, 14_000_000),
+            "high" => (6_000_000, 22_000_000),
+            "ultra" => (10_000_000, 35_000_000),
+            _ => (6_000_000, 22_000_000),
+        }
+    }
+
+    pub fn effective_bitrate(&self, width: u32, height: u32) -> u32 {
+        let reference_workload = (Self::REFERENCE_WIDTH as f64)
+            * (Self::REFERENCE_HEIGHT as f64)
+            * (Self::REFERENCE_FRAME_RATE as f64);
+        let capture_workload = (width as f64) * (height as f64) * (self.frame_rate as f64);
+
+        let normalized_scale = if reference_workload > 0.0 {
+            (capture_workload / reference_workload).powf(0.85)
+        } else {
+            1.0
+        };
+
+        let target_bitrate = (self.bitrate as f64 * normalized_scale).round() as u32;
+        let (minimum_bitrate, maximum_bitrate) = Self::bitrate_bounds_bps(&self.video_quality);
+
+        target_bitrate.clamp(minimum_bitrate, maximum_bitrate)
+    }
+
+    pub fn estimate_size_bytes_for_capture(&self, width: u32, height: u32) -> u64 {
+        let effective_bitrate = self.effective_bitrate(width, height) as u64;
+        let size_per_hour = (effective_bitrate * 3600) / 8;
         (size_per_hour as f64 * 1.1) as u64
     }
 }

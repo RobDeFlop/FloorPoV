@@ -4,7 +4,6 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { VideoPlayer } from "../playback/VideoPlayer";
-import { GameEvents } from "../events/GameEvents";
 import { RecordingControls } from "../playback/RecordingControls";
 import { RecordingsList } from "../playback/RecordingsList";
 import { Settings } from "../settings/Settings";
@@ -158,7 +157,6 @@ export function Layout() {
                         <div className="h-0.5 w-24 rounded-full bg-emerald-200/30" />
                       </div>
                       <RecordingsList />
-                      <GameEvents />
                     </motion.div>
                   ) : currentView === "settings" ? (
                     <motion.div

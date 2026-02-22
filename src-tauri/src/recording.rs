@@ -229,6 +229,11 @@ fn resolve_capture_target(
     }
 }
 
+fn minimum_update_interval_for_frame_rate(frame_rate: u32) -> Duration {
+    let bounded_frame_rate = frame_rate.max(1) as u64;
+    Duration::from_millis((1000 / bounded_frame_rate).max(1))
+}
+
 #[tauri::command]
 pub async fn start_recording(
     app_handle: AppHandle,
@@ -248,8 +253,23 @@ pub async fn start_recording(
     std::fs::create_dir_all(&output_folder)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
+    let (capture_target, width, height) =
+        resolve_capture_target(capture_source.as_str(), selected_window.as_deref())?;
+
+    let effective_bitrate = settings.effective_bitrate(width, height);
+    let estimated_size = settings.estimate_size_bytes_for_capture(width, height);
+
+    tracing::info!(
+        video_quality = %settings.video_quality,
+        frame_rate = settings.frame_rate,
+        capture_width = width,
+        capture_height = height,
+        requested_bitrate_bps = settings.bitrate,
+        effective_bitrate_bps = effective_bitrate,
+        "Using adaptive recording bitrate"
+    );
+
     let current_size = crate::settings::get_folder_size(output_folder.clone())?;
-    let estimated_size = settings.estimate_size_bytes();
 
     if current_size + estimated_size > max_storage_bytes {
         let cleanup_result = crate::settings::cleanup_old_recordings(
@@ -268,8 +288,10 @@ pub async fn start_recording(
     let output_path = std::path::Path::new(&output_folder).join(filename);
     let output_path_str = output_path.to_string_lossy().to_string();
 
-    let (capture_target, width, height) =
-        resolve_capture_target(capture_source.as_str(), selected_window.as_deref())?;
+    let mut recording_settings = settings;
+    recording_settings.bitrate = effective_bitrate;
+    let minimum_update_interval =
+        minimum_update_interval_for_frame_rate(recording_settings.frame_rate);
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
 
@@ -287,14 +309,14 @@ pub async fn start_recording(
                 CursorCaptureSettings::Default,
                 DrawBorderSettings::WithoutBorder,
                 SecondaryWindowSettings::Default,
-                MinimumUpdateIntervalSettings::Custom(Duration::from_millis(16)),
+                MinimumUpdateIntervalSettings::Custom(minimum_update_interval),
                 DirtyRegionSettings::ReportAndRender,
                 ColorFormat::Bgra8,
                 (
                     output_path_str.clone(),
                     width,
                     height,
-                    settings,
+                    recording_settings,
                     app_handle.clone(),
                     stop_rx,
                     state.inner().clone(),
@@ -319,14 +341,14 @@ pub async fn start_recording(
                 CursorCaptureSettings::Default,
                 DrawBorderSettings::WithoutBorder,
                 SecondaryWindowSettings::Default,
-                MinimumUpdateIntervalSettings::Custom(Duration::from_millis(16)),
+                MinimumUpdateIntervalSettings::Custom(minimum_update_interval),
                 DirtyRegionSettings::ReportAndRender,
                 ColorFormat::Bgra8,
                 (
                     output_path_str.clone(),
                     width,
                     height,
-                    settings,
+                    recording_settings,
                     app_handle.clone(),
                     stop_rx,
                     state.inner().clone(),
