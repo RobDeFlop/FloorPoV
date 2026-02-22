@@ -1,10 +1,14 @@
 export type VideoQuality = 'low' | 'medium' | 'high' | 'ultra';
 export type FrameRate = 30 | 60;
 export type MarkerHotkey = 'F9' | 'F10' | 'F11' | 'F12' | 'none';
+export type CaptureSource = 'monitor' | 'window';
 
 export interface RecordingSettings {
   videoQuality: VideoQuality;
   frameRate: FrameRate;
+  captureSource: CaptureSource;
+  captureWindowHwnd: string;
+  captureWindowTitle: string;
   outputFolder: string;
   wowFolder: string;
   maxStorageGB: number;
@@ -16,6 +20,9 @@ export interface RecordingSettings {
 export const DEFAULT_SETTINGS: RecordingSettings = {
   videoQuality: 'high',
   frameRate: 30,
+  captureSource: 'monitor',
+  captureWindowHwnd: '',
+  captureWindowTitle: '',
   outputFolder: '',
   wowFolder: '',
   maxStorageGB: 30,

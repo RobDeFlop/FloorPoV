@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { Clapperboard, FolderOpen, LoaderCircle, Maximize, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import {
+  AlertTriangle,
+  Clapperboard,
+  FolderOpen,
+  LoaderCircle,
+  Maximize,
+  Pause,
+  Play,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { useVideo } from "../../contexts/VideoContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useMarker } from "../../contexts/MarkerContext";
@@ -31,7 +41,7 @@ export function VideoPlayer() {
   } = useVideo();
   const { events } = useMarker();
 
-  const { isRecording } = useRecording();
+  const { isRecording, recordingWarning } = useRecording();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -151,6 +161,17 @@ export function VideoPlayer() {
           >
             <LoaderCircle className="h-6 w-6 animate-spin text-neutral-200" />
             <p className="text-sm font-medium text-neutral-100">Loading recording...</p>
+          </div>
+        )}
+
+        {isRecording && recordingWarning && (
+          <div
+            className="absolute left-3 right-3 top-3 z-20 inline-flex items-start gap-2 rounded-sm border border-amber-300/35 bg-amber-500/15 px-3 py-2 text-amber-100"
+            role="status"
+            aria-live="polite"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p className="text-xs leading-5">{recordingWarning}</p>
           </div>
         )}
 

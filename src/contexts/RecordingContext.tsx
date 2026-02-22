@@ -16,6 +16,9 @@ interface RecordingCommandSettings {
   video_quality: string;
   frame_rate: number;
   bitrate: number;
+  capture_source: string;
+  capture_window_hwnd: string;
+  capture_window_title: string;
   enable_system_audio: boolean;
   enable_recording_diagnostics: boolean;
 }
@@ -31,6 +34,7 @@ interface RecordingContextType {
   isPreviewing: boolean;
   isInitializing: boolean;
   lastError: string | null;
+  recordingWarning: string | null;
   previewFrameUrl: string | null;
   captureWidth: number;
   captureHeight: number;
@@ -47,6 +51,7 @@ const RecordingContext = createContext<RecordingContextType | undefined>(undefin
 export function RecordingProvider({ children }: { children: ReactNode }) {
   const [isRecording, setIsRecording] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [recordingWarning, setRecordingWarning] = useState<string | null>(null);
   const [captureWidth, setCaptureWidth] = useState(0);
   const [captureHeight, setCaptureHeight] = useState(0);
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
@@ -135,6 +140,15 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     const unlistenRecordingStopped = listen("recording-stopped", () => {
       setIsRecording(false);
       setRecordingStartTime(null);
+      setRecordingWarning(null);
+    });
+
+    const unlistenRecordingWarning = listen<string>("recording-warning", (event) => {
+      setRecordingWarning(event.payload);
+    });
+
+    const unlistenRecordingWarningCleared = listen("recording-warning-cleared", () => {
+      setRecordingWarning(null);
     });
 
     const unlistenCleanup = listen<CleanupResult>("storage-cleanup", (event) => {
@@ -149,6 +163,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
     return () => {
       unlistenRecordingStopped.then((fn) => fn());
+      unlistenRecordingWarning.then((fn) => fn());
+      unlistenRecordingWarningCleared.then((fn) => fn());
       unlistenCleanup.then((fn) => fn());
       unlistenCombatEvent.then((fn) => fn());
     };
@@ -164,6 +180,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   const startRecording = async () => {
     setLastError(null);
+    setRecordingWarning(null);
     let recordingStarted = false;
 
     try {
@@ -174,6 +191,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         video_quality: settings.videoQuality,
         frame_rate: settings.frameRate,
         bitrate: bitrateSettings.bitrate,
+        capture_source: settings.captureSource,
+        capture_window_hwnd: settings.captureWindowHwnd,
+        capture_window_title: settings.captureWindowTitle,
         enable_system_audio: settings.enableSystemAudio,
         enable_recording_diagnostics: settings.enableRecordingDiagnostics,
       };
@@ -212,6 +232,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         setIsRecording(false);
         setRecordingStartTime(null);
       }
+      setRecordingWarning(null);
       console.error("Failed to start recording:", error);
       setLastError(getErrorMessage(error));
       throw error;
@@ -221,8 +242,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const stopRecording = async () => {
     setLastError(null);
     try {
-      const waitForFinalize = waitForEvent("recording-finalized", 4000);
-      const waitForStopped = waitForEvent("recording-stopped", 2000);
+      const waitForFinalize = waitForEvent("recording-finalized", 15000);
+      const waitForStopped = waitForEvent("recording-stopped", 15000);
 
       await invoke("stop_combat_watch").catch(() => undefined);
       await invoke("stop_recording");
@@ -241,6 +262,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
       setIsRecording(false);
       setRecordingStartTime(null);
+      setRecordingWarning(null);
     } catch (error) {
       console.error("Failed to stop recording:", error);
       setLastError(getErrorMessage(error));
@@ -255,6 +277,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         isPreviewing: false,
         isInitializing: false,
         lastError,
+        recordingWarning,
         previewFrameUrl: null,
         captureWidth,
         captureHeight,

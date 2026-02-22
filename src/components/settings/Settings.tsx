@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
+  AppWindow,
   CheckCircle2,
   HardDrive,
   Keyboard,
   Monitor,
+  RefreshCw,
   Settings2,
   Video,
   Volume2,
@@ -16,6 +18,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import {
   RecordingSettings,
+  CaptureSource,
   QUALITY_SETTINGS,
   MIN_STORAGE_GB,
   MAX_STORAGE_GB,
@@ -30,6 +33,11 @@ interface SettingsProps {
   onBack: () => void;
 }
 
+interface CaptureWindowInfo {
+  hwnd: string;
+  title: string;
+}
+
 export function Settings({ onBack }: SettingsProps) {
   const { settings, updateSettings } = useSettings();
   const { isRecording } = useRecording();
@@ -37,6 +45,9 @@ export function Settings({ onBack }: SettingsProps) {
   const [folderSize, setFolderSize] = useState<number>(0);
   const [isWowFolderValid, setIsWowFolderValid] = useState<boolean>(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [captureWindows, setCaptureWindows] = useState<CaptureWindowInfo[]>([]);
+  const [isLoadingCaptureWindows, setIsLoadingCaptureWindows] = useState(false);
+  const [captureWindowsError, setCaptureWindowsError] = useState<string | null>(null);
 
   useEffect(() => {
     setFormData(settings);
@@ -85,6 +96,28 @@ export function Settings({ onBack }: SettingsProps) {
   useEffect(() => {
     setHasChanges(JSON.stringify(formData) !== JSON.stringify(settings));
   }, [formData, settings]);
+
+  const loadCaptureWindows = useCallback(async () => {
+    setIsLoadingCaptureWindows(true);
+    setCaptureWindowsError(null);
+
+    try {
+      const windows = await invoke<CaptureWindowInfo[]>("list_capture_windows");
+      setCaptureWindows(windows);
+    } catch (error) {
+      console.error("Failed to list capturable windows:", error);
+      setCaptureWindowsError("Could not list open windows. Try Refresh or restart the app.");
+      setCaptureWindows([]);
+    } finally {
+      setIsLoadingCaptureWindows(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (formData.captureSource === "window") {
+      loadCaptureWindows();
+    }
+  }, [formData.captureSource, loadCaptureWindows]);
 
 
   const loadFolderSize = async () => {
@@ -174,9 +207,47 @@ export function Settings({ onBack }: SettingsProps) {
     value,
     label,
   }));
+  const captureSourceOptions: SettingsSelectOption[] = [
+    { value: "monitor", label: "Primary Monitor" },
+    { value: "window", label: "Specific Window" },
+  ];
+  const availableCaptureWindowOptions: SettingsSelectOption[] = captureWindows.map(
+    ({ hwnd, title }) => ({
+      value: hwnd,
+      label: title,
+    }),
+  );
+  const captureWindowOptions: SettingsSelectOption[] = [...availableCaptureWindowOptions];
+  const isSavedCaptureWindowUnavailable =
+    formData.captureSource === "window" &&
+    formData.captureWindowHwnd.length > 0 &&
+    !availableCaptureWindowOptions.some(({ value }) => value === formData.captureWindowHwnd);
+
+  if (isSavedCaptureWindowUnavailable) {
+    captureWindowOptions.unshift({
+      value: formData.captureWindowHwnd,
+      label: formData.captureWindowTitle
+        ? `${formData.captureWindowTitle} (Unavailable)`
+        : "Previously selected window (Unavailable)",
+      disabled: true,
+    });
+  }
+
+  if (captureWindowOptions.length === 0) {
+    captureWindowOptions.push({
+      value: "",
+      label: isLoadingCaptureWindows ? "Loading windows..." : "No capturable windows found",
+      disabled: true,
+    });
+  }
+
+  const isCaptureWindowSelectDisabled =
+    isLoadingCaptureWindows || captureWindowOptions.every((option) => option.disabled);
   const fieldIds = {
     videoQuality: 'settings-video-quality',
     frameRate: 'settings-frame-rate',
+    captureSource: 'settings-capture-source',
+    captureWindow: 'settings-capture-window',
     outputFolder: 'settings-output-folder',
     maxStorageGB: 'settings-max-storage',
     wowFolder: 'settings-wow-folder',
@@ -309,9 +380,90 @@ export function Settings({ onBack }: SettingsProps) {
 
           <SettingsSection title="Capture" icon={<Monitor className="h-4 w-4" />}>
             <div className="space-y-4">
-              <p className="text-sm text-neutral-300">
-                Capture uses the FFmpeg pipeline and records your primary monitor.
-              </p>
+              <div>
+                <label htmlFor={fieldIds.captureSource} className="mb-2 inline-flex items-center gap-1.5 text-sm text-neutral-300">
+                  <AppWindow className="h-3.5 w-3.5" />
+                  Capture Source
+                </label>
+                <SettingsSelect
+                  id={fieldIds.captureSource}
+                  value={formData.captureSource}
+                  options={captureSourceOptions}
+                  onChange={(nextValue) => {
+                    setFormData({
+                      ...formData,
+                      captureSource: nextValue as CaptureSource,
+                    });
+                  }}
+                  ariaDescribedBy="settings-capture-source-help"
+                />
+                <p id="settings-capture-source-help" className="mt-1 text-xs text-neutral-400">
+                  Choose whether Floorpov captures your primary monitor or one specific window.
+                </p>
+              </div>
+
+              {formData.captureSource === "window" && (
+                <div className="space-y-2 rounded-sm border border-white/15 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-0 flex-1">
+                      <label htmlFor={fieldIds.captureWindow} className="mb-2 block text-sm text-neutral-300">
+                        Window
+                      </label>
+                      <SettingsSelect
+                        id={fieldIds.captureWindow}
+                        value={formData.captureWindowHwnd}
+                        options={captureWindowOptions}
+                        placeholder="Select a window"
+                        disabled={isCaptureWindowSelectDisabled}
+                        onChange={(nextValue) => {
+                          const selectedWindow = captureWindows.find((window) => window.hwnd === nextValue);
+                          setFormData({
+                            ...formData,
+                            captureWindowHwnd: nextValue,
+                            captureWindowTitle: selectedWindow?.title ?? "",
+                          });
+                        }}
+                        ariaDescribedBy="settings-capture-window-help"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={loadCaptureWindows}
+                      disabled={isLoadingCaptureWindows}
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-sm border border-white/20 bg-white/6 px-3 text-sm text-neutral-100 transition-colors hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isLoadingCaptureWindows ? "animate-spin" : ""}`} />
+                      Refresh
+                    </button>
+                  </div>
+
+                  <p id="settings-capture-window-help" className="text-xs text-neutral-400">
+                    Select a visible top-level window. Minimized windows can produce black frames until restored.
+                  </p>
+
+                  {isSavedCaptureWindowUnavailable && (
+                    <p className="inline-flex items-center gap-1.5 text-xs text-amber-200">
+                      <XCircle className="h-3.5 w-3.5" />
+                      Your previously selected window is unavailable.
+                    </p>
+                  )}
+
+                  {captureWindowsError && (
+                    <p className="inline-flex items-center gap-1.5 text-xs text-rose-300">
+                      <XCircle className="h-3.5 w-3.5" />
+                      {captureWindowsError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {formData.captureSource === "monitor" && (
+                <p className="text-sm text-neutral-300">
+                  Capture records your primary monitor using the FFmpeg desktop duplication pipeline.
+                </p>
+              )}
+
               <div className="rounded-sm border border-white/15 bg-black/20 p-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-500">Troubleshooting</p>
                 <SettingsToggleField

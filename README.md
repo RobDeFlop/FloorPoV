@@ -4,7 +4,7 @@ A desktop app for recording WoW gameplay with markers on important events. Recor
 
 ## Features
 
-- Primary monitor capture via FFmpeg
+- Primary monitor or specific window capture via FFmpeg
 - Optional system audio capture (loopback)
 - Quality preset and FPS controls
 - Optional recording diagnostics mode
@@ -19,7 +19,7 @@ A desktop app for recording WoW gameplay with markers on important events. Recor
 - **System Audio**: enables desktop/game audio capture.
 - **Recording Diagnostics**: writes per-second FFmpeg/audio pipeline logs for troubleshooting.
 - **Microphone**: not available in the current FFmpeg-only recorder path.
-- **Capture Source**: primary monitor only in the current FFmpeg-only recorder path.
+- **Capture Source**: choose primary monitor or a specific window.
 
 ## Requirements
 

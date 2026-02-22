@@ -931,6 +931,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasapi",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

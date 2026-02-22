@@ -1,11 +1,21 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+fn default_capture_source() -> String {
+    "monitor".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecordingSettings {
     pub video_quality: String,
     pub frame_rate: u32,
     pub bitrate: u32,
+    #[serde(default = "default_capture_source")]
+    pub capture_source: String,
+    #[serde(default)]
+    pub capture_window_hwnd: Option<String>,
+    #[serde(default)]
+    pub capture_window_title: Option<String>,
     pub enable_system_audio: bool,
     pub enable_recording_diagnostics: bool,
 }

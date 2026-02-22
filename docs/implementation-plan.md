@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Floorpov records WoW gameplay with markers on important events (player deaths, kills, and manual markers). The current recorder is FFmpeg-based and focused on primary monitor capture.
+Floorpov records WoW gameplay with markers on important events (player deaths, kills, and manual markers). The current recorder is FFmpeg-based and supports both primary monitor and specific window capture.
 
 ## Tech Stack
 
@@ -48,7 +48,7 @@ src/
 1. Keep FFmpeg available at `src-tauri/bin/ffmpeg.exe` and bundle it via Tauri resources.
 2. Build `src/recording.rs` around FFmpeg process orchestration:
    - `start_recording` and `stop_recording`
-   - Primary monitor capture
+   - Primary monitor or specific window capture
    - Optional system audio loopback
    - Emit `recording-finalized` and `recording-stopped`
 3. Register recording and settings commands in `src-tauri/src/lib.rs`.
@@ -131,6 +131,6 @@ src/
 
 ## Current Decisions
 
-- Default capture source: primary monitor.
+- Default capture source: primary monitor (specific window is optional).
 - Output folder default: `%USERPROFILE%/Videos/Floorpov/`.
 - Combat log parser: mocked first, then real parser.
