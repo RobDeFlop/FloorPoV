@@ -31,5 +31,5 @@ chrono = "0.4"
 lazy_static = "1.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-notify = "6.1"
+notify = "8.2.0"
 wasapi = "0.22"
