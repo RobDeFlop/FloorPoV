@@ -1,4 +1,4 @@
-Place `ffmpeg.exe` in this directory for Floorpov recording.
+Place `ffmpeg.exe` in this directory for FloorPoV recording.
 
 Expected path:
 

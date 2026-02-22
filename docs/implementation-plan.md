@@ -2,7 +2,7 @@
 
 ## Project Goal
 
-Floorpov records WoW gameplay with markers on important events (player deaths, kills, and manual markers). The current recorder is FFmpeg-based and supports both primary monitor and specific window capture.
+FloorPoV records WoW gameplay with markers on important events (player deaths, kills, and manual markers). The current recorder is FFmpeg-based and supports both primary monitor and specific window capture.
 
 ## Tech Stack
 
@@ -118,7 +118,7 @@ src/
 | Container | MP4 |
 | Audio | System audio loopback (microphone deferred) |
 | Preview | Removed in FFmpeg-only mode |
-| Output folder | `%USERPROFILE%/Videos/Floorpov/` |
+| Output folder | `%USERPROFILE%/Videos/FloorPoV/` |
 
 ## Implementation Order
 
@@ -132,5 +132,5 @@ src/
 ## Current Decisions
 
 - Default capture source: primary monitor (specific window is optional).
-- Output folder default: `%USERPROFILE%/Videos/Floorpov/`.
+- Output folder default: `%USERPROFILE%/Videos/FloorPoV/`.
 - Combat log parser: mocked first, then real parser.

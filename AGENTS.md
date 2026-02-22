@@ -1,8 +1,8 @@
-# AGENTS.md - Floorpov Contributor Guide
+# AGENTS.md - FloorPoV Contributor Guide
 
 ## Project Overview
 
-Floorpov is a Tauri 2 desktop application with a React 19 + TypeScript frontend and a Rust backend.
+FloorPoV is a Tauri 2 desktop application with a React 19 + TypeScript frontend and a Rust backend.
 
 This file defines active engineering rules for contributors and coding agents.
 For product planning and phased implementation details, see `docs/implementation-plan.md`.
@@ -153,7 +153,7 @@ Writing style for docs and comments:
 ## Project Structure
 
 ```text
-Floorpov/
+FloorPoV/
 |- src/                    # React frontend
 |- src-tauri/              # Rust backend
 |- docs/                   # Project documentation

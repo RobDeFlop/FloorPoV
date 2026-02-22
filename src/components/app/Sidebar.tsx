@@ -1,14 +1,23 @@
 import { useState, type ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Activity, Bug, PanelLeft, Radar, SlidersHorizontal } from "lucide-react";
+import {
+  Activity,
+  Bug,
+  ExternalLink,
+  Github,
+  PanelLeft,
+  Radar,
+  SlidersHorizontal,
+} from "lucide-react";
 import { useRecording } from "../../contexts/RecordingContext";
 
 const gameModes = ["Mythic+", "Raid", "PvP"];
+const REPOSITORY_URL = "https://github.com/RobDeFlop/FloorPoV";
 
 interface SidebarProps {
   onNavigate: (view: "main" | "settings" | "debug") => void;
   currentView: "main" | "settings" | "debug";
-  showDebug: boolean;
+  isDebugMode: boolean;
 }
 
 interface SidebarNavButtonProps {
@@ -47,7 +56,7 @@ function SidebarNavButton({
   );
 }
 
-export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
+export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) {
   const [activeMode, setActiveMode] = useState<string | null>(null);
   const reduceMotion = useReducedMotion();
   const { isRecording, recordingDuration } = useRecording();
@@ -87,17 +96,6 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
             onClick={() => onNavigate("settings")}
             reduceMotion={reduceMotion}
           />
-          {showDebug && (
-            <SidebarNavButton
-              label="Debug"
-              icon={Bug}
-              isActive={isDebug}
-              activeClassName="border-amber-300/35 bg-amber-500/15 text-amber-100"
-              defaultClassName="border-transparent text-neutral-300 hover:border-amber-300/25 hover:bg-white/5 hover:text-neutral-100"
-              onClick={() => onNavigate("debug")}
-              reduceMotion={reduceMotion}
-            />
-          )}
         </nav>
       </div>
 
@@ -128,6 +126,23 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
       </nav>
 
       <div className="border-t border-white/10 p-3">
+        {isDebugMode && (
+          <div className="mb-3">
+            <div className="mb-2 text-[11px] uppercase tracking-[0.14em] text-neutral-500">
+              Developer
+            </div>
+            <SidebarNavButton
+              label="Debug"
+              icon={Bug}
+              isActive={isDebug}
+              activeClassName="border-amber-300/35 bg-amber-500/15 text-amber-100"
+              defaultClassName="border-transparent text-neutral-300 hover:border-amber-300/25 hover:bg-white/5 hover:text-neutral-100"
+              onClick={() => onNavigate("debug")}
+              reduceMotion={reduceMotion}
+            />
+          </div>
+        )}
+
         <motion.div
           className={`relative rounded-sm px-3 py-2 transition-colors ${
             isRecording
@@ -203,6 +218,19 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
             )}
           </AnimatePresence>
         </motion.div>
+
+        <a
+          href={REPOSITORY_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="mt-3 inline-flex w-full items-center justify-between rounded-sm border border-transparent px-2.5 py-2 text-xs text-neutral-400 transition-colors hover:border-white/15 hover:bg-white/5 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)]"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Github className="h-3.5 w-3.5" />
+            GitHub
+          </span>
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
       </div>
     </aside>
   );

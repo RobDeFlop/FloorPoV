@@ -109,7 +109,7 @@ export function Layout() {
                 <Sidebar 
                   onNavigate={setCurrentView}
                   currentView={currentView}
-                  showDebug={isDebugBuild}
+                  isDebugMode={isDebugBuild}
                 />
                 <AnimatePresence mode="wait" initial={false}>
                   {currentView === "main" ? (

@@ -1,4 +1,4 @@
-# Floorpov Feature Ideas
+# FloorPoV Feature Ideas
 
 ## Future Features to Implement
 

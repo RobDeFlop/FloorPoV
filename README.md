@@ -1,4 +1,4 @@
-# Floorpov
+# FloorPoV
 
 A desktop app for recording WoW gameplay with markers on important events. Recording uses an FFmpeg backend focused on primary monitor capture.
 

@@ -81,7 +81,7 @@ pub fn get_default_output_folder() -> Result<String, String> {
         .or_else(|_| std::env::var("HOME"))
         .map_err(|_| "Unable to determine home directory")?;
 
-    let videos_dir = Path::new(&home_dir).join("Videos").join("Floorpov");
+    let videos_dir = Path::new(&home_dir).join("Videos").join("FloorPoV");
 
     Ok(videos_dir.to_string_lossy().to_string())
 }

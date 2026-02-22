@@ -46,12 +46,12 @@ export function TitleBar() {
       >
         <div className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-2 py-1">
           <Clapperboard className="h-3.5 w-3.5 text-emerald-300" />
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-100">Floorpov</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-100">FloorPoV</span>
         </div>
 
         <div className="h-4 w-px bg-white/15" />
 
-        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Recorder</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Analyzer</div>
 
       </div>
       <div className="flex h-full shrink-0">

@@ -12,6 +12,18 @@ interface SettingsContextType {
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
+function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null {
+  if (defaultFolder.endsWith('\\FloorPoV')) {
+    return defaultFolder.slice(0, -'\\FloorPoV'.length) + '\\Floorpov';
+  }
+
+  if (defaultFolder.endsWith('/FloorPoV')) {
+    return defaultFolder.slice(0, -'/FloorPoV'.length) + '/Floorpov';
+  }
+
+  return null;
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,10 +56,28 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           ...stored,
         };
 
+        const defaultFolder = await invoke<string>('get_default_output_folder');
+        const legacyDefaultFolder = getLegacyDefaultOutputFolderPath(defaultFolder);
+        let shouldPersistMergedSettings = false;
+
         if (!mergedSettings.outputFolder) {
-          const defaultFolder = await invoke<string>('get_default_output_folder');
           mergedSettings.outputFolder = defaultFolder;
+          shouldPersistMergedSettings = true;
         }
+
+        if (
+          legacyDefaultFolder &&
+          mergedSettings.outputFolder === legacyDefaultFolder
+        ) {
+          mergedSettings.outputFolder = defaultFolder;
+          shouldPersistMergedSettings = true;
+        }
+
+        if (shouldPersistMergedSettings) {
+          await store.set('recording-settings', mergedSettings);
+          await store.save();
+        }
+
         setSettings(mergedSettings);
         
         if (mergedSettings.markerHotkey && mergedSettings.markerHotkey !== 'none') {

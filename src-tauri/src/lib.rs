@@ -3,6 +3,7 @@ mod hotkey;
 mod recording;
 mod settings;
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
@@ -16,6 +17,17 @@ fn greet(name: &str) -> String {
 #[tauri::command]
 fn is_debug_build() -> bool {
     cfg!(debug_assertions)
+}
+
+fn get_legacy_output_folder_path(output_folder: &str) -> Option<PathBuf> {
+    let output_path = Path::new(output_folder);
+    let folder_name = output_path.file_name()?.to_str()?;
+    if folder_name != "FloorPoV" {
+        return None;
+    }
+
+    let parent_folder = output_path.parent()?;
+    Some(parent_folder.join("Floorpov"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -40,22 +52,50 @@ pub fn run() {
                     tracing::error!("Failed to determine default output folder: {error}");
                     app.dialog()
                         .message("Could not determine the recordings output folder. Video playback may not work.")
-                        .title("Floorpov warning")
+                        .title("FloorPoV warning")
                         .kind(MessageDialogKind::Warning)
                         .show(|_| {});
                     return Ok(());
                 }
             };
 
+            if let Some(legacy_output_folder) = get_legacy_output_folder_path(&output_folder) {
+                let output_folder_path = Path::new(&output_folder);
+                if legacy_output_folder.is_dir() && !output_folder_path.exists() {
+                    if let Err(error) = std::fs::rename(&legacy_output_folder, output_folder_path) {
+                        tracing::warn!(
+                            "Failed to migrate legacy output folder '{}' to '{}': {error}",
+                            legacy_output_folder.to_string_lossy(),
+                            output_folder_path.to_string_lossy()
+                        );
+                        app.dialog()
+                            .message(format!(
+                                "Could not migrate the recordings folder from '{}' to '{}'. Recording will continue with the new default folder.",
+                                legacy_output_folder.to_string_lossy(),
+                                output_folder_path.to_string_lossy()
+                            ))
+                            .title("FloorPoV warning")
+                            .kind(MessageDialogKind::Warning)
+                            .show(|_| {});
+                    } else {
+                        tracing::info!(
+                            "Migrated legacy output folder '{}' to '{}'.",
+                            legacy_output_folder.to_string_lossy(),
+                            output_folder_path.to_string_lossy()
+                        );
+                    }
+                }
+            }
+
             if let Err(error) = std::fs::create_dir_all(&output_folder) {
                 tracing::warn!(
                     "Failed to create output folder '{output_folder}': {error}"
                 );
-                app.dialog()
+                    app.dialog()
                     .message(format!(
                         "Could not create the recordings folder at '{output_folder}'. Video playback may not work until this is fixed."
                     ))
-                    .title("Floorpov warning")
+                    .title("FloorPoV warning")
                     .kind(MessageDialogKind::Warning)
                     .show(|_| {});
             }
@@ -68,7 +108,7 @@ pub fn run() {
                     .message(format!(
                         "Could not allow the recordings folder in the asset scope. Video playback may not work.\n\nFolder: {output_folder}"
                     ))
-                    .title("Floorpov warning")
+                    .title("FloorPoV warning")
                     .kind(MessageDialogKind::Warning)
                     .show(|_| {});
             } else {

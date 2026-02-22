@@ -424,7 +424,7 @@ export function Settings({ onBack }: SettingsProps) {
                   ariaDescribedBy="settings-capture-source-help"
                 />
                 <p id="settings-capture-source-help" className="mt-1 text-xs text-neutral-400">
-                  Choose whether Floorpov captures your primary monitor or one specific window.
+                  Choose whether FloorPoV captures your primary monitor or one specific window.
                 </p>
               </div>
 
@@ -517,11 +517,12 @@ export function Settings({ onBack }: SettingsProps) {
                   value={formData.wowFolder}
                   onBrowse={handleBrowseWowFolder}
                 />
-                {!formData.wowFolder && (
-                  <p className="mt-2 text-xs text-neutral-400">
-                    Select your WoW installation folder. Floorpov reads combat events from Logs/WoWCombatLog.txt.
-                  </p>
-                )}
+                <p className="mt-2 text-xs text-neutral-400">
+                  Select your WoW client folder (for example: {" "}
+                  <span className="font-mono">C:\Program Files (x86)\World of Warcraft\_retail_</span>
+                  ). FloorPoV then reads combat events from{" "}
+                  <span className="font-mono">Logs\WoWCombatLog.txt</span> inside that folder.
+                </p>
                 {formData.wowFolder && isWowFolderValid && (
                   <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-neutral-300">
                     <CheckCircle2 className="h-3.5 w-3.5" />

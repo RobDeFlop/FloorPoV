@@ -1,4 +1,4 @@
-# Floorpov Coding Guidelines
+# FloorPoV Coding Guidelines
 
 This document expands on `AGENTS.md` with naming examples and practical guidance.
 
