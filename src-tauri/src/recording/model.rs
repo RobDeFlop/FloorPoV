@@ -64,6 +64,7 @@ pub(crate) struct SegmentRunResult {
     pub(crate) transition: SegmentTransition,
     pub(crate) ffmpeg_succeeded: bool,
     pub(crate) output_written: bool,
+    pub(crate) force_killed: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -84,9 +85,9 @@ pub(crate) struct MonitorIndexSearchState {
 
 pub(crate) const FFMPEG_RESOURCE_PATH: &str = "bin/ffmpeg.exe";
 pub(crate) const FFMPEG_STOP_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const FFMPEG_TRANSITION_TIMEOUT: Duration = Duration::from_millis(900);
-pub(crate) const FFMPEG_MODE_SWITCH_TO_BLACK_TIMEOUT: Duration = Duration::from_millis(1200);
-pub(crate) const FFMPEG_MODE_SWITCH_TO_WINDOW_TIMEOUT: Duration = Duration::from_millis(450);
+pub(crate) const FFMPEG_TRANSITION_TIMEOUT: Duration = Duration::from_secs(3);
+pub(crate) const FFMPEG_MODE_SWITCH_TO_BLACK_TIMEOUT: Duration = Duration::from_secs(4);
+pub(crate) const FFMPEG_MODE_SWITCH_TO_WINDOW_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) const SYSTEM_AUDIO_SAMPLE_RATE_HZ: usize = 48_000;
 pub(crate) const SYSTEM_AUDIO_CHANNEL_COUNT: usize = 2;
 pub(crate) const SYSTEM_AUDIO_BITS_PER_SAMPLE: usize = 16;

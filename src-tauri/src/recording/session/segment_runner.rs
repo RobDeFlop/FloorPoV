@@ -63,6 +63,7 @@ fn segment_result_for_capture_input_error(
             transition: SegmentTransition::Switch(RuntimeCaptureMode::Black),
             ffmpeg_succeeded: false,
             output_written: false,
+            force_killed: false,
         };
     }
 
@@ -70,6 +71,7 @@ fn segment_result_for_capture_input_error(
         transition: SegmentTransition::Stop,
         ffmpeg_succeeded: false,
         output_written: false,
+        force_killed: false,
     }
 }
 
@@ -133,6 +135,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                     transition: SegmentTransition::Stop,
                     ffmpeg_succeeded: false,
                     output_written: false,
+                    force_killed: false,
                 };
             }
         };
@@ -143,6 +146,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                 transition: SegmentTransition::Stop,
                 ffmpeg_succeeded: false,
                 output_written: false,
+                force_killed: false,
             };
         }
 
@@ -154,6 +158,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                     transition: SegmentTransition::Stop,
                     ffmpeg_succeeded: false,
                     output_written: false,
+                    force_killed: false,
                 };
             }
         };
@@ -283,6 +288,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                 transition: SegmentTransition::Stop,
                 ffmpeg_succeeded: false,
                 output_written: false,
+                force_killed: false,
             };
         }
     };
@@ -352,6 +358,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                 transition: SegmentTransition::Stop,
                 ffmpeg_succeeded: false,
                 output_written: false,
+                force_killed: false,
             };
         };
 
@@ -412,6 +419,7 @@ pub(super) fn run_ffmpeg_recording_segment(
 
     let mut stop_requested_at: Option<Instant> = None;
     let mut kill_sent = false;
+    let mut force_killed = false;
     let mut stats_logged_at = Instant::now();
     let mut previous_queued = 0u64;
     let mut previous_dequeued = 0u64;
@@ -446,8 +454,13 @@ pub(super) fn run_ffmpeg_recording_segment(
                 resolve_stop_timeout(stop_requested_by_user, requested_transition_kind);
 
             if !kill_sent && requested_at.elapsed() >= stop_timeout {
-                if let Err(error) = child.kill() {
-                    tracing::warn!("Failed to force-stop FFmpeg process: {error}");
+                match child.kill() {
+                    Ok(()) => {
+                        force_killed = true;
+                    }
+                    Err(error) => {
+                        tracing::warn!("Failed to force-stop FFmpeg process: {error}");
+                    }
                 }
                 kill_sent = true;
             }
@@ -692,8 +705,13 @@ pub(super) fn run_ffmpeg_recording_segment(
         }
         Err(error) => {
             tracing::error!("Failed while waiting for FFmpeg recording process: {error}");
-            if let Err(kill_error) = child.kill() {
-                tracing::debug!("FFmpeg kill after wait failure returned: {kill_error}");
+            match child.kill() {
+                Ok(()) => {
+                    force_killed = true;
+                }
+                Err(kill_error) => {
+                    tracing::debug!("FFmpeg kill after wait failure returned: {kill_error}");
+                }
             }
             if let Err(wait_error) = child.wait() {
                 tracing::warn!("Failed to collect FFmpeg exit status after kill: {wait_error}");
@@ -740,5 +758,6 @@ pub(super) fn run_ffmpeg_recording_segment(
         transition,
         ffmpeg_succeeded: ffmpeg_completed_successfully,
         output_written,
+        force_killed,
     }
 }

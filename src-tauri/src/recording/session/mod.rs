@@ -128,7 +128,14 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             );
 
             if run_result.output_written {
-                segment_paths.push(segment_output_path);
+                if run_result.force_killed {
+                    tracing::warn!(
+                        segment_path = %segment_output_path.display(),
+                        "Skipping segment because FFmpeg was force-killed before clean finalization"
+                    );
+                } else {
+                    segment_paths.push(segment_output_path);
+                }
             }
 
             if run_result.ffmpeg_succeeded {

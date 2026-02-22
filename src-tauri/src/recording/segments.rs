@@ -2,7 +2,7 @@ use std::fs;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use super::model::CREATE_NO_WINDOW;
 
@@ -140,16 +140,76 @@ fn collect_non_empty_segments(segment_paths: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+fn segment_is_decodable(ffmpeg_binary_path: &Path, segment_path: &Path) -> bool {
+    let mut command = Command::new(ffmpeg_binary_path);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let status = command
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-nostdin")
+        .arg("-i")
+        .arg(segment_path)
+        .arg("-frames:v")
+        .arg("1")
+        .arg("-f")
+        .arg("null")
+        .arg("-")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    match status {
+        Ok(status) => status.success(),
+        Err(error) => {
+            tracing::warn!(
+                segment_path = %segment_path.display(),
+                "Failed to validate recording segment readability: {error}"
+            );
+            false
+        }
+    }
+}
+
+fn collect_decodable_segments(
+    ffmpeg_binary_path: &Path,
+    segment_paths: &[PathBuf],
+) -> Vec<PathBuf> {
+    segment_paths
+        .iter()
+        .filter(|segment_path| {
+            let is_decodable = segment_is_decodable(ffmpeg_binary_path, segment_path);
+            if !is_decodable {
+                tracing::warn!(
+                    segment_path = %segment_path.display(),
+                    "Skipping recording segment because FFmpeg could not decode it"
+                );
+            }
+            is_decodable
+        })
+        .cloned()
+        .collect()
+}
+
 pub(crate) fn finalize_segmented_recording(
     ffmpeg_binary_path: &Path,
     segment_workspace: &Path,
     segment_paths: &[PathBuf],
     output_path: &str,
 ) -> Result<(), String> {
-    let valid_segment_paths = collect_non_empty_segments(segment_paths);
+    let non_empty_segment_paths = collect_non_empty_segments(segment_paths);
+
+    if non_empty_segment_paths.is_empty() {
+        return Err("No recording segments were produced".to_string());
+    }
+
+    let valid_segment_paths =
+        collect_decodable_segments(ffmpeg_binary_path, &non_empty_segment_paths);
 
     if valid_segment_paths.is_empty() {
-        return Err("No recording segments were produced".to_string());
+        return Err("No valid recording segments were produced".to_string());
     }
 
     if let Err(initial_error) = finalize_with_exact_segments(
@@ -160,10 +220,37 @@ pub(crate) fn finalize_segmented_recording(
     ) {
         tracing::warn!(
             error = %initial_error,
-            "FFmpeg concat failed for full segment set. Trying recovery strategies"
+            "FFmpeg concat failed for full segment set. Trying middle-drop and edge recovery strategies"
         );
 
         let mut last_error = initial_error;
+
+        if valid_segment_paths.len() > 2 {
+            for remove_index in 1..(valid_segment_paths.len() - 1) {
+                let mut candidate_segments = valid_segment_paths.clone();
+                let removed_segment = candidate_segments.remove(remove_index);
+
+                match finalize_with_exact_segments(
+                    ffmpeg_binary_path,
+                    segment_workspace,
+                    &candidate_segments,
+                    output_path,
+                ) {
+                    Ok(()) => {
+                        tracing::warn!(
+                            remove_index,
+                            removed_segment = %removed_segment.display(),
+                            total_segments = valid_segment_paths.len(),
+                            "Recovered recording by dropping one invalid middle segment"
+                        );
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        last_error = error;
+                    }
+                }
+            }
+        }
 
         for prefix_len in (1..valid_segment_paths.len()).rev() {
             let prefix_segments = &valid_segment_paths[..prefix_len];
@@ -211,7 +298,7 @@ pub(crate) fn finalize_segmented_recording(
         }
 
         return Err(format!(
-            "Failed to finalize recording after trying full/prefix/suffix concat strategies. Last error: {last_error}"
+            "Failed to finalize recording after trying full/middle-drop/prefix/suffix concat strategies. Last error: {last_error}"
         ));
     }
 
