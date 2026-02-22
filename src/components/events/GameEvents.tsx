@@ -27,12 +27,12 @@ export function GameEvents() {
   };
 
   return (
-    <div className="game-events-container bg-[var(--surface-2)] border-t border-emerald-300/10 px-4 py-3">
+    <div className="game-events-container bg-[var(--surface-2)] border-t border-white/10 px-4 py-3">
       <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-neutral-400">
-        <Activity className="h-3.5 w-3.5 text-emerald-300" />
+        <Activity className="h-3.5 w-3.5 text-neutral-300" />
         Game Events
       </div>
-      <div className="relative h-6 rounded-md border border-emerald-300/10 bg-black/20 px-1">
+      <div className="relative h-6 rounded-sm border border-white/10 bg-black/20 px-1">
         <div className="absolute inset-1 rounded-full bg-neutral-800" />
         {events.map((event) => {
           const position = duration > 0 ? (event.timestamp / duration) * 100 : 0;
@@ -40,7 +40,7 @@ export function GameEvents() {
             <motion.button
               key={event.id}
               type="button"
-              className="absolute top-1/2 -ml-2 -translate-y-1/2 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+               className="absolute top-1/2 -ml-2 -translate-y-1/2 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
               style={{ left: `${position}%` }}
               onClick={() => handleEventClick(event.timestamp)}
               onMouseEnter={(e) => handleEventHover(event, e)}

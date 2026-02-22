@@ -200,7 +200,7 @@ export function RecordingsList() {
 
   return (
     <motion.section
-      className="flex flex-1 min-h-0 flex-col bg-[var(--surface-1)] border-t border-emerald-300/10 px-4 py-3"
+      className="flex flex-1 min-h-0 flex-col bg-[var(--surface-1)] border-t border-white/10 px-4 py-3"
       variants={panelVariants}
       initial={reduceMotion ? false : 'initial'}
       animate="animate"
@@ -208,14 +208,14 @@ export function RecordingsList() {
     >
       <div className="mb-2.5 flex items-center justify-between pr-2">
         <h2 className="inline-flex items-center gap-2 text-sm font-medium text-neutral-100">
-          <Film className="h-4 w-4 text-emerald-300" />
+          <Film className="h-4 w-4 text-neutral-300" />
           Recordings
         </h2>
         <motion.button
           type="button"
           onClick={loadRecordings}
           disabled={isLoading || !settings.outputFolder}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-400/30 bg-emerald-500/12 px-2.5 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-white/20 bg-white/5 px-2.5 text-xs text-neutral-200 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
           whileHover={reduceMotion ? undefined : { y: -1 }}
           whileTap={reduceMotion ? undefined : { scale: 0.98 }}
         >
@@ -243,10 +243,10 @@ export function RecordingsList() {
               return (
                 <motion.li
                   key={`${recording.filename}-${recording.created_at}`}
-                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-md border text-left transition-colors hover:bg-white/5 ${
+                  className={`grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-1 rounded-sm border text-left transition-colors hover:bg-white/5 ${
                     isLoadedRecording
                       ? 'border-emerald-300/40 bg-emerald-500/12 hover:border-emerald-300/50'
-                      : 'border-emerald-300/10 bg-black/20 hover:border-emerald-300/30'
+                      : 'border-white/10 bg-black/20 hover:border-white/25'
                   }`}
                   initial={reduceMotion ? false : { opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -257,10 +257,10 @@ export function RecordingsList() {
                     onClick={() => handleLoadRecording(recording)}
                     disabled={isActionLocked}
                     aria-current={isLoadedRecording ? 'true' : undefined}
-                    className="min-w-0 flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-w-0 flex w-full items-center justify-between gap-2 rounded-sm px-2.5 py-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <span className="min-w-0 flex items-center gap-2">
-                      <HardDrive className="w-3.5 h-3.5 text-emerald-300/80 shrink-0" />
+                      <HardDrive className="w-3.5 h-3.5 text-neutral-300/80 shrink-0" />
                       <span className="min-w-0">
                         <span className="block truncate text-xs text-neutral-200" title={recording.filename}>
                           {recording.filename}
@@ -280,7 +280,7 @@ export function RecordingsList() {
                     type="button"
                     onClick={() => handleDeleteRecording(recording)}
                     disabled={isRecording || Boolean(loadingRecordingPath) || Boolean(deletingRecordingPath)}
-                    className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-md border border-rose-300/25 bg-rose-500/10 text-rose-200 transition-colors hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-sm border border-rose-300/25 bg-rose-500/10 text-rose-200 transition-colors hover:bg-rose-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
                     title="Delete recording"
                     aria-label={`Delete recording ${recording.filename}`}
                   >
@@ -297,16 +297,16 @@ export function RecordingsList() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div
             ref={deleteDialogRef}
-            className="w-full max-w-md rounded-[var(--radius-md)] border border-emerald-300/15 bg-[var(--surface-2)] p-4 shadow-[var(--surface-glow)]"
+            className="w-full max-w-md rounded-sm border border-white/15 bg-[var(--surface-2)] p-4 shadow-[var(--surface-glow)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-recording-title"
             aria-describedby="delete-recording-description"
           >
-            <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300/25 bg-rose-500/12">
+            <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-rose-300/25 bg-rose-500/12">
               <AlertTriangle className="h-4 w-4 text-rose-200" />
             </div>
-            <h3 id="delete-recording-title" className="text-sm font-semibold uppercase tracking-[0.11em] text-emerald-200">Delete recording?</h3>
+            <h3 id="delete-recording-title" className="text-sm font-semibold uppercase tracking-[0.11em] text-neutral-100">Delete recording?</h3>
             <p id="delete-recording-description" className="mt-2 text-sm text-neutral-300">
               This will permanently delete{" "}
               <span className="font-medium text-neutral-100">{pendingDeleteRecording.filename}</span>.
@@ -318,7 +318,7 @@ export function RecordingsList() {
                   type="button"
                   onClick={cancelDeleteRecording}
                   disabled={Boolean(deletingRecordingPath)}
-                  className="inline-flex h-8 items-center rounded-md border border-emerald-300/20 bg-black/20 px-3 text-xs text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-8 items-center rounded-sm border border-white/20 bg-black/20 px-3 text-xs text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -326,7 +326,7 @@ export function RecordingsList() {
                   type="button"
                   onClick={confirmDeleteRecording}
                   disabled={Boolean(deletingRecordingPath)}
-                  className="inline-flex h-8 items-center rounded-md border border-rose-300/35 bg-rose-500/14 px-3 text-xs font-semibold text-rose-100 transition-colors hover:bg-rose-500/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-8 items-center rounded-sm border border-rose-300/35 bg-rose-500/14 px-3 text-xs font-semibold text-rose-100 transition-colors hover:bg-rose-500/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                 {deletingRecordingPath ? 'Deleting...' : 'Delete'}
               </button>

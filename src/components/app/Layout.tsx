@@ -115,7 +115,7 @@ export function Layout() {
                   {currentView === "main" ? (
                     <motion.div
                       key="main-view"
-                      className={`flex-1 flex flex-col min-w-0 rounded-[var(--radius-lg)] border border-emerald-300/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden ${isResizingMedia ? "select-none" : ""}`}
+                      className={`flex-1 flex flex-col min-w-0 rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden ${isResizingMedia ? "select-none" : ""}`}
                       variants={panelVariants}
                       initial={reduceMotion ? false : "initial"}
                       animate="animate"
@@ -132,8 +132,8 @@ export function Layout() {
                         <RecordingControls />
                       </section>
                       <div
-                        className={`flex h-3 w-full cursor-row-resize items-center justify-center border-y border-emerald-300/10 bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${
-                          isResizingMedia ? "bg-emerald-500/15" : "hover:bg-white/5"
+                        className={`flex h-3 w-full cursor-row-resize items-center justify-center border-y border-white/10 bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
+                          isResizingMedia ? "bg-white/10" : "hover:bg-white/5"
                         }`}
                         onPointerDown={handleMediaResizeStart}
                         onKeyDown={(event) => {
@@ -157,14 +157,14 @@ export function Layout() {
                         aria-valuetext={`${mediaSectionHeight}px`}
                         tabIndex={0}
                       >
-                        <div className="h-0.5 w-24 rounded-full bg-emerald-200/30" />
+                        <div className="h-0.5 w-24 rounded-full bg-white/35" />
                       </div>
                       <RecordingsList />
                     </motion.div>
                   ) : currentView === "settings" ? (
                     <motion.div
                       key="settings-view"
-                      className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-[var(--radius-lg)] border border-emerald-300/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden"
+                      className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)] overflow-hidden"
                       variants={panelVariants}
                       initial={reduceMotion ? false : "initial"}
                       animate="animate"

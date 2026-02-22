@@ -149,7 +149,7 @@ export function VideoPlayer() {
             role="status"
             aria-live="polite"
           >
-            <LoaderCircle className="h-6 w-6 animate-spin text-emerald-200" />
+            <LoaderCircle className="h-6 w-6 animate-spin text-neutral-200" />
             <p className="text-sm font-medium text-neutral-100">Loading recording...</p>
           </div>
         )}
@@ -157,8 +157,8 @@ export function VideoPlayer() {
         {!videoSrc && !isRecording && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <>
-              <div className="mb-3 rounded-full border border-emerald-300/20 bg-emerald-500/10 p-2">
-                <Clapperboard className="h-5 w-5 text-emerald-200" />
+              <div className="mb-3 rounded-full border border-white/20 bg-white/5 p-2">
+                <Clapperboard className="h-5 w-5 text-neutral-200" />
               </div>
               <p className="text-neutral-400">No recording loaded</p>
             </>
@@ -216,7 +216,7 @@ export function VideoPlayer() {
 
               <div
                 ref={progressRef}
-                className="group relative order-last h-2 w-full cursor-pointer rounded-full border border-emerald-300/10 bg-neutral-700/80 md:order-none md:min-w-0 md:flex-1"
+                className="group relative order-last h-2 w-full cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 md:order-none md:min-w-0 md:flex-1"
                 onClick={handleProgressClick}
                 onKeyDown={(event) => {
                   if (duration <= 0) {
@@ -267,7 +267,7 @@ export function VideoPlayer() {
                     <button
                       key={event.id}
                       type="button"
-                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-sm p-0.5 text-neutral-200 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-sm p-0.5 text-neutral-200 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                       style={{ left: `${position}%` }}
                       onClick={(eventClick) => {
                         eventClick.stopPropagation();
@@ -285,7 +285,7 @@ export function VideoPlayer() {
                 <button
                   type="button"
                   onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                  className="rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 transition-colors hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
+                  className="rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 transition-colors hover:text-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                   aria-haspopup="menu"
                   aria-expanded={showSpeedMenu}
                   aria-label="Playback speed"
@@ -306,7 +306,7 @@ export function VideoPlayer() {
                         aria-checked={playbackRate === rate}
                         className={`block w-full text-left px-3 py-1 text-xs ${
                           playbackRate === rate
-                            ? "text-emerald-300 bg-emerald-500/20"
+                            ? "text-neutral-100 bg-white/12"
                             : "text-neutral-300 hover:bg-neutral-800"
                         }`}
                       >

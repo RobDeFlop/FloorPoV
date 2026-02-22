@@ -41,7 +41,7 @@ export function RecordingControls() {
 
   return (
     <motion.div
-      className="flex flex-wrap items-center gap-2 border-t border-emerald-300/10 bg-[var(--surface-2)] px-3 py-2.5 sm:gap-3 sm:px-4"
+      className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-[var(--surface-2)] px-3 py-2.5 sm:gap-3 sm:px-4"
       variants={panelVariants}
       initial={reduceMotion ? false : 'initial'}
       animate="animate"
@@ -51,7 +51,7 @@ export function RecordingControls() {
         type="button"
         onClick={handleRecordingToggle}
         disabled={isRecordingBusy}
-        className={`flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${
+        className={`flex items-center gap-2 rounded-sm border px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
           isRecording
             ? "border-rose-300/40 bg-rose-500/25 hover:bg-rose-500/30 text-rose-50"
             : "border-emerald-300/35 bg-emerald-500/20 hover:bg-emerald-500/28 text-emerald-100"
@@ -79,7 +79,7 @@ export function RecordingControls() {
 
       {isRecording && settings.markerHotkey !== 'none' && (
           <span className="text-xs text-neutral-400 md:ml-auto">
-            Press <kbd className="px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-400/30 rounded text-emerald-200 font-mono">{settings.markerHotkey}</kbd> to add marker
+            Press <kbd className="px-1.5 py-0.5 bg-white/10 border border-white/20 rounded text-neutral-200 font-mono">{settings.markerHotkey}</kbd> to add marker
           </span>
         )}
 

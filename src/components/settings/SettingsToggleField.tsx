@@ -17,7 +17,7 @@ export function SettingsToggleField({
     <div className="space-y-2">
       <label
         htmlFor={id}
-        className="flex items-center gap-3 rounded-md border border-emerald-300/20 bg-black/20 px-3 py-2 text-neutral-200"
+        className="flex items-center gap-3 rounded-sm border border-white/20 bg-black/20 px-3 py-2 text-neutral-200"
       >
         <input
           id={id}

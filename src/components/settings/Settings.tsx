@@ -162,7 +162,7 @@ export function Settings({ onBack }: SettingsProps) {
     : 0;
 
   const fieldClassName =
-    "w-full rounded-md border border-emerald-300/20 bg-black/20 px-3 py-2 text-sm text-neutral-100 transition-colors placeholder:text-neutral-400 focus:border-emerald-300/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/45 disabled:cursor-not-allowed disabled:border-emerald-300/10 disabled:bg-black/10 disabled:text-neutral-500";
+    "w-full rounded-md border border-white/20 bg-black/20 px-3 py-2 text-sm text-neutral-100 transition-colors placeholder:text-neutral-400 focus:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black/10 disabled:text-neutral-500";
   const videoQualityOptions: SettingsSelectOption[] = Object.entries(QUALITY_SETTINGS).map(
     ([key, { label }]) => ({ value: key, label }),
   );
@@ -190,7 +190,7 @@ export function Settings({ onBack }: SettingsProps) {
       {isRecording && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
           <div
-            className="max-w-md rounded-[var(--radius-md)] border border-rose-300/25 bg-[var(--surface-2)] p-8 text-center shadow-[var(--surface-glow)]"
+            className="max-w-md rounded-sm border border-rose-300/25 bg-[var(--surface-2)] p-8 text-center shadow-[var(--surface-glow)]"
             role="status"
             aria-live="polite"
           >
@@ -205,19 +205,19 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       )}
 
-      <div className="flex shrink-0 items-center gap-4 border-b border-emerald-300/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+      <div className="flex shrink-0 items-center gap-4 border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-emerald-300/20 bg-black/20 text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/20 bg-black/20 text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
             aria-label="Back to main view"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div>
             <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
-              <Settings2 className="h-4 w-4 text-emerald-300" />
+              <Settings2 className="h-4 w-4 text-neutral-300" />
               Settings
             </h1>
             <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">Capture and recording configuration</p>
@@ -270,7 +270,7 @@ export function Settings({ onBack }: SettingsProps) {
                   value={formData.outputFolder}
                   onBrowse={handleBrowseFolder}
                 />
-                <div className="mt-3 rounded-md border border-emerald-300/10 bg-black/20 p-3">
+                <div className="mt-3 rounded-sm border border-white/10 bg-black/20 p-3">
                   <div className="mb-2 flex items-center justify-between text-xs text-neutral-300">
                     <span>Current usage</span>
                     <span className="font-mono text-neutral-200">
@@ -312,7 +312,7 @@ export function Settings({ onBack }: SettingsProps) {
               <p className="text-sm text-neutral-300">
                 Capture uses the FFmpeg pipeline and records your primary monitor.
               </p>
-              <div className="rounded-md border border-emerald-300/15 bg-black/20 p-3">
+              <div className="rounded-sm border border-white/15 bg-black/20 p-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-500">Troubleshooting</p>
                 <SettingsToggleField
                   id={fieldIds.enableRecordingDiagnostics}
@@ -345,7 +345,7 @@ export function Settings({ onBack }: SettingsProps) {
                   </p>
                 )}
                 {formData.wowFolder && isWowFolderValid && (
-                  <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-300">
+                  <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-neutral-300">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     Combat log found at Logs/WoWCombatLog.txt.
                   </p>
@@ -403,12 +403,12 @@ export function Settings({ onBack }: SettingsProps) {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-emerald-300/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+      <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
         <button
           type="button"
           onClick={handleCancel}
           disabled={!hasChanges}
-          className="rounded-md border border-emerald-300/20 bg-black/20 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-sm border border-white/20 bg-black/20 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Cancel
         </button>
@@ -416,7 +416,7 @@ export function Settings({ onBack }: SettingsProps) {
           type="button"
           onClick={handleSave}
           disabled={!hasChanges}
-          className="rounded-md border border-emerald-300/35 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="rounded-sm border border-emerald-300/35 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save Changes
         </button>

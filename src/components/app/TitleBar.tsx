@@ -37,19 +37,19 @@ export function TitleBar() {
 
   return (
     <div
-      className="flex h-10 items-stretch justify-between border-b border-emerald-300/10 bg-[var(--surface-1)] backdrop-blur-md select-none"
+      className="flex h-10 items-stretch justify-between border-b border-white/10 bg-[var(--surface-1)] backdrop-blur-md select-none"
     >
       <div
         className="flex h-full min-w-0 flex-1 items-center gap-3 px-3"
         data-tauri-drag-region
         onPointerDown={handleDragStart}
       >
-        <div className="inline-flex items-center gap-2 rounded-md border border-emerald-300/15 bg-emerald-500/10 px-2 py-1">
+        <div className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-2 py-1">
           <Clapperboard className="h-3.5 w-3.5 text-emerald-300" />
-          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">Floorpov</span>
+          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-100">Floorpov</span>
         </div>
 
-        <div className="h-4 w-px bg-emerald-200/15" />
+        <div className="h-4 w-px bg-white/15" />
 
         <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Recorder</div>
 
@@ -58,7 +58,7 @@ export function TitleBar() {
         <button
           type="button"
           onClick={handleMinimize}
-          className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-white/5 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+          className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-white/5 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
           title="Minimize"
           aria-label="Minimize window"
         >
@@ -69,7 +69,7 @@ export function TitleBar() {
         <button
           type="button"
           onClick={handleMaximize}
-          className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-white/5 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+          className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-white/5 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
           title="Maximize"
           aria-label="Maximize window"
         >

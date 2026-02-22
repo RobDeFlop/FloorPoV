@@ -72,9 +72,9 @@ function getEncounterCategoryLabel(category: EncounterTimelineSegment["category"
 function getEncounterCategoryClassName(category: EncounterTimelineSegment["category"]): string {
   switch (category) {
     case "mythicPlus":
-      return "border-cyan-300/35 bg-cyan-500/12 text-cyan-200";
+      return "border-neutral-300/30 bg-white/6 text-neutral-200";
     case "raid":
-      return "border-violet-300/35 bg-violet-500/12 text-violet-200";
+      return "border-neutral-300/30 bg-white/8 text-neutral-100";
     case "pvp":
       return "border-rose-300/35 bg-rose-500/12 text-rose-200";
     default:
@@ -85,13 +85,13 @@ function getEncounterCategoryClassName(category: EncounterTimelineSegment["categ
 function getEventMarkerClassName(eventType: string): string {
   switch (eventType) {
     case "PARTY_KILL":
-      return "bg-emerald-200 border-emerald-50/85";
+      return "bg-neutral-200 border-neutral-50/85";
     case "UNIT_DIED":
       return "bg-rose-200 border-rose-50/85";
     case "SPELL_INTERRUPT":
       return "bg-amber-200 border-amber-50/85";
     case "SPELL_DISPEL":
-      return "bg-cyan-200 border-cyan-50/85";
+      return "bg-neutral-300 border-neutral-100/85";
     default:
       return "bg-neutral-200 border-neutral-50/80";
   }
@@ -115,13 +115,13 @@ function getEventMarkerIcon(eventType: string) {
 function getEventIconClassName(eventType: string): string {
   switch (eventType) {
     case "PARTY_KILL":
-      return "text-emerald-950";
+      return "text-neutral-950";
     case "UNIT_DIED":
       return "text-rose-950";
     case "SPELL_INTERRUPT":
       return "text-amber-950";
     case "SPELL_DISPEL":
-      return "text-cyan-950";
+      return "text-neutral-950";
     default:
       return "text-neutral-900";
   }
@@ -332,13 +332,13 @@ export function CombatLogDebug() {
 
   return (
     <motion.section
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--radius-lg)] border border-emerald-300/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)]"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)]"
       variants={panelVariants}
       initial={reduceMotion ? false : "initial"}
       animate="animate"
       transition={smoothTransition}
     >
-      <div className="shrink-0 border-b border-emerald-300/10 bg-[var(--surface-1)] px-5 py-4">
+      <div className="shrink-0 border-b border-white/10 bg-[var(--surface-1)] px-5 py-4">
         <h1 className="inline-flex items-center gap-2 text-base font-semibold text-neutral-100">
           <Bug className="h-4 w-4 text-amber-300" />
           Combat Log Debug
@@ -350,11 +350,11 @@ export function CombatLogDebug() {
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
         <div className="space-y-4">
-          <section className="rounded-[var(--radius-md)] border border-emerald-300/10 bg-[var(--surface-1)]/80 p-4">
+          <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <button
                 onClick={handleSelectCombatLog}
-                className="inline-flex items-center gap-2 rounded-md border border-emerald-300/25 bg-emerald-500/12 px-4 py-2 text-sm text-emerald-100 transition-colors hover:bg-emerald-500/20"
+                className="inline-flex items-center gap-2 rounded-sm border border-white/25 bg-white/6 px-4 py-2 text-sm text-neutral-100 transition-colors hover:bg-white/12"
               >
                 <FolderOpen className="h-4 w-4" />
                 Select Combat Log
@@ -362,7 +362,7 @@ export function CombatLogDebug() {
               <button
                 onClick={handleParseCombatLog}
                 disabled={!selectedFilePath || isParsing}
-                className="inline-flex items-center gap-2 rounded-md border border-amber-300/30 bg-amber-500/12 px-4 py-2 text-sm text-amber-100 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-sm border border-amber-300/30 bg-amber-500/12 px-4 py-2 text-sm text-amber-100 transition-colors hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw className={`h-4 w-4 ${isParsing ? "animate-spin" : ""}`} />
                 {isParsing ? "Parsing..." : "Parse"}
@@ -378,19 +378,19 @@ export function CombatLogDebug() {
           {parseResult && (
             <>
               <section className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-md border border-emerald-300/12 bg-black/20 p-3">
+                <div className="rounded-sm border border-white/12 bg-black/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">File Size</div>
                   <div className="mt-1 text-sm text-neutral-100">{formatBytes(parseResult.fileSizeBytes)}</div>
                 </div>
-                <div className="rounded-md border border-emerald-300/12 bg-black/20 p-3">
+                <div className="rounded-sm border border-white/12 bg-black/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Lines Scanned</div>
                   <div className="mt-1 text-sm text-neutral-100">{parseResult.totalLines.toLocaleString()}</div>
                 </div>
-                <div className="rounded-md border border-emerald-300/12 bg-black/20 p-3">
+                <div className="rounded-sm border border-white/12 bg-black/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Important Events</div>
                   <div className="mt-1 text-sm text-neutral-100">{totalImportantEvents.toLocaleString()}</div>
                 </div>
-                <div className="rounded-md border border-emerald-300/12 bg-black/20 p-3">
+                <div className="rounded-sm border border-white/12 bg-black/20 p-3">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Events Shown</div>
                   <div className="mt-1 text-sm text-neutral-100">
                     {parseResult.parsedEvents.length.toLocaleString()}
@@ -399,15 +399,15 @@ export function CombatLogDebug() {
                 </div>
               </section>
 
-              <section className="rounded-[var(--radius-md)] border border-emerald-300/10 bg-[var(--surface-1)]/80 p-4">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-200">
+              <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Event Counts
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {Object.entries(parseResult.eventCounts).map(([eventType, count]) => (
                     <span
                       key={eventType}
-                      className="rounded-md border border-emerald-300/20 bg-black/20 px-2 py-1 text-xs text-neutral-200"
+                      className="rounded-sm border border-white/20 bg-black/20 px-2 py-1 text-xs text-neutral-200"
                     >
                       {eventType}: {count.toLocaleString()}
                     </span>
@@ -421,9 +421,9 @@ export function CombatLogDebug() {
               <section
                 ref={timelineSectionRef}
                 onMouseLeave={hideTimelineTooltip}
-                className="relative rounded-[var(--radius-md)] border border-emerald-300/10 bg-[var(--surface-1)]/80 p-4"
+                className="relative rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4"
               >
-                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-200">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Encounter Timeline
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-400">
@@ -432,7 +432,7 @@ export function CombatLogDebug() {
                     return (
                       <span
                         key={eventType}
-                        className="inline-flex items-center gap-1.5 rounded border border-emerald-300/20 bg-black/20 px-2 py-1"
+                        className="inline-flex items-center gap-1.5 rounded border border-white/20 bg-black/20 px-2 py-1"
                       >
                         <span
                           className={`inline-flex h-4 w-4 items-center justify-center rounded-full border ${getEventMarkerClassName(eventType)}`}
@@ -474,7 +474,7 @@ export function CombatLogDebug() {
                       return (
                         <div
                           key={segment.id}
-                          className="rounded-md border border-emerald-300/12 bg-black/20 p-3"
+                          className="rounded-sm border border-white/12 bg-black/20 p-3"
                           onMouseEnter={hideTimelineTooltip}
                         >
                           <div className="mb-2 flex items-center gap-2">
@@ -548,7 +548,7 @@ export function CombatLogDebug() {
                 )}
                 {timelineTooltip && (
                   <motion.div
-                    className="pointer-events-none absolute z-30 w-[320px] rounded-md border border-emerald-300/20 bg-[var(--surface-2)] px-3 py-2 text-xs text-neutral-200 shadow-[var(--surface-glow)]"
+                    className="pointer-events-none absolute z-30 w-[320px] rounded-sm border border-white/20 bg-[var(--surface-2)] px-3 py-2 text-xs text-neutral-200 shadow-[var(--surface-glow)]"
                     style={{
                       left: timelineTooltip.x,
                       top: timelineTooltip.y,
@@ -559,7 +559,7 @@ export function CombatLogDebug() {
                     exit={reduceMotion ? undefined : { opacity: 0, y: 4, scale: 0.98 }}
                     transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
                   >
-                    <div className="font-medium text-emerald-100">{timelineTooltip.title}</div>
+                    <div className="font-medium text-neutral-100">{timelineTooltip.title}</div>
                     {timelineTooltip.lines.map((line) => (
                       <div key={line} className="mt-1 text-neutral-300">
                         {line}
@@ -569,11 +569,11 @@ export function CombatLogDebug() {
                 )}
               </section>
 
-              <section className="rounded-[var(--radius-md)] border border-emerald-300/10 bg-[var(--surface-1)]/80 p-4">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-emerald-200">
+              <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Important Happenings
                 </h2>
-                <div className="mt-3 max-h-96 overflow-auto rounded-md border border-emerald-300/10 bg-black/20">
+                <div className="mt-3 max-h-96 overflow-auto rounded-sm border border-white/10 bg-black/20">
                   <table className="min-w-full text-left text-xs text-neutral-300">
                     <thead className="sticky top-0 bg-[var(--surface-2)] text-neutral-400">
                       <tr>
@@ -587,7 +587,7 @@ export function CombatLogDebug() {
                     </thead>
                     <tbody>
                       {parseResult.parsedEvents.map((event) => (
-                        <tr key={`${event.lineNumber}-${event.eventType}`} className="border-t border-emerald-300/8">
+                        <tr key={`${event.lineNumber}-${event.eventType}`} className="border-t border-white/8">
                           <td className="px-3 py-2 text-neutral-400">{event.lineNumber}</td>
                           <td className="px-3 py-2 text-neutral-300">{event.logTimestamp}</td>
                           <td className="px-3 py-2 text-amber-200">{event.eventType}</td>

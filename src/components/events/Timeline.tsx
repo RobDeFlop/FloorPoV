@@ -64,7 +64,7 @@ export function Timeline() {
               <motion.button
                 key={event.id}
                 type="button"
-                className="absolute top-1/2 -ml-1.5 -translate-y-1/2 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                className="absolute top-1/2 -ml-1.5 -translate-y-1/2 rounded-sm p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                 style={{ left: `${position}%` }}
                 onClick={(e) => {
                   e.stopPropagation();

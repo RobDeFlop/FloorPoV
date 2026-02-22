@@ -17,15 +17,15 @@ export function EventMarker({ type, variant = "compact", className }: EventMarke
   const colorClassName =
     type === "manual"
       ? variant === "detailed"
-        ? "rounded-sm border border-cyan-200/60 bg-cyan-300"
-        : "rounded-sm bg-cyan-300"
+        ? "rounded-sm border border-neutral-100/55 bg-neutral-200"
+        : "rounded-sm bg-neutral-200"
       : type === "death"
         ? variant === "detailed"
           ? "rounded-full border border-rose-200/40 bg-rose-400"
           : "rounded-full bg-rose-300"
         : variant === "detailed"
-          ? "rounded-full border border-emerald-100/40 bg-emerald-300"
-          : "rounded-full bg-emerald-200";
+          ? "rounded-full border border-neutral-100/45 bg-neutral-300"
+          : "rounded-full bg-neutral-300";
 
   return (
     <span

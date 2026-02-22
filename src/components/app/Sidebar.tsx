@@ -35,7 +35,7 @@ function SidebarNavButton({
       type="button"
       onClick={onClick}
       aria-current={isActive ? "page" : undefined}
-      className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)] ${
+      className={`flex w-full items-center gap-2 rounded-sm border px-2.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)] ${
         isActive ? activeClassName : defaultClassName
       }`}
       whileHover={reduceMotion ? undefined : { x: 2 }}
@@ -62,9 +62,9 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
   };
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-emerald-300/10 bg-[var(--surface-1)]/95 backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
-      <div className="border-b border-emerald-300/10 px-3 py-3">
-        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-200">
+    <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[var(--surface-1)]/95 backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
+      <div className="border-b border-white/10 px-3 py-3">
+        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-300">
           <PanelLeft className="h-3.5 w-3.5" />
           Navigation
         </div>
@@ -74,7 +74,7 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
             icon={Radar}
             isActive={isMain}
             activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-            defaultClassName="border-transparent text-neutral-300 hover:border-emerald-300/20 hover:bg-white/5 hover:text-neutral-100"
+            defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("main")}
             reduceMotion={reduceMotion}
           />
@@ -83,7 +83,7 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
             icon={SlidersHorizontal}
             isActive={isSettings}
             activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-            defaultClassName="border-transparent text-neutral-300 hover:border-emerald-300/20 hover:bg-white/5 hover:text-neutral-100"
+            defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("settings")}
             reduceMotion={reduceMotion}
           />
@@ -113,10 +113,10 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
               type="button"
               onClick={() => setActiveMode(activeMode === mode ? null : mode)}
               aria-pressed={activeMode === mode}
-              className={`w-full text-left px-3 py-2 rounded-md text-sm border transition-colors ${
+              className={`w-full text-left px-3 py-2 rounded-sm text-sm border transition-colors ${
                 activeMode === mode
                   ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
-                  : "border-transparent text-neutral-400 hover:text-neutral-100 hover:border-emerald-300/15 hover:bg-white/5"
+                  : "border-transparent text-neutral-400 hover:text-neutral-100 hover:border-white/15 hover:bg-white/5"
               }`}
               whileHover={reduceMotion ? undefined : { x: 2 }}
               whileTap={reduceMotion ? undefined : { scale: 0.99 }}
@@ -127,12 +127,12 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
         </div>
       </nav>
 
-      <div className="border-t border-emerald-300/10 p-3">
+      <div className="border-t border-white/10 p-3">
         <motion.div
-          className={`relative rounded-md px-3 py-2 transition-colors ${
+          className={`relative rounded-sm px-3 py-2 transition-colors ${
             isRecording
               ? "border border-rose-300/40 bg-rose-500/15 shadow-[0_0_0_1px_rgba(251,113,133,0.22)]"
-              : "border border-emerald-300/15 bg-emerald-500/10"
+              : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)]"
           }`}
           initial={false}
           animate={{ scale: isRecording ? [1, 1.008, 1] : [1, 1, 1] }}
@@ -144,7 +144,7 @@ export function Sidebar({ onNavigate, currentView, showDebug }: SidebarProps) {
             {isRecording && (
               <motion.div
                 key="recording-border-burst"
-                className="pointer-events-none absolute inset-0 rounded-md border border-rose-200/55"
+                className="pointer-events-none absolute inset-0 rounded-sm border border-rose-200/55"
                 initial={{ scale: 0.72, opacity: 0 }}
                 animate={{
                   scale: [0.72, 1.03, 1.06],

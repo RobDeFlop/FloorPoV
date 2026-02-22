@@ -18,7 +18,7 @@ export function ControlIconButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded p-1 text-white transition-colors hover:text-emerald-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 disabled:cursor-not-allowed disabled:opacity-45"
+      className="rounded p-1 text-white transition-colors hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-45"
       aria-label={label}
       title={label}
     >

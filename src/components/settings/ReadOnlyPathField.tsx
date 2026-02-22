@@ -19,12 +19,12 @@ export function ReadOnlyPathField({ inputId, label, value, onBrowse }: ReadOnlyP
           type="text"
           value={value}
           readOnly
-          className="flex-1 rounded-md border border-emerald-300/20 bg-black/20 px-3 py-2 text-sm text-neutral-300"
+          className="flex-1 rounded-sm border border-white/20 bg-black/20 px-3 py-2 text-sm text-neutral-300"
         />
         <button
           type="button"
           onClick={onBrowse}
-          className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-300/25 bg-emerald-500/12 px-4 py-2 text-sm text-emerald-100 transition-colors hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/55"
+          className="inline-flex items-center justify-center gap-2 rounded-sm border border-white/20 bg-white/6 px-4 py-2 text-sm text-neutral-100 transition-colors hover:bg-white/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
         >
           <Folder className="h-4 w-4" />
           Browse
