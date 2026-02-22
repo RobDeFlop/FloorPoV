@@ -25,10 +25,10 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
 };
 
 export const QUALITY_SETTINGS = {
-  low: { bitrate: 2_000_000, label: 'Low (2 Mbps)' },
-  medium: { bitrate: 5_000_000, label: 'Medium (5 Mbps)' },
-  high: { bitrate: 8_000_000, label: 'High (8 Mbps)' },
-  ultra: { bitrate: 15_000_000, label: 'Ultra (15 Mbps)' },
+  low: { bitrate: 2_000_000, label: 'Low' },
+  medium: { bitrate: 5_000_000, label: 'Medium' },
+  high: { bitrate: 8_000_000, label: 'High' },
+  ultra: { bitrate: 15_000_000, label: 'Ultra' },
 } as const;
 
 export const MIN_STORAGE_GB = 5;

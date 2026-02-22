@@ -104,22 +104,9 @@ export function VideoPlayer() {
   return (
     <div className="h-full w-full">
       <div
-        className="relative h-full w-full overflow-hidden rounded-[var(--radius-md)] border border-emerald-300/10 bg-neutral-950/90"
+        className="relative h-full w-full overflow-hidden bg-neutral-950/90"
         aria-busy={isVideoLoading}
       >
-        <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent"
-          aria-hidden="true"
-        />
-        {isRecording && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/55 backdrop-blur-sm">
-            <div className="mb-3 rounded-full border border-rose-300/30 bg-rose-500/20 p-2">
-              <Clapperboard className="h-5 w-5 text-rose-100" />
-            </div>
-            <p className="text-sm text-rose-100">Recording in progress...</p>
-          </div>
-        )}
-
         {showVideo && (
           <video
             ref={videoRef}
@@ -173,15 +160,7 @@ export function VideoPlayer() {
               <div className="mb-3 rounded-full border border-emerald-300/20 bg-emerald-500/10 p-2">
                 <Clapperboard className="h-5 w-5 text-emerald-200" />
               </div>
-              <p className="text-neutral-400 mb-4">No recording loaded</p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 rounded-md border border-emerald-300/20 bg-white/5 px-4 py-2 text-neutral-200 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70"
-              >
-                <FolderOpen className="w-4 h-4" />
-                Open File
-              </button>
+              <p className="text-neutral-400">No recording loaded</p>
             </>
           </div>
         )}

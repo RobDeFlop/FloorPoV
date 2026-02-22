@@ -1,13 +1,8 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { motion, useReducedMotion } from 'motion/react';
-import { Activity, Clapperboard } from 'lucide-react';
-import { useRecording } from '../../contexts/RecordingContext';
-import { statusPulseTransition } from '../../lib/motion';
+import { Clapperboard } from 'lucide-react';
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();
-  const { isRecording, recordingDuration } = useRecording();
-  const reduceMotion = useReducedMotion();
 
   const handleMinimize = () => {
     appWindow.minimize();
@@ -40,12 +35,6 @@ export function TitleBar() {
     });
   };
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   return (
     <div
       className="flex h-10 items-stretch justify-between border-b border-emerald-300/10 bg-[var(--surface-1)] backdrop-blur-md select-none"
@@ -64,24 +53,6 @@ export function TitleBar() {
 
         <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Recorder</div>
 
-        {isRecording && (
-          <motion.div
-            className="ml-2 inline-flex items-center gap-2 rounded-md border border-rose-400/30 bg-rose-500/10 px-2.5 py-1"
-            animate={
-              reduceMotion
-                ? undefined
-                : {
-                    opacity: [0.85, 1, 0.85],
-                  }
-            }
-            transition={statusPulseTransition}
-          >
-            <Activity className="h-3.5 w-3.5 text-rose-300" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-rose-200">
-              REC {formatDuration(recordingDuration)}
-            </span>
-          </motion.div>
-        )}
       </div>
       <div className="flex h-full shrink-0">
         <button

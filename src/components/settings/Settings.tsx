@@ -24,6 +24,7 @@ import {
 import { ReadOnlyPathField } from "./ReadOnlyPathField";
 import { SettingsSelect, type SettingsSelectOption } from "./SettingsSelect";
 import { SettingsSection } from "./SettingsSection";
+import { SettingsToggleField } from "./SettingsToggleField";
 
 interface SettingsProps {
   onBack: () => void;
@@ -193,12 +194,12 @@ export function Settings({ onBack }: SettingsProps) {
             role="status"
             aria-live="polite"
           >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20">
-              <div className="h-3 w-3 rounded-full bg-rose-400 animate-pulse" />
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15">
+              <Settings2 className="h-5 w-5 text-amber-200" aria-hidden="true" />
             </div>
-            <h2 className="mb-2 text-xl font-semibold text-rose-100">Recording in Progress</h2>
-            <p className="text-neutral-300">
-              Stop recording to change settings
+            <h2 className="mb-2 text-lg font-semibold text-neutral-100">Settings are temporarily locked</h2>
+            <p className="text-sm text-neutral-300">
+              Stop recording from Home to edit settings. Current recording status remains in App Status.
             </p>
           </div>
         </div>
@@ -309,34 +310,22 @@ export function Settings({ onBack }: SettingsProps) {
           <SettingsSection title="Capture" icon={<Monitor className="h-4 w-4" />}>
             <div className="space-y-4">
               <p className="text-sm text-neutral-300">
-                Recording now uses an FFmpeg pipeline focused on primary monitor capture.
-              </p>
-              <p className="text-xs text-neutral-400">
-                Window capture preview has been removed while we rebuild the capture stack for smoother output.
+                Capture uses the FFmpeg pipeline and records your primary monitor.
               </p>
               <div className="rounded-md border border-emerald-300/15 bg-black/20 p-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-500">Troubleshooting</p>
-              <label
-                htmlFor={fieldIds.enableRecordingDiagnostics}
-                className="flex items-center gap-3 rounded-md border border-emerald-300/20 bg-black/20 px-3 py-2 text-neutral-200"
-              >
-                <input
+                <SettingsToggleField
                   id={fieldIds.enableRecordingDiagnostics}
-                  type="checkbox"
                   checked={formData.enableRecordingDiagnostics}
-                  onChange={(event) => {
+                  onChange={(checked) => {
                     setFormData({
                       ...formData,
-                      enableRecordingDiagnostics: event.target.checked,
+                      enableRecordingDiagnostics: checked,
                     });
                   }}
-                  className="w-4 h-4"
+                  label="Enable Recording Diagnostics"
+                  description="Writes per-second audio and FFmpeg pacing logs to help debug stutter and crackle."
                 />
-                <span className="text-sm">Enable Recording Diagnostics</span>
-              </label>
-              <p className="text-xs text-neutral-400">
-                Writes per-second audio and FFmpeg pacing logs to help debug stutter and crackle.
-              </p>
               </div>
             </div>
           </SettingsSection>
@@ -398,25 +387,17 @@ export function Settings({ onBack }: SettingsProps) {
                 System audio recording is available in the FFmpeg recorder pipeline.
               </p>
 
-              <label
-                htmlFor={fieldIds.enableSystemAudio}
-                className="flex items-center gap-3 rounded-md border border-emerald-300/20 bg-black/20 px-3 py-2 text-neutral-200"
-              >
-                <input
-                  id={fieldIds.enableSystemAudio}
-                  type="checkbox"
-                  checked={formData.enableSystemAudio}
-                  onChange={(event) => {
-                    setFormData({
-                      ...formData,
-                      enableSystemAudio: event.target.checked,
-                    });
-                  }}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">Enable System Audio</span>
-              </label>
-
+              <SettingsToggleField
+                id={fieldIds.enableSystemAudio}
+                checked={formData.enableSystemAudio}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    enableSystemAudio: checked,
+                  });
+                }}
+                label="Enable System Audio"
+              />
             </div>
           </SettingsSection>
         </div>

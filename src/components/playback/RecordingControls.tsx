@@ -1,4 +1,4 @@
-import { Circle, LoaderCircle, Radio, Square, Timer } from "lucide-react";
+import { Circle, LoaderCircle, Square } from "lucide-react";
 import { motion, useReducedMotion } from 'motion/react';
 import { useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
@@ -12,17 +12,10 @@ export function RecordingControls() {
   const {
     isRecording,
     lastError,
-    recordingDuration,
     startRecording,
     stopRecording,
   } = useRecording();
   const { settings } = useSettings();
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
 
   const handleRecordingToggle = async () => {
     if (isRecordingBusy) {
@@ -84,16 +77,8 @@ export function RecordingControls() {
         )}
       </motion.button>
 
-      {isRecording && (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-300/20 bg-black/20 px-2.5 py-1.5 text-sm">
-          <Radio className="w-3.5 h-3.5 text-rose-300 animate-pulse" />
-          <Timer className="w-3.5 h-3.5 text-emerald-200" />
-          <span className="font-mono text-emerald-100">{formatDuration(recordingDuration)}</span>
-        </div>
-      )}
-
-      {!isRecording && settings.markerHotkey !== 'none' && (
-          <span className="mr-2 text-xs text-neutral-400 md:ml-auto">
+      {isRecording && settings.markerHotkey !== 'none' && (
+          <span className="text-xs text-neutral-400 md:ml-auto">
             Press <kbd className="px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-400/30 rounded text-emerald-200 font-mono">{settings.markerHotkey}</kbd> to add marker
           </span>
         )}
