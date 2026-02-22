@@ -12,6 +12,19 @@
   --surface-border-strong: rgba(255, 255, 255, 0.22);
   --surface-glow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 24px rgba(0, 0, 0, 0.45);
   --focus-ring: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  
+  /* Color standardization */
+  --color-emerald-500: rgb(16, 185, 129);
+  --color-emerald-300: rgb(110, 231, 183);
+  --color-emerald-100: rgb(209, 250, 229);
+  --color-rose-500: rgb(244, 63, 94);
+  --color-rose-300: rgb(253, 164, 175);
+  --color-rose-100: rgb(255, 228, 230);
+  --color-neutral-500: rgb(107, 114, 128);
+  --color-neutral-400: rgb(156, 163, 175);
+  --color-neutral-300: rgb(209, 213, 219);
+  --color-neutral-200: rgb(229, 231, 235);
+  --color-neutral-100: rgb(243, 244, 246);
 }
 
 html,

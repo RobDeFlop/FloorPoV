@@ -16,6 +16,8 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
+import { Button } from "../ui/Button";
+import { FormField } from "../ui/FormField";
 import {
   CaptureSource,
   HOTKEY_OPTIONS,
@@ -304,14 +306,15 @@ export function Settings({ onBack }: SettingsProps) {
 
       <div className="flex shrink-0 items-center gap-4 border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onBack}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-sm border border-white/20 bg-black/20 text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
-            aria-label="Back to main view"
+            className="h-9 w-9 p-0"
+            ariaLabel="Back to main view"
           >
             <ArrowLeft className="w-4 h-4" />
-          </button>
+          </Button>
           <div>
             <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
               <Settings2 className="h-4 w-4 text-neutral-300" />
@@ -383,10 +386,11 @@ export function Settings({ onBack }: SettingsProps) {
                 </div>
               </div>
 
-              <div>
-                <label htmlFor={FIELD_IDS.maxStorageGB} className="mb-2 block text-sm text-neutral-300">
-                  Maximum Storage (GB)
-                </label>
+              <FormField
+                id={FIELD_IDS.maxStorageGB}
+                label="Maximum Storage (GB)"
+                description={`Old recordings will be automatically deleted when this limit is reached (minimum ${MIN_STORAGE_GB} GB)`}
+              >
                 <input
                   id={FIELD_IDS.maxStorageGB}
                   type="number"
@@ -395,12 +399,8 @@ export function Settings({ onBack }: SettingsProps) {
                   value={formData.maxStorageGB}
                   onChange={(e) => setFormData({ ...formData, maxStorageGB: parseInt(e.target.value) || MIN_STORAGE_GB })}
                   className={NUMBER_FIELD_CLASS_NAME}
-                  aria-describedby="settings-max-storage-help"
                 />
-                <p id="settings-max-storage-help" className="mt-1 text-xs text-neutral-400">
-                  Old recordings will be automatically deleted when this limit is reached (minimum {MIN_STORAGE_GB} GB)
-                </p>
-              </div>
+              </FormField>
             </div>
           </SettingsSection>
 
@@ -582,22 +582,20 @@ export function Settings({ onBack }: SettingsProps) {
       </div>
 
       <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={handleCancel}
           disabled={!hasChanges}
-          className="rounded-sm border border-white/20 bg-black/20 px-4 py-2 text-sm font-medium text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Cancel
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="primary"
           onClick={handleSave}
           disabled={!hasChanges}
-          className="rounded-sm border border-emerald-300/35 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save Changes
-        </button>
+        </Button>
       </div>
     </div>
   );

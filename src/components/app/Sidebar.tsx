@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Button } from "../ui/Button";
 import {
   Activity,
   Bug,
@@ -37,22 +38,19 @@ function SidebarNavButton({
   activeClassName,
   defaultClassName,
   onClick,
-  reduceMotion,
 }: SidebarNavButtonProps) {
   return (
-    <motion.button
-      type="button"
+    <Button
+      variant="ghost"
       onClick={onClick}
-      aria-current={isActive ? "page" : undefined}
-      className={`flex w-full items-center gap-2 rounded-sm border px-2.5 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)] ${
+      className={`flex w-full items-center gap-2 ${
         isActive ? activeClassName : defaultClassName
       }`}
-      whileHover={reduceMotion ? undefined : { x: 2 }}
-      whileTap={reduceMotion ? undefined : { scale: 0.99 }}
+      ariaLabel={label}
     >
       <Icon className="h-4 w-4" />
       {label}
-    </motion.button>
+    </Button>
   );
 }
 
