@@ -162,11 +162,11 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      unlistenRecordingStopped.then((fn) => fn());
-      unlistenRecordingWarning.then((fn) => fn());
-      unlistenRecordingWarningCleared.then((fn) => fn());
-      unlistenCleanup.then((fn) => fn());
-      unlistenCombatEvent.then((fn) => fn());
+      unlistenRecordingStopped.then((unsubscribe) => unsubscribe());
+      unlistenRecordingWarning.then((unsubscribe) => unsubscribe());
+      unlistenRecordingWarningCleared.then((unsubscribe) => unsubscribe());
+      unlistenCleanup.then((unsubscribe) => unsubscribe());
+      unlistenCombatEvent.then((unsubscribe) => unsubscribe());
     };
   }, [addEvent]);
 

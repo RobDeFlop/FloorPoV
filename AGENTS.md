@@ -6,6 +6,7 @@ Floorpov is a Tauri 2 desktop application with a React 19 + TypeScript frontend 
 
 This file defines active engineering rules for contributors and coding agents.
 For product planning and phased implementation details, see `docs/implementation-plan.md`.
+For expanded naming examples, see `docs/coding-guidelines.md`.
 
 ## Command Reference
 
@@ -55,7 +56,10 @@ cargo test --lib
 - Use semicolons.
 - Keep line length reasonable, target 100 chars when possible.
 - Don't create many small files. Implement functionality in existing files unless it is a new logical component.
-- Don't abbreviate variable names. Use full names like queue, message, and channel. Common abbreviations like config are fine.
+- Prefer clear, intent-revealing names over terse names.
+- Professional abbreviations are allowed when the context is obvious (for example `canvasCtx`, `idx`, `*_tx`, `*_rx`, `config`).
+- Avoid unclear abbreviations and vague placeholders (for example `fn`, `obj`, `arr`) when a precise name improves readability (for example `unsubscribe`, `recordingItem`, `eventList`).
+- In small, obvious closures, concise names like `e` for errors are acceptable.
 - Prefer explicit types for public function params and return values.
 - Use `interface` for object shapes, `type` for unions and aliases.
 - Avoid `any`, prefer `unknown` when needed.
@@ -76,6 +80,7 @@ Naming:
 - Functions and variables: camelCase.
 - Constants: UPPER_SNAKE_CASE.
 - Non-component files: kebab-case when practical.
+- Keep API/platform contract names unchanged unless you are doing a coordinated migration (for example `file_path`, `created_at`, `hwnd`).
 
 Tailwind:
 
@@ -88,7 +93,8 @@ Tailwind:
 
 - Run `cargo fmt` before committing Rust changes.
 - Follow standard Rust naming conventions.
-- Use full variable names, avoid unclear abbreviations (for example `queue`, `message`, `channel`).
+- Prefer clear variable names and avoid unclear abbreviations.
+- Keep established systems abbreviations when they are standard for the domain (for example channel names like `*_tx` / `*_rx`, platform types, or API terms).
 - Prefer `Result<T, E>` for fallible operations.
 - Avoid `.unwrap()` in production code.
 - Use `?` for propagation and return meaningful error messages.
