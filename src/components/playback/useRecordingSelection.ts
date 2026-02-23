@@ -15,6 +15,7 @@ interface UseRecordingSelectionResult<T extends RecordingSelectionItem> {
   selectedRecordingPathSet: Set<string>;
   selectedRecordingCount: number;
   selectedRecordings: T[];
+  selectAll: () => void;
   clearSelection: () => void;
   handleRecordingRowClick: (event: MouseEvent<HTMLButtonElement>, recording: T) => void;
   handleRecordingRowMouseDown: (event: MouseEvent<HTMLButtonElement>, recording: T) => void;
@@ -44,6 +45,11 @@ export function useRecordingSelection<T extends RecordingSelectionItem>({
     setSelectedRecordingPaths([]);
     setSelectionAnchorPath(null);
   }, []);
+
+  const selectAll = useCallback(() => {
+    const allPaths = recordings.map((recording) => recording.file_path);
+    setSelectedRecordingPaths(allPaths);
+  }, [recordings]);
 
   const toggleRecordingSelection = useCallback((recordingPath: string) => {
     setSelectedRecordingPaths((previousSelectedPaths) => {
@@ -208,6 +214,7 @@ export function useRecordingSelection<T extends RecordingSelectionItem>({
     selectedRecordingPathSet,
     selectedRecordingCount: selectedRecordingPaths.length,
     selectedRecordings,
+    selectAll,
     clearSelection,
     handleRecordingRowClick,
     handleRecordingRowMouseDown,

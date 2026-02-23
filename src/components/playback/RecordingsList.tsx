@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { AlertTriangle, Clock3, Film, HardDrive, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, Clock3, Film, HardDrive, RefreshCw, Trash2, XCircle } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRecording } from '../../contexts/RecordingContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useVideo } from '../../contexts/VideoContext';
-import { useRecording } from '../../contexts/RecordingContext';
 import { panelVariants, smoothTransition } from '../../lib/motion';
-import { useRecordingSelection } from './useRecordingSelection';
 import { formatBytes, formatDate } from '../../utils/format';
+import { useRecordingSelection } from './useRecordingSelection';
 
 interface RecordingInfo {
   filename: string;
@@ -109,6 +109,7 @@ export function RecordingsList() {
     selectedRecordingPathSet,
     selectedRecordingCount,
     selectedRecordings,
+    selectAll,
     clearSelection,
     handleRecordingRowClick,
     handleRecordingRowMouseDown,
@@ -296,44 +297,9 @@ export function RecordingsList() {
           <Film className="h-4 w-4 text-neutral-300" />
           Recordings
         </h2>
-        <motion.button
-          type="button"
-          onClick={loadRecordings}
-          disabled={isLoading || !settings.outputFolder}
-          className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-white/20 bg-white/5 px-2.5 text-xs text-neutral-200 transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
-          whileHover={reduceMotion ? undefined : { y: -1 }}
-          whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </motion.button>
       </div>
 
       {error && <p className="mb-2 text-xs text-red-300" role="status">{error}</p>}
-
-      {selectedRecordingCount > 0 && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-sm border border-sky-300/20 bg-sky-500/10 px-2.5 py-1.5">
-          <p className="text-xs text-sky-100">{selectedRecordingCount} selected</p>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={clearSelection}
-              disabled={isActionLocked}
-              className="inline-flex h-7 items-center rounded-sm border border-white/20 bg-black/20 px-2.5 text-xs text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteSelectedRecordings}
-              disabled={isActionLocked || selectedRecordings.length === 0}
-              className="inline-flex h-7 items-center rounded-sm border border-rose-300/35 bg-rose-500/14 px-2.5 text-xs font-semibold text-rose-100 transition-colors hover:bg-rose-500/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Delete selected
-            </button>
-          </div>
-        </div>
-      )}
 
       <div
         className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
@@ -344,7 +310,69 @@ export function RecordingsList() {
         ) : recordings.length === 0 && !isLoading ? (
           <p className="text-xs text-neutral-400">No recordings found in {settings.outputFolder}</p>
         ) : (
-          <ul className="space-y-1" role="list">
+          <>
+            <div className="mb-1 flex items-center justify-between gap-2 border-b border-white/10 pb-1.5">
+              <div className="flex items-center gap-1">
+                <label className="ml-2 inline-flex h-6 w-6 items-center justify-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedRecordingCount > 0 && selectedRecordingCount === recordings.length}
+                    ref={(el) => {
+                      if (el) {
+                        el.indeterminate = selectedRecordingCount > 0 && selectedRecordingCount < recordings.length;
+                      }
+                    }}
+                    onChange={selectedRecordingCount === recordings.length ? clearSelection : selectAll}
+                    disabled={isActionLocked || recordings.length === 0}
+                     className="h-3.5 w-3.5 rounded-sm border-white/30 bg-black/30 accent-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={selectedRecordingCount === recordings.length ? "Deselect all recordings" : "Select all recordings"}
+                  />
+                </label>
+                <span className="text-[11px] text-neutral-400">
+                  {selectedRecordingCount > 0 ? `${selectedRecordingCount} selected` : ''}
+                </span>
+              </div>
+              
+              <div className="flex items-center gap-1">
+               
+                
+                {selectedRecordingCount > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={clearSelection}
+                      disabled={isActionLocked}
+                      className="inline-flex h-6 items-center gap-1 rounded-sm border border-white/20 bg-black/20 px-2 text-xs text-neutral-200 transition-colors hover:bg-white/10 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <XCircle className="h-3.5 w-3.5 shrink-0" />
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteSelectedRecordings}
+                      disabled={isActionLocked || selectedRecordings.length === 0}
+                      className="inline-flex h-6 items-center gap-1 rounded-sm border border-rose-300/35 bg-rose-500/14 px-2 text-xs font-medium text-rose-100 transition-colors hover:bg-rose-500/22 hover:text-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" />
+                      Delete selected
+                    </button>
+                  </>
+                )}
+                 <motion.button
+                  type="button"
+                  onClick={loadRecordings}
+                  disabled={isLoading || !settings.outputFolder}
+                   className="inline-flex h-6 items-center gap-1 rounded-sm border border-white/20 bg-black/20 px-2 text-xs text-neutral-200 transition-colors hover:bg-white/10 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
+                  whileHover={reduceMotion ? undefined : { y: -1 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </motion.button>
+              </div>
+            </div>
+            
+            <ul className="space-y-1" role="list">
             {recordings.map((recording) => {
               const recordingSource = convertFileSrc(recording.file_path);
               const isLoadedRecording = videoSrc === recordingSource;
@@ -357,7 +385,7 @@ export function RecordingsList() {
                     isLoadedRecording
                       ? 'border-emerald-300/40 bg-emerald-500/12 hover:border-emerald-300/50'
                       : isSelectedRecording
-                        ? 'border-sky-300/35 bg-sky-500/10 hover:border-sky-300/45'
+                         ? 'border-emerald-300/35 bg-emerald-500/10 hover:border-emerald-300/45'
                       : 'border-white/10 bg-black/20 hover:border-white/25'
                   }`}
                   initial={reduceMotion ? false : { opacity: 0, y: 4 }}
@@ -372,7 +400,7 @@ export function RecordingsList() {
                       onMouseDown={(event) => handleSelectionControlMouseDown(event, recording.file_path)}
                       onClick={handleSelectionControlClick}
                       disabled={isActionLocked}
-                      className="h-3.5 w-3.5 rounded-sm border-white/30 bg-black/30 accent-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+                       className="h-3.5 w-3.5 rounded-sm border-white/30 bg-black/30 accent-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
                       aria-label={`Select recording ${recording.filename}`}
                     />
                   </label>
@@ -414,7 +442,8 @@ export function RecordingsList() {
                 </motion.li>
               );
             })}
-          </ul>
+            </ul>
+          </>
         )}
       </div>
 
