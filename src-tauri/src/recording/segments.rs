@@ -3,6 +3,7 @@ use std::fs;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use super::model::CREATE_NO_WINDOW;
 
@@ -33,20 +34,29 @@ fn concat_file_path(segment_workspace: &Path) -> PathBuf {
     segment_workspace.join("segments.txt")
 }
 
-fn format_concat_entry(path: &Path) -> String {
+fn format_concat_entry(path: &Path, duration: Option<Duration>) -> String {
     let normalized = path.to_string_lossy().replace('\\', "/");
     let escaped = normalized.replace('\'', "\\'");
-    format!("file '{escaped}'\n")
+    let mut entry = format!("file '{escaped}'\n");
+    if let Some(dur) = duration {
+        // The `duration` directive tells the concat demuxer the wall-clock length of each
+        // segment, overriding any internal timestamps. This prevents synthetic sources
+        // (like `color`) from inflating the final video duration beyond real time.
+        entry.push_str(&format!("duration {:.6}\n", dur.as_secs_f64()));
+    }
+    entry
 }
 
 fn write_concat_file(
     segment_workspace: &Path,
     segment_paths: &[PathBuf],
+    segment_durations: &[Duration],
 ) -> Result<PathBuf, String> {
     let concat_path = concat_file_path(segment_workspace);
     let mut contents = String::new();
-    for segment_path in segment_paths {
-        contents.push_str(&format_concat_entry(segment_path));
+    for (index, segment_path) in segment_paths.iter().enumerate() {
+        let duration = segment_durations.get(index).copied();
+        contents.push_str(&format_concat_entry(segment_path, duration));
     }
 
     fs::write(&concat_path, contents)
@@ -83,6 +93,7 @@ fn finalize_with_exact_segments(
     ffmpeg_binary_path: &Path,
     segment_workspace: &Path,
     segment_paths: &[PathBuf],
+    segment_durations: &[Duration],
     output_path: &str,
 ) -> Result<(), String> {
     if segment_paths.is_empty() {
@@ -93,7 +104,7 @@ fn finalize_with_exact_segments(
         return move_segment_to_final_output(&segment_paths[0], output_path);
     }
 
-    let concat_path = write_concat_file(segment_workspace, segment_paths)?;
+    let concat_path = write_concat_file(segment_workspace, segment_paths, segment_durations)?;
 
     let mut command = Command::new(ffmpeg_binary_path);
     #[cfg(target_os = "windows")]
@@ -126,17 +137,25 @@ fn finalize_with_exact_segments(
     Ok(())
 }
 
-fn collect_non_empty_segments(segment_paths: &[PathBuf]) -> Vec<PathBuf> {
-    segment_paths
-        .iter()
-        .filter(|segment_path| {
-            segment_path.exists()
-                && segment_path
-                    .metadata()
-                    .is_ok_and(|metadata| metadata.len() > 0)
-        })
-        .cloned()
-        .collect()
+fn collect_non_empty_segments(
+    segment_paths: &[PathBuf],
+    segment_durations: &[Duration],
+) -> (Vec<PathBuf>, Vec<Duration>) {
+    let mut paths = Vec::new();
+    let mut durations = Vec::new();
+    for (index, segment_path) in segment_paths.iter().enumerate() {
+        if segment_path.exists()
+            && segment_path
+                .metadata()
+                .is_ok_and(|metadata| metadata.len() > 0)
+        {
+            paths.push(segment_path.clone());
+            if let Some(dur) = segment_durations.get(index) {
+                durations.push(*dur);
+            }
+        }
+    }
+    (paths, durations)
 }
 
 fn segment_is_decodable(ffmpeg_binary_path: &Path, segment_path: &Path) -> bool {
@@ -175,46 +194,53 @@ fn segment_is_decodable(ffmpeg_binary_path: &Path, segment_path: &Path) -> bool 
 fn collect_decodable_segments(
     ffmpeg_binary_path: &Path,
     segment_paths: &[PathBuf],
-) -> Vec<PathBuf> {
-    segment_paths
-        .iter()
-        .filter(|segment_path| {
-            let is_decodable = segment_is_decodable(ffmpeg_binary_path, segment_path);
-            if !is_decodable {
-                tracing::warn!(
-                    segment_path = %segment_path.display(),
-                    "Skipping recording segment because FFmpeg could not decode it"
-                );
+    segment_durations: &[Duration],
+) -> (Vec<PathBuf>, Vec<Duration>) {
+    let mut paths = Vec::new();
+    let mut durations = Vec::new();
+    for (index, segment_path) in segment_paths.iter().enumerate() {
+        let is_decodable = segment_is_decodable(ffmpeg_binary_path, segment_path);
+        if !is_decodable {
+            tracing::warn!(
+                segment_path = %segment_path.display(),
+                "Skipping recording segment because FFmpeg could not decode it"
+            );
+        } else {
+            paths.push(segment_path.clone());
+            if let Some(dur) = segment_durations.get(index) {
+                durations.push(*dur);
             }
-            is_decodable
-        })
-        .cloned()
-        .collect()
+        }
+    }
+    (paths, durations)
 }
 
 pub(crate) fn finalize_segmented_recording(
     ffmpeg_binary_path: &Path,
     segment_workspace: &Path,
     segment_paths: &[PathBuf],
+    segment_durations: &[Duration],
     output_path: &str,
 ) -> Result<(), String> {
-    let non_empty_segment_paths = collect_non_empty_segments(segment_paths);
+    let (non_empty_paths, non_empty_durations) =
+        collect_non_empty_segments(segment_paths, segment_durations);
 
-    if non_empty_segment_paths.is_empty() {
+    if non_empty_paths.is_empty() {
         return Err("No recording segments were produced".to_string());
     }
 
-    let valid_segment_paths =
-        collect_decodable_segments(ffmpeg_binary_path, &non_empty_segment_paths);
+    let (valid_paths, valid_durations) =
+        collect_decodable_segments(ffmpeg_binary_path, &non_empty_paths, &non_empty_durations);
 
-    if valid_segment_paths.is_empty() {
+    if valid_paths.is_empty() {
         return Err("No valid recording segments were produced".to_string());
     }
 
     if let Err(initial_error) = finalize_with_exact_segments(
         ffmpeg_binary_path,
         segment_workspace,
-        &valid_segment_paths,
+        &valid_paths,
+        &valid_durations,
         output_path,
     ) {
         tracing::warn!(
@@ -224,22 +250,27 @@ pub(crate) fn finalize_segmented_recording(
 
         let mut last_error = initial_error;
 
-        if valid_segment_paths.len() > 2 {
-            for remove_index in 1..(valid_segment_paths.len() - 1) {
-                let mut candidate_segments = valid_segment_paths.clone();
-                let removed_segment = candidate_segments.remove(remove_index);
+        if valid_paths.len() > 2 {
+            for remove_index in 1..(valid_paths.len() - 1) {
+                let mut candidate_paths = valid_paths.clone();
+                let mut candidate_durations = valid_durations.clone();
+                let removed_segment = candidate_paths.remove(remove_index);
+                if remove_index < candidate_durations.len() {
+                    candidate_durations.remove(remove_index);
+                }
 
                 match finalize_with_exact_segments(
                     ffmpeg_binary_path,
                     segment_workspace,
-                    &candidate_segments,
+                    &candidate_paths,
+                    &candidate_durations,
                     output_path,
                 ) {
                     Ok(()) => {
                         tracing::warn!(
                             remove_index,
                             removed_segment = %removed_segment.display(),
-                            total_segments = valid_segment_paths.len(),
+                            total_segments = valid_paths.len(),
                             "Recovered recording by dropping one invalid middle segment"
                         );
                         return Ok(());
@@ -251,18 +282,20 @@ pub(crate) fn finalize_segmented_recording(
             }
         }
 
-        for prefix_len in (1..valid_segment_paths.len()).rev() {
-            let prefix_segments = &valid_segment_paths[..prefix_len];
+        for prefix_len in (1..valid_paths.len()).rev() {
+            let prefix_paths = &valid_paths[..prefix_len];
+            let prefix_durations = &valid_durations[..prefix_len.min(valid_durations.len())];
             match finalize_with_exact_segments(
                 ffmpeg_binary_path,
                 segment_workspace,
-                prefix_segments,
+                prefix_paths,
+                prefix_durations,
                 output_path,
             ) {
                 Ok(()) => {
                     tracing::warn!(
                         prefix_len,
-                        total_segments = valid_segment_paths.len(),
+                        total_segments = valid_paths.len(),
                         "Recovered recording by concatenating the longest valid prefix"
                     );
                     return Ok(());
@@ -273,19 +306,25 @@ pub(crate) fn finalize_segmented_recording(
             }
         }
 
-        for suffix_start in 1..valid_segment_paths.len() {
-            let suffix_segments = &valid_segment_paths[suffix_start..];
+        for suffix_start in 1..valid_paths.len() {
+            let suffix_paths = &valid_paths[suffix_start..];
+            let suffix_durations = if suffix_start < valid_durations.len() {
+                &valid_durations[suffix_start..]
+            } else {
+                &[]
+            };
             match finalize_with_exact_segments(
                 ffmpeg_binary_path,
                 segment_workspace,
-                suffix_segments,
+                suffix_paths,
+                suffix_durations,
                 output_path,
             ) {
                 Ok(()) => {
                     tracing::warn!(
                         suffix_start,
-                        suffix_len = suffix_segments.len(),
-                        total_segments = valid_segment_paths.len(),
+                        suffix_len = suffix_paths.len(),
+                        total_segments = valid_paths.len(),
                         "Recovered recording by concatenating a valid suffix"
                     );
                     return Ok(());

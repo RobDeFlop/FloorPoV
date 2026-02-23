@@ -2,8 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, Mutex};
@@ -24,10 +23,10 @@ use super::super::ffmpeg::{
 #[cfg(target_os = "windows")]
 use super::super::model::CREATE_NO_WINDOW;
 use super::super::model::{
-    AudioPipelineStats, CaptureInput, RuntimeCaptureMode, SegmentRunResult, SegmentTransition,
-    WindowCaptureAvailability, AUDIO_TCP_ACCEPT_WAIT_MS, SYSTEM_AUDIO_CHANNEL_COUNT,
-    SYSTEM_AUDIO_QUEUE_CAPACITY, SYSTEM_AUDIO_SAMPLE_RATE_HZ, WINDOW_CAPTURE_STATUS_POLL_INTERVAL,
-    WINDOW_CAPTURE_UNAVAILABLE_WARNING,
+    AudioPipelineStats, CaptureInput, RuntimeCaptureMode, SegmentConfig, SegmentRunResult,
+    SegmentTransition, WindowCaptureAvailability, AUDIO_TCP_ACCEPT_WAIT,
+    SYSTEM_AUDIO_CHANNEL_COUNT, SYSTEM_AUDIO_QUEUE_CAPACITY, SYSTEM_AUDIO_SAMPLE_RATE_HZ,
+    WINDOW_CAPTURE_STATUS_POLL_INTERVAL, WINDOW_CAPTURE_UNAVAILABLE_WARNING,
 };
 use super::super::window_capture::{
     evaluate_window_capture_availability, resolve_window_capture_handle,
@@ -39,11 +38,25 @@ use super::common::{
 };
 use super::events::{emit_recording_warning, emit_recording_warning_cleared};
 
+fn early_exit_result(
+    transition: SegmentTransition,
+    segment_started_at: Instant,
+) -> SegmentRunResult {
+    SegmentRunResult {
+        transition,
+        ffmpeg_succeeded: false,
+        output_written: false,
+        force_killed: false,
+        wall_clock_duration: segment_started_at.elapsed(),
+    }
+}
+
 fn segment_result_for_capture_input_error(
     app_handle: &AppHandle,
     runtime_capture_mode: RuntimeCaptureMode,
     capture_input: &CaptureInput,
     error: &str,
+    segment_started_at: Instant,
 ) -> SegmentRunResult {
     tracing::warn!(
         runtime_capture_mode = runtime_capture_label(runtime_capture_mode),
@@ -58,25 +71,18 @@ fn segment_result_for_capture_input_error(
             emit_recording_warning(app_handle, WINDOW_CAPTURE_UNAVAILABLE_WARNING);
         }
 
-        return SegmentRunResult {
-            transition: SegmentTransition::Switch(RuntimeCaptureMode::Black),
-            ffmpeg_succeeded: false,
-            output_written: false,
-            force_killed: false,
-        };
+        return early_exit_result(
+            SegmentTransition::Switch(RuntimeCaptureMode::Black),
+            segment_started_at,
+        );
     }
 
-    SegmentRunResult {
-        transition: SegmentTransition::Stop,
-        ffmpeg_succeeded: false,
-        output_written: false,
-        force_killed: false,
-    }
+    early_exit_result(SegmentTransition::Stop, segment_started_at)
 }
 
 fn should_fallback_window_capture_to_region(
     capture_input: &CaptureInput,
-    ffmpeg_exit_status: &std::process::ExitStatus,
+    ffmpeg_exit_status: &ExitStatus,
     stderr_hints: &[String],
 ) -> bool {
     if !matches!(capture_input, CaptureInput::Window { .. })
@@ -100,229 +106,43 @@ fn should_fallback_window_capture_to_region(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn run_ffmpeg_recording_segment(
-    app_handle: &AppHandle,
-    ffmpeg_binary_path: &Path,
-    runtime_capture_mode: RuntimeCaptureMode,
-    capture_input: &mut CaptureInput,
-    output_path: &Path,
-    requested_frame_rate: u32,
-    output_frame_rate: u32,
-    bitrate: u32,
-    include_system_audio: bool,
+struct AudioListenerSetup {
+    listener: TcpListener,
+    port: u16,
+}
+
+fn bind_audio_listener(
+    segment_started_at: Instant,
+) -> Result<AudioListenerSetup, SegmentRunResult> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
+        tracing::error!("Failed to allocate local audio TCP listener: {error}");
+        early_exit_result(SegmentTransition::Stop, segment_started_at)
+    })?;
+
+    listener.set_nonblocking(true).map_err(|error| {
+        tracing::error!("Failed to configure audio TCP listener: {error}");
+        early_exit_result(SegmentTransition::Stop, segment_started_at)
+    })?;
+
+    let port = listener
+        .local_addr()
+        .map(|addr| addr.port())
+        .map_err(|error| {
+            tracing::error!("Failed to resolve audio TCP listener port: {error}");
+            early_exit_result(SegmentTransition::Stop, segment_started_at)
+        })?;
+
+    Ok(AudioListenerSetup { listener, port })
+}
+
+fn spawn_stderr_reader(
+    child: &mut Child,
     enable_diagnostics: bool,
-    video_encoder: &str,
-    encoder_preset: Option<&str>,
-    capture_width: u32,
-    capture_height: u32,
-    stop_rx: &mut mpsc::Receiver<()>,
-) -> SegmentRunResult {
-    let bitrate_string = bitrate.to_string();
-    let maxrate_string = bitrate.to_string();
-    let buffer_size_string = bitrate.saturating_mul(2).to_string();
-    let output_path_string = output_path.to_string_lossy().to_string();
-
-    tracing::info!(
-        ffmpeg_path = %ffmpeg_binary_path.display(),
-        runtime_capture_mode = runtime_capture_label(runtime_capture_mode),
-        output_path = %output_path.display(),
-        requested_frame_rate,
-        output_frame_rate,
-        bitrate,
-        include_system_audio,
-        enable_diagnostics,
-        video_encoder,
-        "Starting FFmpeg recording segment"
-    );
-
-    let mut command = Command::new(ffmpeg_binary_path);
-    #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW);
-    command
-        .arg("-hide_banner")
-        .arg("-loglevel")
-        .arg("warning")
-        .arg("-stats")
-        .arg("-stats_period")
-        .arg("1")
-        .arg("-y");
-
-    let mut audio_listener: Option<TcpListener> = None;
-
-    if include_system_audio {
-        let listener = match TcpListener::bind(("127.0.0.1", 0)) {
-            Ok(listener) => listener,
-            Err(error) => {
-                tracing::error!("Failed to allocate local audio TCP listener: {error}");
-                return SegmentRunResult {
-                    transition: SegmentTransition::Stop,
-                    ffmpeg_succeeded: false,
-                    output_written: false,
-                    force_killed: false,
-                };
-            }
-        };
-
-        if let Err(error) = listener.set_nonblocking(true) {
-            tracing::error!("Failed to configure audio TCP listener: {error}");
-            return SegmentRunResult {
-                transition: SegmentTransition::Stop,
-                ffmpeg_succeeded: false,
-                output_written: false,
-                force_killed: false,
-            };
-        }
-
-        let audio_port = match listener.local_addr() {
-            Ok(address) => address.port(),
-            Err(error) => {
-                tracing::error!("Failed to resolve audio TCP listener port: {error}");
-                return SegmentRunResult {
-                    transition: SegmentTransition::Stop,
-                    ffmpeg_succeeded: false,
-                    output_written: false,
-                    force_killed: false,
-                };
-            }
-        };
-
-        command
-            .arg("-thread_queue_size")
-            .arg("1024")
-            .arg("-f")
-            .arg("s16le")
-            .arg("-ar")
-            .arg(SYSTEM_AUDIO_SAMPLE_RATE_HZ.to_string())
-            .arg("-ac")
-            .arg(SYSTEM_AUDIO_CHANNEL_COUNT.to_string())
-            .arg("-i")
-            .arg(format!("tcp://127.0.0.1:{audio_port}"));
-
-        let capture_input_args = append_runtime_capture_input_args(
-            &mut command,
-            runtime_capture_mode,
-            capture_input,
-            requested_frame_rate,
-            capture_width,
-            capture_height,
-        );
-        let capture_input_info = match capture_input_args {
-            Ok(info) => info,
-            Err(error) => {
-                return segment_result_for_capture_input_error(
-                    app_handle,
-                    runtime_capture_mode,
-                    capture_input,
-                    &error,
-                );
-            }
-        };
-
-        let video_filter = resolve_video_filter(
-            runtime_capture_mode,
-            output_frame_rate,
-            capture_input_info.width,
-            capture_input_info.height,
-        );
-
-        command
-            .arg("-map")
-            .arg("1:v:0")
-            .arg("-map")
-            .arg("0:a:0")
-            .arg("-af")
-            .arg("aresample=async=1:min_hard_comp=0.100:first_pts=0,volume=2.2,alimiter=limit=0.98")
-            .arg("-vf")
-            .arg(&video_filter)
-            .arg("-thread_queue_size")
-            .arg("512")
-            .arg("-c:a")
-            .arg("aac")
-            .arg("-b:a")
-            .arg("192k")
-            .arg("-ar")
-            .arg("48000")
-            .arg("-ac")
-            .arg("2");
-
-        audio_listener = Some(listener);
-    } else {
-        let capture_input_args = append_runtime_capture_input_args(
-            &mut command,
-            runtime_capture_mode,
-            capture_input,
-            requested_frame_rate,
-            capture_width,
-            capture_height,
-        );
-        let capture_input_info = match capture_input_args {
-            Ok(info) => info,
-            Err(error) => {
-                return segment_result_for_capture_input_error(
-                    app_handle,
-                    runtime_capture_mode,
-                    capture_input,
-                    &error,
-                );
-            }
-        };
-
-        let video_filter = resolve_video_filter(
-            runtime_capture_mode,
-            output_frame_rate,
-            capture_input_info.width,
-            capture_input_info.height,
-        );
-
-        command.arg("-vf").arg(&video_filter).arg("-an");
-    }
-
-    command.arg("-c:v").arg(video_encoder);
-
-    if let Some(preset) = encoder_preset {
-        command.arg("-preset").arg(preset);
-    }
-
-    command
-        .arg("-b:v")
-        .arg(&bitrate_string)
-        .arg("-maxrate")
-        .arg(&maxrate_string)
-        .arg("-bufsize")
-        .arg(&buffer_size_string)
-        .arg("-fps_mode")
-        .arg("cfr")
-        .arg("-max_muxing_queue_size")
-        .arg("2048")
-        .arg("-movflags")
-        .arg("+faststart")
-        .arg(&output_path_string)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-
-    let mut child = match command.spawn() {
-        Ok(process) => process,
-        Err(error) => {
-            tracing::error!("Failed to spawn FFmpeg recording process: {error}");
-            return SegmentRunResult {
-                transition: SegmentTransition::Stop,
-                ffmpeg_succeeded: false,
-                output_written: false,
-                force_killed: false,
-            };
-        }
-    };
-
-    if matches!(runtime_capture_mode, RuntimeCaptureMode::Window) {
-        emit_recording_warning_cleared(app_handle);
-    }
-
+) -> (Arc<Mutex<Vec<String>>>, Option<thread::JoinHandle<()>>) {
     let stderr_hints: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let stderr_hints_for_thread = Arc::clone(&stderr_hints);
+
     let stderr_thread = child.stderr.take().map(|stderr| {
-        let diagnostics_enabled = enable_diagnostics;
         thread::spawn(move || {
             let mut low_speed_streak = 0u32;
             let mut low_speed_warned = false;
@@ -352,7 +172,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                         }
 
                         if is_progress_line {
-                            if diagnostics_enabled {
+                            if enable_diagnostics {
                                 tracing::info!("ffmpeg: {content}");
                             }
                         } else {
@@ -364,7 +184,7 @@ pub(super) fn run_ffmpeg_recording_segment(
                                     }
                                 }
 
-                                if diagnostics_enabled {
+                                if enable_diagnostics {
                                     tracing::debug!("ffmpeg: {trimmed}");
                                 }
                             }
@@ -380,81 +200,104 @@ pub(super) fn run_ffmpeg_recording_segment(
         })
     });
 
-    let (
-        audio_capture_stop_tx,
-        audio_writer_stop_tx,
-        audio_capture_thread,
-        audio_writer_thread,
-        audio_stats,
-    ) = if include_system_audio {
-        let Some(listener) = audio_listener else {
-            tracing::error!("System audio was enabled but audio listener was unavailable");
-            return SegmentRunResult {
-                transition: SegmentTransition::Stop,
-                ffmpeg_succeeded: false,
-                output_written: false,
-                force_killed: false,
-            };
-        };
+    (stderr_hints, stderr_thread)
+}
 
-        let (audio_tx, audio_rx) = std_mpsc::sync_channel::<Vec<u8>>(SYSTEM_AUDIO_QUEUE_CAPACITY);
-        let (capture_stop_tx, capture_stop_rx) = std_mpsc::channel::<()>();
-        let (writer_stop_tx, writer_stop_rx) = std_mpsc::channel::<()>();
-        let stats = Arc::new(AudioPipelineStats::default());
+struct AudioPipelineHandles {
+    capture_stop_tx: std_mpsc::Sender<()>,
+    writer_stop_tx: std_mpsc::Sender<()>,
+    capture_thread: thread::JoinHandle<Result<(), String>>,
+    writer_thread: thread::JoinHandle<Result<(), String>>,
+    stats: Arc<AudioPipelineStats>,
+}
 
-        let writer_stats = Arc::clone(&stats);
-        let writer_thread = thread::spawn(move || {
-            tracing::info!("Waiting for FFmpeg audio socket connection");
-            let audio_stream = loop {
-                match listener.accept() {
-                    Ok((stream, _)) => {
-                        tracing::info!("FFmpeg audio socket connected");
-                        break Ok(stream);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        match writer_stop_rx.try_recv() {
-                            Ok(()) | Err(std_mpsc::TryRecvError::Disconnected) => {
-                                return Ok(());
-                            }
-                            Err(std_mpsc::TryRecvError::Empty) => {
-                                thread::sleep(Duration::from_millis(AUDIO_TCP_ACCEPT_WAIT_MS));
-                            }
+fn setup_audio_pipeline(listener: TcpListener) -> AudioPipelineHandles {
+    let (audio_tx, audio_rx) = std_mpsc::sync_channel::<Vec<u8>>(SYSTEM_AUDIO_QUEUE_CAPACITY);
+    let (capture_stop_tx, capture_stop_rx) = std_mpsc::channel::<()>();
+    let (writer_stop_tx, writer_stop_rx) = std_mpsc::channel::<()>();
+    let stats = Arc::new(AudioPipelineStats::default());
+
+    let writer_stats = Arc::clone(&stats);
+    let writer_thread = thread::spawn(move || {
+        tracing::info!("Waiting for FFmpeg audio socket connection");
+        let audio_stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    tracing::info!("FFmpeg audio socket connected");
+                    break Ok(stream);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    match writer_stop_rx.try_recv() {
+                        Ok(()) | Err(std_mpsc::TryRecvError::Disconnected) => {
+                            return Ok(());
+                        }
+                        Err(std_mpsc::TryRecvError::Empty) => {
+                            thread::sleep(AUDIO_TCP_ACCEPT_WAIT);
                         }
                     }
-                    Err(error) => break Err(format!("Failed to accept audio TCP stream: {error}")),
                 }
-            }?;
+                Err(error) => break Err(format!("Failed to accept audio TCP stream: {error}")),
+            }
+        }?;
 
-            let _ = audio_stream.set_nodelay(true);
-            let _ = audio_stream.set_write_timeout(Some(Duration::from_millis(12)));
-            let writer_result =
-                run_audio_queue_to_writer(audio_stream, audio_rx, writer_stop_rx, writer_stats);
-            tracing::info!("System audio writer thread exited");
-            writer_result
-        });
+        // Non-fatal socket tuning; recording proceeds with defaults if these fail.
+        let _ = audio_stream.set_nodelay(true);
+        let _ = audio_stream.set_write_timeout(Some(Duration::from_millis(12)));
+        let writer_result =
+            run_audio_queue_to_writer(audio_stream, audio_rx, writer_stop_rx, writer_stats);
+        tracing::info!("System audio writer thread exited");
+        writer_result
+    });
 
-        let capture_stats = Arc::clone(&stats);
-        let capture_thread = thread::spawn(move || {
-            let capture_result =
-                run_system_audio_capture_to_queue(audio_tx, capture_stop_rx, capture_stats);
-            tracing::info!("System audio capture thread exited");
-            capture_result
-        });
+    let capture_stats = Arc::clone(&stats);
+    let capture_thread = thread::spawn(move || {
+        let capture_result =
+            run_system_audio_capture_to_queue(audio_tx, capture_stop_rx, capture_stats);
+        tracing::info!("System audio capture thread exited");
+        capture_result
+    });
 
-        (
-            Some(capture_stop_tx),
-            Some(writer_stop_tx),
-            Some(capture_thread),
-            Some(writer_thread),
-            Some(stats),
-        )
-    } else {
-        (None, None, None, None, None)
+    AudioPipelineHandles {
+        capture_stop_tx,
+        writer_stop_tx,
+        capture_thread,
+        writer_thread,
+        stats,
+    }
+}
+
+struct PollLoopState {
+    stop_requested_at: Option<Instant>,
+    kill_sent: bool,
+    force_killed: bool,
+    stop_requested_by_user: bool,
+    requested_transition: Option<RuntimeCaptureMode>,
+    requested_transition_kind: Option<RequestedTransitionKind>,
+}
+
+struct PollLoopOutcome {
+    exit_status: Result<ExitStatus, std::io::Error>,
+    state: PollLoopState,
+}
+
+fn run_segment_poll_loop(
+    app_handle: &AppHandle,
+    child: &mut Child,
+    capture_input: &CaptureInput,
+    runtime_capture_mode: RuntimeCaptureMode,
+    enable_diagnostics: bool,
+    audio: &Option<AudioPipelineHandles>,
+    stop_rx: &mut mpsc::Receiver<()>,
+) -> PollLoopOutcome {
+    let mut state = PollLoopState {
+        stop_requested_at: None,
+        kill_sent: false,
+        force_killed: false,
+        stop_requested_by_user: false,
+        requested_transition: None,
+        requested_transition_kind: None,
     };
 
-    let mut stop_requested_at: Option<Instant> = None;
-    let mut kill_sent = false;
-    let mut force_killed = false;
     let mut stats_logged_at = Instant::now();
     let mut previous_queued = 0u64;
     let mut previous_dequeued = 0u64;
@@ -463,18 +306,19 @@ pub(super) fn run_ffmpeg_recording_segment(
     let mut drop_warning_emitted = false;
     let mut window_status_checked_at = Instant::now();
     let mut active_window_warning: Option<&'static str> = None;
-    let mut stop_requested_by_user = false;
-    let mut requested_transition: Option<RuntimeCaptureMode> = None;
-    let mut requested_transition_kind: Option<RequestedTransitionKind> = None;
+
+    // For request_ffmpeg_graceful_stop.
+    let audio_capture_stop_tx = audio.as_ref().map(|a| &a.capture_stop_tx);
+    let audio_writer_stop_tx = audio.as_ref().map(|a| &a.writer_stop_tx);
 
     let exit_status = loop {
-        if stop_requested_at.is_none() {
+        if state.stop_requested_at.is_none() {
             match stop_rx.try_recv() {
                 Ok(()) | Err(TryRecvError::Disconnected) => {
-                    stop_requested_by_user = true;
+                    state.stop_requested_by_user = true;
                     request_ffmpeg_graceful_stop(
-                        &mut stop_requested_at,
-                        &mut child,
+                        &mut state.stop_requested_at,
+                        child,
                         &audio_capture_stop_tx,
                         &audio_writer_stop_tx,
                     );
@@ -483,29 +327,31 @@ pub(super) fn run_ffmpeg_recording_segment(
             }
         }
 
-        if let Some(requested_at) = stop_requested_at {
-            let stop_timeout =
-                resolve_stop_timeout(stop_requested_by_user, requested_transition_kind);
+        if let Some(requested_at) = state.stop_requested_at {
+            let stop_timeout = resolve_stop_timeout(
+                state.stop_requested_by_user,
+                state.requested_transition_kind,
+            );
 
-            if !kill_sent && requested_at.elapsed() >= stop_timeout {
+            if !state.kill_sent && requested_at.elapsed() >= stop_timeout {
                 match child.kill() {
                     Ok(()) => {
-                        force_killed = true;
+                        state.force_killed = true;
                     }
                     Err(error) => {
                         tracing::warn!("Failed to force-stop FFmpeg process: {error}");
                     }
                 }
-                kill_sent = true;
+                state.kill_sent = true;
             }
         }
 
-        if let Some(audio_stats) = &audio_stats {
+        if let Some(audio_handles) = audio {
             if stats_logged_at.elapsed() >= Duration::from_secs(1) {
-                let queued_total = audio_stats.queued_chunks.load(Ordering::Relaxed);
-                let dequeued_total = audio_stats.dequeued_chunks.load(Ordering::Relaxed);
-                let dropped_total = audio_stats.dropped_chunks.load(Ordering::Relaxed);
-                let timeouts_total = audio_stats.write_timeouts.load(Ordering::Relaxed);
+                let queued_total = audio_handles.stats.queued_chunks.load(Ordering::Relaxed);
+                let dequeued_total = audio_handles.stats.dequeued_chunks.load(Ordering::Relaxed);
+                let dropped_total = audio_handles.stats.dropped_chunks.load(Ordering::Relaxed);
+                let timeouts_total = audio_handles.stats.write_timeouts.load(Ordering::Relaxed);
                 let queue_depth = queued_total.saturating_sub(dequeued_total);
                 let dropped_delta = dropped_total.saturating_sub(previous_dropped);
                 let timeout_delta = timeouts_total.saturating_sub(previous_timeouts);
@@ -567,17 +413,17 @@ pub(super) fn run_ffmpeg_recording_segment(
                 active_window_warning = next_window_warning;
             }
 
-            if requested_transition.is_none() {
+            if state.requested_transition.is_none() {
                 match runtime_capture_mode {
                     RuntimeCaptureMode::Window
                         if capture_availability != WindowCaptureAvailability::Available =>
                     {
-                        requested_transition = Some(RuntimeCaptureMode::Black);
-                        requested_transition_kind =
+                        state.requested_transition = Some(RuntimeCaptureMode::Black);
+                        state.requested_transition_kind =
                             Some(RequestedTransitionKind::ModeSwitchToBlack);
                         request_ffmpeg_graceful_stop(
-                            &mut stop_requested_at,
-                            &mut child,
+                            &mut state.stop_requested_at,
+                            child,
                             &audio_capture_stop_tx,
                             &audio_writer_stop_tx,
                         );
@@ -591,12 +437,12 @@ pub(super) fn run_ffmpeg_recording_segment(
                                     window_hwnd,
                                     "Window capture target is ready; restoring capture from black mode"
                                 );
-                                requested_transition = Some(RuntimeCaptureMode::Window);
-                                requested_transition_kind =
+                                state.requested_transition = Some(RuntimeCaptureMode::Window);
+                                state.requested_transition_kind =
                                     Some(RequestedTransitionKind::ModeSwitchToWindow);
                                 request_ffmpeg_graceful_stop(
-                                    &mut stop_requested_at,
-                                    &mut child,
+                                    &mut state.stop_requested_at,
+                                    child,
                                     &audio_capture_stop_tx,
                                     &audio_writer_stop_tx,
                                 );
@@ -620,10 +466,19 @@ pub(super) fn run_ffmpeg_recording_segment(
         }
     };
 
-    signal_audio_threads_stop(&audio_capture_stop_tx, &audio_writer_stop_tx);
+    PollLoopOutcome { exit_status, state }
+}
 
-    if let Some(stderr_thread) = stderr_thread {
-        if let Err(error) = stderr_thread.join() {
+fn join_worker_threads(
+    audio: Option<AudioPipelineHandles>,
+    stderr_thread: Option<thread::JoinHandle<()>>,
+    stderr_hints: &Arc<Mutex<Vec<String>>>,
+    stop_requested_by_user: bool,
+    requested_transition: Option<RuntimeCaptureMode>,
+    kill_sent: bool,
+) -> Vec<String> {
+    if let Some(handle) = stderr_thread {
+        if let Err(error) = handle.join() {
             tracing::warn!("Failed to join FFmpeg stderr thread: {error:?}");
         }
     }
@@ -633,8 +488,8 @@ pub(super) fn run_ffmpeg_recording_segment(
         .map(|lines| lines.clone())
         .unwrap_or_default();
 
-    if let Some(audio_capture_thread) = audio_capture_thread {
-        match audio_capture_thread.join() {
+    if let Some(audio_handles) = audio {
+        match audio_handles.capture_thread.join() {
             Ok(Ok(())) => {}
             Ok(Err(error)) => {
                 tracing::error!("System audio capture thread failed: {error}");
@@ -643,10 +498,8 @@ pub(super) fn run_ffmpeg_recording_segment(
                 tracing::error!("System audio capture thread panicked: {error:?}");
             }
         }
-    }
 
-    if let Some(audio_writer_thread) = audio_writer_thread {
-        match audio_writer_thread.join() {
+        match audio_handles.writer_thread.join() {
             Ok(Ok(())) => {}
             Ok(Err(error)) => {
                 let expected_disconnect =
@@ -663,7 +516,235 @@ pub(super) fn run_ffmpeg_recording_segment(
         }
     }
 
-    let ffmpeg_completed_successfully = match exit_status {
+    stderr_hint_lines
+}
+
+fn determine_segment_transition(
+    runtime_capture_mode: RuntimeCaptureMode,
+    capture_input: &CaptureInput,
+    stop_requested_by_user: bool,
+    requested_transition: Option<RuntimeCaptureMode>,
+    ffmpeg_succeeded: bool,
+) -> SegmentTransition {
+    if stop_requested_by_user {
+        return SegmentTransition::Stop;
+    }
+
+    if let Some(next_mode) = requested_transition {
+        return SegmentTransition::Switch(next_mode);
+    }
+
+    if ffmpeg_succeeded {
+        return SegmentTransition::RestartSameMode;
+    }
+
+    match runtime_capture_mode {
+        RuntimeCaptureMode::Window => {
+            let availability = evaluate_window_capture_availability(capture_input);
+            if availability != WindowCaptureAvailability::Available {
+                SegmentTransition::Switch(RuntimeCaptureMode::Black)
+            } else {
+                SegmentTransition::RestartSameMode
+            }
+        }
+        RuntimeCaptureMode::Black => {
+            let availability = evaluate_window_capture_availability(capture_input);
+            if availability == WindowCaptureAvailability::Available {
+                SegmentTransition::Switch(RuntimeCaptureMode::Window)
+            } else {
+                SegmentTransition::RestartSameMode
+            }
+        }
+        RuntimeCaptureMode::Monitor => SegmentTransition::Stop,
+    }
+}
+
+pub(super) fn run_ffmpeg_recording_segment(
+    app_handle: &AppHandle,
+    config: &SegmentConfig,
+    capture_input: &mut CaptureInput,
+    stop_rx: &mut mpsc::Receiver<()>,
+) -> SegmentRunResult {
+    tracing::info!(
+        ffmpeg_path = %config.ffmpeg_binary_path.display(),
+        runtime_capture_mode = runtime_capture_label(config.runtime_capture_mode),
+        output_path = %config.output_path.display(),
+        requested_frame_rate = config.requested_frame_rate,
+        output_frame_rate = config.output_frame_rate,
+        bitrate = config.bitrate,
+        include_system_audio = config.include_system_audio,
+        enable_diagnostics = config.enable_diagnostics,
+        video_encoder = config.video_encoder,
+        "Starting FFmpeg recording segment"
+    );
+
+    let segment_started_at = Instant::now();
+
+    // Bind audio listener before building the command so we know the port.
+    let audio_setup = if config.include_system_audio {
+        match bind_audio_listener(segment_started_at) {
+            Ok(setup) => Some(setup),
+            Err(result) => return result,
+        }
+    } else {
+        None
+    };
+
+    let audio_port = audio_setup.as_ref().map(|s| s.port);
+
+    let bitrate_string = config.bitrate.to_string();
+    let buffer_size_string = config.bitrate.saturating_mul(2).to_string();
+    let output_path_string = config.output_path.to_string_lossy().to_string();
+
+    let mut command = Command::new(config.ffmpeg_binary_path);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("warning")
+        .arg("-stats")
+        .arg("-stats_period")
+        .arg("1")
+        .arg("-y");
+
+    if let Some(port) = audio_port {
+        command
+            .arg("-thread_queue_size")
+            .arg("1024")
+            .arg("-f")
+            .arg("s16le")
+            .arg("-ar")
+            .arg(SYSTEM_AUDIO_SAMPLE_RATE_HZ.to_string())
+            .arg("-ac")
+            .arg(SYSTEM_AUDIO_CHANNEL_COUNT.to_string())
+            .arg("-i")
+            .arg(format!("tcp://127.0.0.1:{port}"));
+    }
+
+    let capture_input_info = match append_runtime_capture_input_args(
+        &mut command,
+        config.runtime_capture_mode,
+        capture_input,
+        config.requested_frame_rate,
+        config.capture_width,
+        config.capture_height,
+    ) {
+        Ok(info) => info,
+        Err(error) => {
+            return segment_result_for_capture_input_error(
+                app_handle,
+                config.runtime_capture_mode,
+                capture_input,
+                &error,
+                segment_started_at,
+            );
+        }
+    };
+
+    let video_filter = resolve_video_filter(
+        config.runtime_capture_mode,
+        config.output_frame_rate,
+        capture_input_info.width,
+        capture_input_info.height,
+    );
+
+    if audio_port.is_some() {
+        command
+            .arg("-map")
+            .arg("1:v:0")
+            .arg("-map")
+            .arg("0:a:0")
+            .arg("-af")
+            .arg("aresample=async=1:min_hard_comp=0.100:first_pts=0,volume=2.2,alimiter=limit=0.98")
+            .arg("-vf")
+            .arg(&video_filter)
+            .arg("-thread_queue_size")
+            .arg("512")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-b:a")
+            .arg("192k")
+            .arg("-ar")
+            .arg("48000")
+            .arg("-ac")
+            .arg("2");
+    } else {
+        command.arg("-vf").arg(&video_filter).arg("-an");
+    }
+
+    command.arg("-c:v").arg(config.video_encoder);
+
+    if let Some(preset) = config.encoder_preset {
+        command.arg("-preset").arg(preset);
+    }
+
+    command
+        .arg("-b:v")
+        .arg(&bitrate_string)
+        .arg("-maxrate")
+        .arg(&bitrate_string)
+        .arg("-bufsize")
+        .arg(&buffer_size_string)
+        .arg("-fps_mode")
+        .arg("cfr")
+        .arg("-max_muxing_queue_size")
+        .arg("2048")
+        .arg("-movflags")
+        .arg("+faststart")
+        .arg(&output_path_string)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(process) => process,
+        Err(error) => {
+            tracing::error!("Failed to spawn FFmpeg recording process: {error}");
+            return early_exit_result(SegmentTransition::Stop, segment_started_at);
+        }
+    };
+
+    if matches!(config.runtime_capture_mode, RuntimeCaptureMode::Window) {
+        emit_recording_warning_cleared(app_handle);
+    }
+
+    let (stderr_hints, stderr_thread) = spawn_stderr_reader(&mut child, config.enable_diagnostics);
+
+    let audio_handles = if let Some(setup) = audio_setup {
+        Some(setup_audio_pipeline(setup.listener))
+    } else {
+        None
+    };
+
+    // Ensure audio threads are signaled to stop even if the poll loop exited unexpectedly.
+    let outcome = run_segment_poll_loop(
+        app_handle,
+        &mut child,
+        capture_input,
+        config.runtime_capture_mode,
+        config.enable_diagnostics,
+        &audio_handles,
+        stop_rx,
+    );
+
+    // Ensure audio threads are signaled to stop even if the poll loop exited unexpectedly.
+    if let Some(ref audio) = audio_handles {
+        signal_audio_threads_stop(&Some(&audio.capture_stop_tx), &Some(&audio.writer_stop_tx));
+    }
+
+    let stderr_hint_lines = join_worker_threads(
+        audio_handles,
+        stderr_thread,
+        &stderr_hints,
+        outcome.state.stop_requested_by_user,
+        outcome.state.requested_transition,
+        outcome.state.kill_sent,
+    );
+
+    let mut force_killed = outcome.state.force_killed;
+
+    let ffmpeg_succeeded = match outcome.exit_status {
         Ok(status) if status.success() => {
             tracing::info!("FFmpeg recording process finished successfully");
             true
@@ -687,7 +768,8 @@ pub(super) fn run_ffmpeg_recording_segment(
                 tracing::warn!(ffmpeg_stderr = %joined_hints, "FFmpeg stderr details");
             }
 
-            if requested_transition.is_some() || stop_requested_by_user {
+            if outcome.state.requested_transition.is_some() || outcome.state.stop_requested_by_user
+            {
                 tracing::warn!("FFmpeg recording process exited while transitioning: {status}");
             } else {
                 tracing::error!("FFmpeg recording process exited with status: {status}");
@@ -711,43 +793,25 @@ pub(super) fn run_ffmpeg_recording_segment(
         }
     };
 
-    let output_written = output_path.exists()
-        && output_path
+    let output_written = config.output_path.exists()
+        && config
+            .output_path
             .metadata()
             .is_ok_and(|metadata| metadata.len() > 0);
 
-    let transition = if stop_requested_by_user {
-        SegmentTransition::Stop
-    } else if let Some(next_runtime_capture_mode) = requested_transition {
-        SegmentTransition::Switch(next_runtime_capture_mode)
-    } else if ffmpeg_completed_successfully {
-        SegmentTransition::RestartSameMode
-    } else {
-        match runtime_capture_mode {
-            RuntimeCaptureMode::Window => {
-                let availability = evaluate_window_capture_availability(capture_input);
-                if availability != WindowCaptureAvailability::Available {
-                    SegmentTransition::Switch(RuntimeCaptureMode::Black)
-                } else {
-                    SegmentTransition::RestartSameMode
-                }
-            }
-            RuntimeCaptureMode::Black => {
-                let availability = evaluate_window_capture_availability(capture_input);
-                if availability == WindowCaptureAvailability::Available {
-                    SegmentTransition::Switch(RuntimeCaptureMode::Window)
-                } else {
-                    SegmentTransition::RestartSameMode
-                }
-            }
-            RuntimeCaptureMode::Monitor => SegmentTransition::Stop,
-        }
-    };
+    let transition = determine_segment_transition(
+        config.runtime_capture_mode,
+        capture_input,
+        outcome.state.stop_requested_by_user,
+        outcome.state.requested_transition,
+        ffmpeg_succeeded,
+    );
 
     SegmentRunResult {
         transition,
-        ffmpeg_succeeded: ffmpeg_completed_successfully,
+        ffmpeg_succeeded,
         output_written,
         force_killed,
+        wall_clock_duration: segment_started_at.elapsed(),
     }
 }

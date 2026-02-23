@@ -461,7 +461,7 @@ pub(crate) fn resolve_capture_input(settings: &RecordingSettings) -> Result<Capt
                     });
                 }
 
-                if let Some(title) = requested_title.clone() {
+                if let Some(title) = requested_title {
                     if let Some(matching_window) = available_windows
                         .iter()
                         .find(|window| window.title == title)

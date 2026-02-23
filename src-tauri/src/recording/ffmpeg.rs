@@ -163,8 +163,12 @@ pub(crate) fn append_runtime_capture_input_args(
         RuntimeCaptureMode::Black => {
             let (safe_width, safe_height) =
                 sanitize_capture_dimensions(capture_width, capture_height);
+            // The `realtime` filter inside the lavfi graph throttles frame emission to
+            // wall-clock speed, preventing the `color` source from generating frames
+            // faster than real-time. Placing `realtime` here (in the input graph) rather
+            // than in the `-vf` output filter chain avoids flush-blocking on graceful stop.
             command.arg("-f").arg("lavfi").arg("-i").arg(format!(
-                "color=c=black:s={safe_width}x{safe_height}:r={requested_frame_rate}"
+                "color=c=black:s={safe_width}x{safe_height}:r={requested_frame_rate},realtime"
             ));
             Ok(RuntimeCaptureInputInfo {
                 width: safe_width,

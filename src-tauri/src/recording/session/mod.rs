@@ -11,8 +11,8 @@ use tokio::sync::mpsc;
 
 use super::ffmpeg::select_video_encoder;
 use super::model::{
-    CaptureInput, RuntimeCaptureMode, SegmentTransition, SharedRecordingState,
-    WindowCaptureAvailability, WINDOW_CAPTURE_UNAVAILABLE_WARNING,
+    RecordingSessionConfig, RuntimeCaptureMode, SegmentConfig, SegmentTransition,
+    SharedRecordingState, WindowCaptureAvailability, WINDOW_CAPTURE_UNAVAILABLE_WARNING,
 };
 use super::segments::{
     build_segment_output_path, cleanup_segment_workspace, create_segment_workspace,
@@ -30,23 +30,16 @@ use self::events::{
 };
 use self::segment_runner::run_ffmpeg_recording_segment;
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_ffmpeg_recording_task(
     app_handle: AppHandle,
     state: SharedRecordingState,
-    output_path: String,
-    ffmpeg_binary_path: PathBuf,
-    requested_frame_rate: u32,
-    output_frame_rate: u32,
-    bitrate: u32,
-    capture_input: CaptureInput,
-    include_system_audio: bool,
-    enable_diagnostics: bool,
+    session_config: RecordingSessionConfig,
     mut stop_rx: mpsc::Receiver<()>,
 ) {
     thread::spawn(move || {
-        let mut capture_input = capture_input;
-        let (video_encoder, encoder_preset) = select_video_encoder(&ffmpeg_binary_path);
+        let mut capture_input = session_config.capture_input;
+        let (video_encoder, encoder_preset) =
+            select_video_encoder(&session_config.ffmpeg_binary_path);
         let mut runtime_capture_mode = to_runtime_capture_mode(&capture_input);
         let capture_target = capture_input.target_label();
         let (capture_width, capture_height) = resolve_capture_dimensions(&capture_input);
@@ -72,34 +65,36 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             }
         }
 
-        let segment_workspace = if matches!(capture_input, CaptureInput::Window { .. }) {
-            match create_segment_workspace(&output_path) {
-                Ok(workspace) => Some(workspace),
-                Err(error) => {
-                    tracing::error!("{error}");
-                    clear_recording_state(&state);
-                    emit_recording_stopped(&app_handle);
-                    return;
+        let segment_workspace =
+            if matches!(capture_input, super::model::CaptureInput::Window { .. }) {
+                match create_segment_workspace(&session_config.output_path) {
+                    Ok(workspace) => Some(workspace),
+                    Err(error) => {
+                        tracing::error!("{error}");
+                        clear_recording_state(&state);
+                        emit_recording_stopped(&app_handle);
+                        return;
+                    }
                 }
-            }
-        } else {
-            None
-        };
+            } else {
+                None
+            };
 
         tracing::info!(
-            ffmpeg_path = %ffmpeg_binary_path.display(),
-            requested_frame_rate,
-            output_frame_rate,
-            bitrate,
+            ffmpeg_path = %session_config.ffmpeg_binary_path.display(),
+            requested_frame_rate = session_config.requested_frame_rate,
+            output_frame_rate = session_config.output_frame_rate,
+            bitrate = session_config.bitrate,
             capture_source = runtime_capture_label(runtime_capture_mode),
             capture_target = %capture_target,
-            include_system_audio,
-            enable_diagnostics,
+            include_system_audio = session_config.include_system_audio,
+            enable_diagnostics = session_config.enable_diagnostics,
             video_encoder,
             "Starting FFmpeg recording"
         );
 
         let mut segment_paths: Vec<PathBuf> = Vec::new();
+        let mut segment_durations: Vec<Duration> = Vec::new();
         let mut segment_index: usize = 0;
         let mut consecutive_segment_failures = 0u32;
 
@@ -107,24 +102,28 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             let segment_output_path = if let Some(workspace) = &segment_workspace {
                 build_segment_output_path(workspace, segment_index)
             } else {
-                PathBuf::from(&output_path)
+                PathBuf::from(&session_config.output_path)
+            };
+
+            let segment_config = SegmentConfig {
+                ffmpeg_binary_path: &session_config.ffmpeg_binary_path,
+                runtime_capture_mode,
+                output_path: &segment_output_path,
+                requested_frame_rate: session_config.requested_frame_rate,
+                output_frame_rate: session_config.output_frame_rate,
+                bitrate: session_config.bitrate,
+                include_system_audio: session_config.include_system_audio,
+                enable_diagnostics: session_config.enable_diagnostics,
+                video_encoder: &video_encoder,
+                encoder_preset: encoder_preset.as_deref(),
+                capture_width,
+                capture_height,
             };
 
             let run_result = run_ffmpeg_recording_segment(
                 &app_handle,
-                &ffmpeg_binary_path,
-                runtime_capture_mode,
+                &segment_config,
                 &mut capture_input,
-                &segment_output_path,
-                requested_frame_rate,
-                output_frame_rate,
-                bitrate,
-                include_system_audio,
-                enable_diagnostics,
-                &video_encoder,
-                encoder_preset.as_deref(),
-                capture_width,
-                capture_height,
                 &mut stop_rx,
             );
 
@@ -136,6 +135,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
                     );
                 } else {
                     segment_paths.push(segment_output_path);
+                    segment_durations.push(run_result.wall_clock_duration);
                 }
             }
 
@@ -178,10 +178,11 @@ pub(crate) fn spawn_ffmpeg_recording_task(
 
         let finalized_successfully = if let Some(workspace) = &segment_workspace {
             let finalize_result = finalize_segmented_recording(
-                &ffmpeg_binary_path,
+                &session_config.ffmpeg_binary_path,
                 workspace,
                 &segment_paths,
-                &output_path,
+                &segment_durations,
+                &session_config.output_path,
             );
 
             let was_successful = match finalize_result {
@@ -199,7 +200,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             cleanup_segment_workspace(workspace);
             was_successful
         } else {
-            let output_file = Path::new(&output_path);
+            let output_file = Path::new(&session_config.output_path);
             output_file.exists()
                 && output_file
                     .metadata()
@@ -208,7 +209,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
         };
 
         if finalized_successfully {
-            emit_recording_finalized(&app_handle, &output_path);
+            emit_recording_finalized(&app_handle, &session_config.output_path);
         }
 
         emit_recording_warning_cleared(&app_handle);

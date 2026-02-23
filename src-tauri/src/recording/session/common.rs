@@ -37,8 +37,8 @@ pub(super) fn clear_recording_state(state: &SharedRecordingState) {
 }
 
 pub(super) fn signal_audio_threads_stop(
-    audio_capture_stop_tx: &Option<std_mpsc::Sender<()>>,
-    audio_writer_stop_tx: &Option<std_mpsc::Sender<()>>,
+    audio_capture_stop_tx: &Option<&std_mpsc::Sender<()>>,
+    audio_writer_stop_tx: &Option<&std_mpsc::Sender<()>>,
 ) {
     if let Some(capture_stop_tx) = audio_capture_stop_tx {
         if let Err(error) = capture_stop_tx.send(()) {
@@ -56,13 +56,14 @@ pub(super) fn signal_audio_threads_stop(
 pub(super) fn request_ffmpeg_graceful_stop(
     stop_requested_at: &mut Option<Instant>,
     child: &mut std::process::Child,
-    audio_capture_stop_tx: &Option<std_mpsc::Sender<()>>,
-    audio_writer_stop_tx: &Option<std_mpsc::Sender<()>>,
+    audio_capture_stop_tx: &Option<&std_mpsc::Sender<()>>,
+    audio_writer_stop_tx: &Option<&std_mpsc::Sender<()>>,
 ) {
     if stop_requested_at.is_none() {
         *stop_requested_at = Some(Instant::now());
         signal_audio_threads_stop(audio_capture_stop_tx, audio_writer_stop_tx);
 
+        // Pipe may already be broken if FFmpeg exited; ignore write errors.
         if let Some(mut stdin) = child.stdin.take() {
             let _ = stdin.write_all(b"q\n");
             let _ = stdin.flush();

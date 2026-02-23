@@ -10,7 +10,7 @@ use wasapi::{initialize_mta, DeviceEnumerator, Direction, SampleType, StreamMode
 
 use super::model::{
     AudioPipelineStats, SYSTEM_AUDIO_BITS_PER_SAMPLE, SYSTEM_AUDIO_CHANNEL_COUNT,
-    SYSTEM_AUDIO_CHUNK_FRAMES, SYSTEM_AUDIO_EVENT_TIMEOUT_MS, SYSTEM_AUDIO_SAMPLE_RATE_HZ,
+    SYSTEM_AUDIO_CHUNK_FRAMES, SYSTEM_AUDIO_EVENT_TIMEOUT, SYSTEM_AUDIO_SAMPLE_RATE_HZ,
 };
 
 fn build_loopback_capture_context(
@@ -126,7 +126,9 @@ pub(crate) fn run_system_audio_capture_to_queue(
             break;
         }
 
-        if let Err(error) = event_handle.wait_for_event(SYSTEM_AUDIO_EVENT_TIMEOUT_MS) {
+        if let Err(error) =
+            event_handle.wait_for_event(SYSTEM_AUDIO_EVENT_TIMEOUT.as_millis() as u32)
+        {
             tracing::debug!("System audio wait event timed/failed: {error}");
         }
     }
@@ -146,8 +148,8 @@ pub(crate) fn run_system_audio_capture_to_queue(
     Ok(())
 }
 
-pub(crate) fn run_audio_queue_to_writer<TWriter: Write>(
-    mut writer: TWriter,
+pub(crate) fn run_audio_queue_to_writer<W: Write>(
+    mut writer: W,
     audio_rx: std_mpsc::Receiver<Vec<u8>>,
     stop_rx: std_mpsc::Receiver<()>,
     stats: Arc<AudioPipelineStats>,

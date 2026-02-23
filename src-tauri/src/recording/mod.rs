@@ -12,12 +12,12 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
 pub use model::RecordingState;
-use model::CaptureInput;
+use model::{CaptureInput, RecordingSessionConfig};
 
 fn sanitize_for_filename(input: &str) -> String {
     let mut result = String::new();
     let mut last_was_underscore = false;
-    
+
     for c in input.chars() {
         if c.is_whitespace() || c == '-' {
             if !last_was_underscore && !result.is_empty() {
@@ -29,7 +29,7 @@ fn sanitize_for_filename(input: &str) -> String {
             last_was_underscore = false;
         }
     }
-    
+
     result.chars().take(30).collect()
 }
 
@@ -139,14 +139,16 @@ pub async fn start_recording(
     session::spawn_ffmpeg_recording_task(
         app_handle.clone(),
         state.inner().clone(),
-        output_path_str.clone(),
-        ffmpeg_binary_path,
-        recording_settings.frame_rate,
-        output_frame_rate,
-        recording_settings.bitrate,
-        capture_input,
-        recording_settings.enable_system_audio,
-        recording_settings.enable_recording_diagnostics,
+        RecordingSessionConfig {
+            output_path: output_path_str.clone(),
+            ffmpeg_binary_path,
+            requested_frame_rate: recording_settings.frame_rate,
+            output_frame_rate,
+            bitrate: recording_settings.bitrate,
+            capture_input,
+            include_system_audio: recording_settings.enable_system_audio,
+            enable_diagnostics: recording_settings.enable_recording_diagnostics,
+        },
         stop_rx,
     );
 

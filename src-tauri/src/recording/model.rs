@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
@@ -80,6 +81,7 @@ pub(crate) struct SegmentRunResult {
     pub(crate) ffmpeg_succeeded: bool,
     pub(crate) output_written: bool,
     pub(crate) force_killed: bool,
+    pub(crate) wall_clock_duration: Duration,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -106,8 +108,8 @@ pub(crate) const SYSTEM_AUDIO_SAMPLE_RATE_HZ: usize = 48_000;
 pub(crate) const SYSTEM_AUDIO_CHANNEL_COUNT: usize = 2;
 pub(crate) const SYSTEM_AUDIO_BITS_PER_SAMPLE: usize = 16;
 pub(crate) const SYSTEM_AUDIO_CHUNK_FRAMES: usize = 960;
-pub(crate) const SYSTEM_AUDIO_EVENT_TIMEOUT_MS: u32 = 500;
-pub(crate) const AUDIO_TCP_ACCEPT_WAIT_MS: u64 = 25;
+pub(crate) const SYSTEM_AUDIO_EVENT_TIMEOUT: Duration = Duration::from_millis(500);
+pub(crate) const AUDIO_TCP_ACCEPT_WAIT: Duration = Duration::from_millis(25);
 pub(crate) const SYSTEM_AUDIO_QUEUE_CAPACITY: usize = 256;
 #[cfg(target_os = "windows")]
 pub(crate) const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -127,6 +129,7 @@ pub(crate) struct AudioPipelineStats {
     pub(crate) write_timeouts: AtomicU64,
 }
 
+#[derive(Default)]
 pub struct RecordingState {
     pub(crate) is_recording: bool,
     pub(crate) is_stopping: bool,
@@ -136,13 +139,34 @@ pub struct RecordingState {
 
 impl RecordingState {
     pub fn new() -> Self {
-        Self {
-            is_recording: false,
-            is_stopping: false,
-            current_output_path: None,
-            stop_tx: None,
-        }
+        Self::default()
     }
 }
 
 pub type SharedRecordingState = Arc<RwLock<RecordingState>>;
+
+pub(crate) struct RecordingSessionConfig {
+    pub(crate) output_path: String,
+    pub(crate) ffmpeg_binary_path: PathBuf,
+    pub(crate) requested_frame_rate: u32,
+    pub(crate) output_frame_rate: u32,
+    pub(crate) bitrate: u32,
+    pub(crate) capture_input: CaptureInput,
+    pub(crate) include_system_audio: bool,
+    pub(crate) enable_diagnostics: bool,
+}
+
+pub(crate) struct SegmentConfig<'a> {
+    pub(crate) ffmpeg_binary_path: &'a std::path::Path,
+    pub(crate) runtime_capture_mode: RuntimeCaptureMode,
+    pub(crate) output_path: &'a std::path::Path,
+    pub(crate) requested_frame_rate: u32,
+    pub(crate) output_frame_rate: u32,
+    pub(crate) bitrate: u32,
+    pub(crate) include_system_audio: bool,
+    pub(crate) enable_diagnostics: bool,
+    pub(crate) video_encoder: &'a str,
+    pub(crate) encoder_preset: Option<&'a str>,
+    pub(crate) capture_width: u32,
+    pub(crate) capture_height: u32,
+}
