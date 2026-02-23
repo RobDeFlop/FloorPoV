@@ -1,18 +1,19 @@
-import { type ComponentType, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Button } from "../ui/Button";
 import {
-  Activity,
   Bug,
   Circle,
   ExternalLink,
   Github,
   LoaderCircle,
-  PanelLeft,
   Radar,
+  Shield,
   SlidersHorizontal,
+  Swords,
+  Trophy,
 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { type ComponentType, useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
+import { Button } from "../ui/Button";
 
 
 const gameModes = ["Mythic+", "Raid", "PvP"];
@@ -26,7 +27,7 @@ interface SidebarProps {
 
 interface SidebarNavButtonProps {
   label: string;
-  icon: ComponentType<{ className?: string }>;
+  icon?: ComponentType<{ className?: string }>;
   isActive: boolean;
   activeClassName: string;
   defaultClassName: string;
@@ -51,7 +52,7 @@ function SidebarNavButton({
       }`}
       ariaLabel={label}
     >
-      <Icon className="h-4 w-4" />
+      {Icon && <Icon className="h-4 w-4" />}
       {label}
     </Button>
   );
@@ -142,7 +143,6 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
     <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[var(--surface-1)]/95 backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
       <div className="border-b border-white/10 px-3 py-3">
         <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-300">
-          <PanelLeft className="h-3.5 w-3.5" />
           Navigation
         </div>
         <nav className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1" aria-label="Primary">
@@ -168,64 +168,71 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
       </div>
 
       <nav className="flex-1 p-3" aria-label="Game mode">
-        <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-neutral-500">
-          <Activity className="h-3.5 w-3.5" />
+        <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-300">
           Game Mode
         </div>
-        <div className="space-y-1.5">
-           {gameModes.map((mode) => {
-            const isActive = 
-              (mode === "Mythic+" && currentView === "mythic-plus") ||
-              (mode === "Raid" && currentView === "raid") ||
-              (mode === "PvP" && currentView === "pvp");
-            
-            const navigateTo = () => {
-              switch (mode) {
-                case "Mythic+":
-                  onNavigate("mythic-plus");
-                  break;
-                case "Raid":
-                  onNavigate("raid");
-                  break;
-                case "PvP":
-                  onNavigate("pvp");
-                  break;
-              }
-            };
-            
-            return (
-              <motion.button
-                key={mode}
-                type="button"
-                onClick={navigateTo}
-                aria-pressed={isActive}
-                className={`w-full text-left px-3 py-2 rounded-sm text-sm border transition-colors ${
-                  isActive
-                    ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
-                    : "border-transparent text-neutral-400 hover:text-neutral-100 hover:border-white/15 hover:bg-white/5"
-                }`}
-                whileHover={reduceMotion ? undefined : { x: 2 }}
-                whileTap={reduceMotion ? undefined : { scale: 0.99 }}
-              >
-                {mode}
-              </motion.button>
-            );
-          })}
+        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+            {gameModes.map((mode) => {
+             const isActive = 
+               (mode === "Mythic+" && currentView === "mythic-plus") ||
+               (mode === "Raid" && currentView === "raid") ||
+               (mode === "PvP" && currentView === "pvp");
+             
+             const getGameModeIcon = () => {
+               switch (mode) {
+                 case "Mythic+":
+                   return Swords;
+                 case "Raid":
+                   return Shield;
+                 case "PvP":
+                   return Trophy;
+                 default:
+                   return () => null;
+               }
+             };
+             
+             const navigateTo = () => {
+               switch (mode) {
+                 case "Mythic+":
+                   onNavigate("mythic-plus");
+                   break;
+                 case "Raid":
+                   onNavigate("raid");
+                   break;
+                 case "PvP":
+                   onNavigate("pvp");
+                   break;
+               }
+             };
+             
+             return (
+               <SidebarNavButton
+                 key={mode}
+                 label={mode}
+                 icon={getGameModeIcon()}
+                 isActive={isActive}
+                 activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
+                 defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+                 onClick={navigateTo}
+                 reduceMotion={reduceMotion}
+               />
+             );
+           })}
         </div>
       </nav>
 
-      <div className="border-t border-white/10 p-3">
+      <div className="p-3">
         {isDebugMode && (
-          <div className="mb-3">
-            <div className="mb-2 text-[11px] uppercase tracking-[0.14em] text-neutral-500">
+          <div className="mb-2 border-t border-white/5 pt-3 mt-3">
+            <div className="mb-1.5 text-[10px] uppercase tracking-[0.12em] text-neutral-600">
               Developer
             </div>
             <SidebarNavButton
               label="Debug"
               icon={Bug}
               isActive={isDebug}
-              activeClassName="border-amber-300/35 bg-amber-500/15 text-amber-100"
-              defaultClassName="border-transparent text-neutral-300 hover:border-amber-300/25 hover:bg-white/5 hover:text-neutral-100"
+              activeClassName="border-neutral-300/25 bg-neutral-500/10 text-neutral-200"
+              defaultClassName="border-transparent text-neutral-500 hover:border-neutral-300/15 hover:bg-white/3 hover:text-neutral-300"
               onClick={() => onNavigate("debug")}
               reduceMotion={reduceMotion}
             />

@@ -504,8 +504,8 @@ export function Settings({ onBack }: SettingsProps) {
                 </p>
               )}
 
-              <div className="rounded-sm border border-white/15 bg-black/20 p-3">
-                <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-500">Troubleshooting</p>
+              <div className="rounded-sm border border-white/10 bg-black/10 p-3 mt-4">
+                <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-600">Troubleshooting</p>
                 <SettingsToggleField
                   id={FIELD_IDS.enableRecordingDiagnostics}
                   checked={formData.enableRecordingDiagnostics}
