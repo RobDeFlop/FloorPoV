@@ -33,7 +33,6 @@ export function VideoPlayer() {
     setVolume,
     setPlaybackRate,
     loadVideo,
-    toggleFullscreen,
     seek,
     updateTime,
     updateDuration,
@@ -49,6 +48,7 @@ export function VideoPlayer() {
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
+  const [isImmersiveMode, setIsImmersiveMode] = useState(false);
 
   const showVideo = Boolean(videoSrc) && !isRecording;
 
@@ -98,6 +98,23 @@ export function VideoPlayer() {
     };
   }, [showSpeedMenu]);
 
+  useEffect(() => {
+    if (!isImmersiveMode) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsImmersiveMode(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isImmersiveMode]);
+
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || duration === 0) return;
     const rect = progressRef.current.getBoundingClientRect();
@@ -108,7 +125,11 @@ export function VideoPlayer() {
   return (
     <div className="h-full w-full">
       <div
-        className="relative h-full w-full overflow-hidden bg-neutral-950/90"
+        className={
+          isImmersiveMode
+            ? "fixed inset-0 z-[200] h-screen w-screen overflow-hidden bg-neutral-950"
+            : "relative h-full w-full overflow-hidden bg-neutral-950/90"
+        }
         aria-busy={isVideoLoading}
       >
         {showVideo && (
@@ -116,6 +137,9 @@ export function VideoPlayer() {
             ref={videoRef}
             src={videoSrc || undefined}
             className="h-full w-full object-contain"
+            controls={false}
+            playsInline
+            disablePictureInPicture
             preload="metadata"
             onLoadStart={() => {
               setVideoLoading(true);
@@ -182,15 +206,15 @@ export function VideoPlayer() {
 
         {showVideo && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-neutral-950/95 via-neutral-950/70 to-transparent p-3 sm:p-4">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <ControlIconButton
-                label={isPlaying ? "Pause playback" : "Play recording"}
-                onClick={togglePlay}
-              >
-                {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-              </ControlIconButton>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 md:shrink-0">
+                <ControlIconButton
+                  label={isPlaying ? "Pause playback" : "Play recording"}
+                  onClick={togglePlay}
+                >
+                  {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                </ControlIconButton>
 
-              <div className="flex items-center gap-2 sm:gap-3">
                 <ControlIconButton
                   label={volume === 0 ? "Unmute audio" : "Mute audio"}
                   onClick={handleVolumeToggle}
@@ -207,31 +231,31 @@ export function VideoPlayer() {
                     value={volume}
                     onChange={(e) => setVolume(parseFloat(e.target.value))}
                     aria-label="Volume"
-                    className="w-20 h-3 appearance-none cursor-pointer bg-transparent
-                            [&::-webkit-slider-thumb]:appearance-none 
-                            [&::-webkit-slider-thumb]:w-3 
-                            [&::-webkit-slider-thumb]:h-3 
-                            [&::-webkit-slider-thumb]:rounded-full 
-                            [&::-webkit-slider-thumb]:bg-white
-                            [&::-webkit-slider-thumb]:cursor-pointer
+                    className="h-3 w-20 appearance-none cursor-pointer bg-transparent
                             [&::-webkit-slider-thumb]:mt-[-4px]
+                            [&::-webkit-slider-thumb]:h-3
+                            [&::-webkit-slider-thumb]:w-3
+                            [&::-webkit-slider-thumb]:cursor-pointer
+                            [&::-webkit-slider-thumb]:appearance-none
+                            [&::-webkit-slider-thumb]:rounded-full
+                            [&::-webkit-slider-thumb]:bg-white
                             [&::-webkit-slider-runnable-track]:h-1
-                            [&::-webkit-slider-runnable-track]:bg-neutral-600
-                            [&::-webkit-slider-runnable-track]:rounded-full"
+                            [&::-webkit-slider-runnable-track]:rounded-full
+                            [&::-webkit-slider-runnable-track]:bg-neutral-600"
                   />
                   <span className="w-8 text-right font-mono text-xs text-neutral-200">
                     {Math.round(volume * 100)}%
                   </span>
                 </div>
-              </div>
 
-              <span className="text-xs font-mono text-white">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
+                <span className="text-xs font-mono text-white">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
 
               <div
                 ref={progressRef}
-                className="group relative order-last h-2 w-full cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 md:order-none md:min-w-0 md:flex-1"
+                className="group relative h-2 w-full cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 md:min-w-0 md:flex-1"
                 onClick={handleProgressClick}
                 onKeyDown={(event) => {
                   if (duration <= 0) {
@@ -282,7 +306,7 @@ export function VideoPlayer() {
                     <button
                       key={event.id}
                       type="button"
-                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-sm p-0.5 text-neutral-200 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+                      className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-sm p-0.5 text-neutral-200 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                       style={{ left: `${position}%` }}
                       onClick={(eventClick) => {
                         eventClick.stopPropagation();
@@ -296,55 +320,57 @@ export function VideoPlayer() {
                 })}
               </div>
 
-              <div ref={speedMenuRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                  className="rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 transition-colors hover:text-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
-                  aria-haspopup="menu"
-                  aria-expanded={showSpeedMenu}
-                  aria-label="Playback speed"
+              <div className="flex items-center gap-2 md:shrink-0">
+                <div ref={speedMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
+                    className="rounded border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-100 transition-colors hover:text-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+                    aria-haspopup="menu"
+                    aria-expanded={showSpeedMenu}
+                    aria-label="Playback speed"
+                  >
+                    {playbackRate}x
+                  </button>
+                  {showSpeedMenu && (
+                    <div className="absolute bottom-full left-0 mb-2 rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg" role="menu" aria-label="Playback speed options">
+                      {PLAYBACK_RATES.map((rate) => (
+                        <button
+                          key={rate}
+                          type="button"
+                          onClick={() => {
+                            setPlaybackRate(rate);
+                            setShowSpeedMenu(false);
+                          }}
+                          role="menuitemradio"
+                          aria-checked={playbackRate === rate}
+                          className={`block w-full px-3 py-1 text-left text-xs ${
+                            playbackRate === rate
+                              ? "bg-white/12 text-neutral-100"
+                              : "text-neutral-300 hover:bg-neutral-800"
+                          }`}
+                        >
+                          {rate}x
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <ControlIconButton
+                  label={isImmersiveMode ? "Exit fullscreen" : "Toggle fullscreen"}
+                  onClick={() => setIsImmersiveMode((currentValue) => !currentValue)}
                 >
-                  {playbackRate}x
-                </button>
-                {showSpeedMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg" role="menu" aria-label="Playback speed options">
-                    {PLAYBACK_RATES.map((rate) => (
-                      <button
-                        key={rate}
-                        type="button"
-                        onClick={() => {
-                          setPlaybackRate(rate);
-                          setShowSpeedMenu(false);
-                        }}
-                        role="menuitemradio"
-                        aria-checked={playbackRate === rate}
-                        className={`block w-full text-left px-3 py-1 text-xs ${
-                          playbackRate === rate
-                            ? "text-neutral-100 bg-white/12"
-                            : "text-neutral-300 hover:bg-neutral-800"
-                        }`}
-                      >
-                        {rate}x
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  <Maximize className="w-5 h-5" />
+                </ControlIconButton>
+
+                <ControlIconButton
+                  label="Open video file"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <FolderOpen className="w-5 h-5" />
+                </ControlIconButton>
               </div>
-
-              <ControlIconButton
-                label="Toggle fullscreen"
-                onClick={toggleFullscreen}
-              >
-                <Maximize className="w-5 h-5" />
-              </ControlIconButton>
-
-              <ControlIconButton
-                label="Open video file"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FolderOpen className="w-5 h-5" />
-              </ControlIconButton>
             </div>
           </div>
         )}

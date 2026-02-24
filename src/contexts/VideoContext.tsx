@@ -156,13 +156,19 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggleFullscreen = useCallback(() => {
-    if (videoRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        videoRef.current.requestFullscreen();
+    void (async () => {
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+          return;
+        }
+
+        const targetElement = videoRef.current?.parentElement ?? videoRef.current;
+        await targetElement?.requestFullscreen();
+      } catch (error) {
+        console.error("Failed to toggle fullscreen:", error);
       }
-    }
+    })();
   }, []);
 
   return (
