@@ -25,7 +25,7 @@ export function TabControls<TValue extends string>({
   const baseId = idBase ?? `tab-controls-${generatedId}`;
 
   return (
-    <div className="border-b border-white/10 bg-[var(--surface-1)] px-4 pt-2">
+    <div className="border-b border-white/10 bg-(--surface-1) px-4 pt-2">
       <div className="-mb-px flex items-end gap-2" role="tablist" aria-label={ariaLabel}>
         {items.map(({ value: itemValue, label, icon: Icon }) => {
           const isActive = itemValue === value;
@@ -43,7 +43,7 @@ export function TabControls<TValue extends string>({
               aria-controls={panelId}
               className={`inline-flex min-h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${
                 isActive
-                  ? "border-emerald-300/40 bg-[var(--surface-0)] text-emerald-100"
+                  ? "border-emerald-300/40 bg-(--surface-0) text-emerald-100"
                   : "border-white/15 bg-black/20 text-neutral-300 hover:bg-white/8 hover:text-neutral-100"
               }`}
             >

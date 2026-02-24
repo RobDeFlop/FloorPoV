@@ -127,7 +127,7 @@ export function Layout() {
                   {currentView === "main" ? (
                     <motion.div
                       key="main-view"
-                      className={`flex-1 flex flex-col min-w-0 rounded-md border border-white/10 bg-[var(--surface-1)] shadow-[var(--surface-glow)] overflow-hidden ${isResizingMedia ? "select-none" : ""}`}
+                      className={`flex-1 flex flex-col min-w-0 rounded-md border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden ${isResizingMedia ? "select-none" : ""}`}
                       variants={panelVariants}
                       initial={reduceMotion ? false : "initial"}
                       animate="animate"
@@ -143,7 +143,7 @@ export function Layout() {
                          </main>
                        </section>
                       <div
-                        className={`flex h-3 w-full cursor-row-resize items-center justify-center border-y border-white/10 bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
+                        className={`flex h-3 w-full cursor-row-resize items-center justify-center border-y border-white/10 bg-(--surface-2) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
                           isResizingMedia ? "bg-white/10" : "hover:bg-white/5"
                         }`}
                         onPointerDown={handleMediaResizeStart}
@@ -175,7 +175,7 @@ export function Layout() {
                   ) : currentView === "settings" ? (
                     <motion.div
                       key="settings-view"
-                      className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-1)] shadow-[var(--surface-glow)] overflow-hidden"
+                      className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
                       variants={panelVariants}
                       initial={reduceMotion ? false : "initial"}
                       animate="animate"
@@ -187,7 +187,7 @@ export function Layout() {
       ) : currentView === "mythic-plus" ? (
         <motion.div
           key="mythic-plus-view"
-          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-1)] shadow-[var(--surface-glow)] overflow-hidden"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
           variants={panelVariants}
           initial={reduceMotion ? false : "initial"}
           animate="animate"
@@ -202,7 +202,7 @@ export function Layout() {
       ) : currentView === "raid" ? (
         <motion.div
           key="raid-view"
-          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-1)] shadow-[var(--surface-glow)] overflow-hidden"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
           variants={panelVariants}
           initial={reduceMotion ? false : "initial"}
           animate="animate"
@@ -214,7 +214,7 @@ export function Layout() {
       ) : currentView === "pvp" ? (
         <motion.div
           key="pvp-view"
-          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-[var(--surface-1)] shadow-[var(--surface-glow)] overflow-hidden"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-md border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
           variants={panelVariants}
           initial={reduceMotion ? false : "initial"}
           animate="animate"

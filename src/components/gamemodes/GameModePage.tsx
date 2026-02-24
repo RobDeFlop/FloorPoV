@@ -169,7 +169,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
     <div className="flex h-full min-h-0 flex-col">
       {!selectedRecording ? (
         <>
-          <header className="border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+          <header className="border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
             <div className="flex items-center gap-3">
               <Icon className="h-5 w-5 text-neutral-300" />
               <div>
@@ -187,7 +187,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         </>
       ) : (
         <>
-          <header className="border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+          <header className="border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
             <div className="flex items-center gap-3">
               <Icon className="h-5 w-5 text-neutral-300" />
               <div>
@@ -227,7 +227,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 aria-labelledby={`${ANALYSIS_TABS_ID_BASE}-log-analysis-tab`}
                 className="h-full overflow-y-auto px-4 py-3"
               >
-                <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-3">
+                <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                   <h2 className="text-sm font-semibold text-neutral-100">Recording Summary</h2>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-neutral-300">
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
@@ -264,7 +264,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 </section>
 
                 {isMetadataLoading ? (
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-sm border border-white/10 bg-[var(--surface-1)]/70 px-3 py-2 text-xs text-neutral-300">
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-sm border border-white/10 bg-(--surface-1)/70 px-3 py-2 text-xs text-neutral-300">
                     <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                     Loading log metadata...
                   </div>
@@ -273,12 +273,12 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                     {metadataError}
                   </div>
                 ) : !recordingMetadata ? (
-                  <div className="mt-3 rounded-sm border border-white/10 bg-[var(--surface-1)]/70 px-3 py-2 text-xs text-neutral-400">
+                  <div className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/70 px-3 py-2 text-xs text-neutral-400">
                     No log metadata is available for this recording yet.
                   </div>
                 ) : (
                   <>
-                    <section className="mt-3 rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-3">
+                    <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
                         Event Counts
                       </h3>
@@ -304,7 +304,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                       )}
                     </section>
 
-                    <section className="mt-3 rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-3">
+                    <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
                         Encounter Segments
                       </h3>
@@ -333,7 +333,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                       )}
                     </section>
 
-                    <section className="mt-3 rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-3">
+                    <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
                         Important Events
                       </h3>
@@ -342,7 +342,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                       ) : (
                         <div className="mt-2 overflow-hidden rounded-sm border border-white/10 bg-black/20">
                           <table className="min-w-full text-left text-xs text-neutral-300">
-                            <thead className="bg-[var(--surface-2)] text-neutral-400">
+                            <thead className="bg-(--surface-2) text-neutral-400">
                               <tr>
                                 <th className="px-2 py-1.5 font-medium">Time</th>
                                 <th className="px-2 py-1.5 font-medium">Event</th>

@@ -260,7 +260,7 @@ export function GameModeRecordingsBrowser({
   );
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-[var(--surface-1)] px-4 py-3">
+    <section className="flex min-h-0 flex-1 flex-col bg-(--surface-1) px-4 py-3">
       {error && <p className="mb-2 text-xs text-rose-200">{error}</p>}
 
       <div className="mb-3 rounded-sm border border-white/10 bg-black/20 p-2.5">

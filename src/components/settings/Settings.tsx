@@ -287,11 +287,11 @@ export function Settings() {
   }, [captureWindowOptions, isLoadingCaptureWindows]);
 
   return (
-    <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden bg-[var(--surface-0)]">
+    <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden bg-(--surface-0)">
       {isRecording && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
           <div
-            className="max-w-md rounded-sm border border-rose-300/25 bg-[var(--surface-2)] p-8 text-center shadow-[var(--surface-glow)]"
+            className="max-w-md rounded-sm border border-rose-300/25 bg-(--surface-2) p-8 text-center shadow-(--surface-glow)"
             role="status"
             aria-live="polite"
           >
@@ -306,7 +306,7 @@ export function Settings() {
         </div>
       )}
 
-      <div className="flex shrink-0 items-center gap-4 border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+      <div className="flex shrink-0 items-center gap-4 border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
         <div className="flex items-center gap-3">
           <div>
             <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
@@ -585,7 +585,7 @@ export function Settings() {
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+      <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
         <Button
           variant="secondary"
           onClick={handleCancel}

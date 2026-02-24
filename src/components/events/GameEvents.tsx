@@ -27,7 +27,7 @@ export function GameEvents() {
   };
 
   return (
-    <div className="game-events-container bg-[var(--surface-2)] border-t border-white/10 px-4 py-3">
+    <div className="game-events-container bg-(--surface-2) border-t border-white/10 px-4 py-3">
       <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-neutral-400">
         <Activity className="h-3.5 w-3.5 text-neutral-300" />
         Game Events

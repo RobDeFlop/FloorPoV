@@ -37,7 +37,7 @@ export function TitleBar() {
 
   return (
     <div
-      className="flex h-10 items-stretch justify-between border-b border-white/10 bg-[var(--surface-1)] backdrop-blur-md select-none"
+      className="flex h-10 items-stretch justify-between border-b border-white/10 bg-(--surface-1) backdrop-blur-md select-none"
     >
       <div
         className="flex h-full min-w-0 flex-1 items-center gap-3 px-3"

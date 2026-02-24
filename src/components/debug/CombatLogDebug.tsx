@@ -332,13 +332,13 @@ export function CombatLogDebug() {
 
   return (
     <motion.section
-      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-white/10 bg-[var(--surface-0)] shadow-[var(--surface-glow)]"
+      className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-white/10 bg-(--surface-0) shadow-(--surface-glow)"
       variants={panelVariants}
       initial={reduceMotion ? false : "initial"}
       animate="animate"
       transition={smoothTransition}
     >
-      <div className="shrink-0 border-b border-white/10 bg-[var(--surface-1)] px-4 py-4 md:px-6">
+      <div className="shrink-0 border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
         <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
           <Bug className="h-4 w-4 text-amber-400" />
           Combat Log Debug
@@ -350,7 +350,7 @@ export function CombatLogDebug() {
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
         <div className="space-y-4">
-          <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
+          <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">
               <button
                 onClick={handleSelectCombatLog}
@@ -399,7 +399,7 @@ export function CombatLogDebug() {
                 </div>
               </section>
 
-              <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
+              <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Event Counts
                 </h2>
@@ -421,7 +421,7 @@ export function CombatLogDebug() {
               <section
                 ref={timelineSectionRef}
                 onMouseLeave={hideTimelineTooltip}
-                className="relative rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4"
+                className="relative rounded-sm border border-white/10 bg-(--surface-1)/80 p-4"
               >
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Encounter Timeline
@@ -548,7 +548,7 @@ export function CombatLogDebug() {
                 )}
                 {timelineTooltip && (
                   <motion.div
-                    className="pointer-events-none absolute z-30 w-[320px] rounded-sm border border-white/20 bg-[var(--surface-2)] px-3 py-2 text-xs text-neutral-200 shadow-[var(--surface-glow)]"
+                    className="pointer-events-none absolute z-30 w-[320px] rounded-sm border border-white/20 bg-(--surface-2) px-3 py-2 text-xs text-neutral-200 shadow-(--surface-glow)"
                     style={{
                       left: timelineTooltip.x,
                       top: timelineTooltip.y,
@@ -569,13 +569,13 @@ export function CombatLogDebug() {
                 )}
               </section>
 
-              <section className="rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4">
+              <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
                   Important Happenings
                 </h2>
                 <div className="mt-3 max-h-96 overflow-auto rounded-sm border border-white/10 bg-black/20">
                   <table className="min-w-full text-left text-xs text-neutral-300">
-                    <thead className="sticky top-0 bg-[var(--surface-2)] text-neutral-400">
+                    <thead className="sticky top-0 bg-(--surface-2) text-neutral-400">
                       <tr>
                         <th className="px-3 py-2 font-medium">Line</th>
                         <th className="px-3 py-2 font-medium">Timestamp</th>

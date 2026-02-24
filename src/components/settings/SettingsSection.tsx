@@ -8,7 +8,7 @@ interface SettingsSectionProps {
 }
 
 const BASE_SECTION_CLASS_NAME =
-  "rounded-sm border border-white/10 bg-[var(--surface-1)]/80 p-4";
+  "rounded-sm border border-white/10 bg-(--surface-1)/80 p-4";
 const HEADING_CLASS_NAME =
   "mb-4 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.13em] text-neutral-200";
 

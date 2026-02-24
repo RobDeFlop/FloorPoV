@@ -41,7 +41,7 @@ export function RecordingControls() {
 
   return (
     <motion.div
-      className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-[var(--surface-2)] px-3 py-2.5 sm:gap-3 sm:px-4"
+      className="flex flex-wrap items-center gap-2 border-t border-white/10 bg-(--surface-2) px-3 py-2.5 sm:gap-3 sm:px-4"
       variants={panelVariants}
       initial={reduceMotion ? false : 'initial'}
       animate="animate"

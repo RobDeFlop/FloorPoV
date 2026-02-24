@@ -109,7 +109,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
   };
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[var(--surface-1)] backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
+    <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-(--surface-1) backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
       <div className="px-3 py-3">
         <SidebarSectionLabel label="Navigation" />
         <nav className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1" aria-label="Primary">
@@ -283,7 +283,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           href={REPOSITORY_URL}
           target="_blank"
           rel="noreferrer noopener"
-          className="mt-3 inline-flex w-full items-center justify-between rounded-sm border border-transparent px-2.5 py-2 text-xs text-neutral-400 transition-colors hover:border-white/15 hover:bg-white/5 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-1)]"
+          className="mt-3 inline-flex w-full items-center justify-between rounded-sm border border-transparent px-2.5 py-2 text-xs text-neutral-400 transition-colors hover:border-white/15 hover:bg-white/5 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--surface-1)"
         >
           <span className="inline-flex items-center gap-1.5">
             <Github className="h-3.5 w-3.5" />

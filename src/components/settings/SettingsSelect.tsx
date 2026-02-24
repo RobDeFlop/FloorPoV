@@ -211,7 +211,7 @@ export function SettingsSelect({
           role="listbox"
           tabIndex={-1}
           aria-labelledby={id}
-          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-sm border border-white/20 bg-black/70 p-1 backdrop-blur-sm shadow-[var(--surface-glow)]"
+          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-sm border border-white/20 bg-black/70 p-1 backdrop-blur-sm shadow-(--surface-glow)"
           onKeyDown={handleListKeyDown}
         >
           {options.map((option, index) => {

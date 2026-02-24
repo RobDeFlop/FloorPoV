@@ -351,7 +351,7 @@ export function RecordingsList({
 
   return (
     <motion.section
-      className="flex flex-1 min-h-0 flex-col bg-[var(--surface-1)] border-t border-white/10 px-4 py-3"
+      className="flex flex-1 min-h-0 flex-col bg-(--surface-1) border-t border-white/10 px-4 py-3"
       variants={panelVariants}
       initial={reduceMotion ? false : 'initial'}
       animate="animate"
@@ -533,7 +533,7 @@ export function RecordingsList({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div
             ref={deleteDialogRef}
-            className="w-full max-w-md rounded-sm border border-white/15 bg-[var(--surface-2)] p-4 shadow-[var(--surface-glow)]"
+            className="w-full max-w-md rounded-sm border border-white/15 bg-(--surface-2) p-4 shadow-(--surface-glow)"
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-recording-title"
