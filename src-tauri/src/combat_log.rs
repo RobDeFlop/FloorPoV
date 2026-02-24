@@ -42,6 +42,7 @@ pub struct ParsedCombatEvent {
     pub zone_name: Option<String>,
     pub encounter_name: Option<String>,
     pub encounter_category: Option<String>,
+    pub key_level: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -446,6 +447,7 @@ struct ImportantCombatEvent {
     zone_name: Option<String>,
     encounter_name: Option<String>,
     encounter_category: Option<String>,
+    key_level: Option<u32>,
 }
 
 impl ImportantCombatEvent {
@@ -494,6 +496,7 @@ fn parse_important_combat_event(
         zone_name: context.current_zone.clone(),
         encounter_name,
         encounter_category,
+        key_level: context.current_key_level,
     })
 }
 
@@ -548,6 +551,7 @@ fn parse_important_log_line(
         zone_name: parsed_event.zone_name,
         encounter_name: parsed_event.encounter_name,
         encounter_category: parsed_event.encounter_category,
+        key_level: parsed_event.key_level,
     })
 }
 
@@ -556,6 +560,7 @@ struct DebugParseContext {
     current_zone: Option<String>,
     current_encounter: Option<String>,
     current_encounter_category: Option<String>,
+    current_key_level: Option<u32>,
     in_challenge_mode: bool,
     in_pvp_match: bool,
 }
@@ -566,6 +571,7 @@ pub(crate) struct RecordingMetadataAccumulator {
     zone_name: Option<String>,
     latest_encounter_name: Option<String>,
     latest_encounter_category: Option<String>,
+    key_level: Option<u32>,
     active_encounters: BTreeMap<String, usize>,
     encounters: Vec<RecordingEncounterSnapshot>,
     important_events: Vec<RecordingImportantEventMetadata>,
@@ -595,6 +601,7 @@ impl RecordingMetadataAccumulator {
             zone_name: self.zone_name.clone(),
             encounter_name: self.latest_encounter_name.clone(),
             encounter_category: self.latest_encounter_category.clone(),
+            key_level: self.key_level,
         };
         self.record_important_event(&manual_event, elapsed_seconds);
     }
@@ -614,6 +621,9 @@ impl RecordingMetadataAccumulator {
             &mut self.latest_encounter_category,
             event.encounter_category.as_ref(),
         );
+        if let Some(key_level) = event.key_level {
+            self.key_level = Some(key_level);
+        }
 
         match event.event_type.as_str() {
             EVENT_ENCOUNTER_START => self.record_encounter_start(event, elapsed_seconds),
@@ -630,6 +640,7 @@ impl RecordingMetadataAccumulator {
             zone_name: event.zone_name.clone(),
             encounter_name: event.encounter_name.clone(),
             encounter_category: event.encounter_category.clone(),
+            key_level: event.key_level,
         });
     }
 
@@ -708,6 +719,7 @@ impl RecordingMetadataAccumulator {
             zone_name: self.zone_name.clone(),
             encounter_name: self.latest_encounter_name.clone(),
             encounter_category: self.latest_encounter_category.clone(),
+            key_level: self.key_level,
             encounters: self.encounters.clone(),
             important_events: self.important_events.clone(),
             important_event_counts: self.important_event_counts.clone(),
@@ -830,8 +842,14 @@ fn normalize_important_event_type(event_type: &str) -> Option<&'static str> {
 
 fn update_debug_context(context: &mut DebugParseContext, parsed_line: &ParsedLogLine) {
     match parsed_line.raw_event_type.as_str() {
-        "CHALLENGE_MODE_START" => context.in_challenge_mode = true,
-        "CHALLENGE_MODE_END" => context.in_challenge_mode = false,
+        "CHALLENGE_MODE_START" => {
+            context.in_challenge_mode = true;
+            context.current_key_level = extract_challenge_mode_key_level(&parsed_line.fields);
+        }
+        "CHALLENGE_MODE_END" => {
+            context.in_challenge_mode = false;
+            context.current_key_level = None;
+        }
         "ARENA_MATCH_START" | "PVP_MATCH_START" | "BATTLEGROUND_START" => {
             context.in_pvp_match = true;
         }
@@ -840,6 +858,13 @@ fn update_debug_context(context: &mut DebugParseContext, parsed_line: &ParsedLog
         }
         _ => {}
     }
+}
+
+fn extract_challenge_mode_key_level(fields: &[String]) -> Option<u32> {
+    fields
+        .get(1)
+        .and_then(|value| value.trim_matches('"').parse::<u32>().ok())
+        .filter(|value| *value > 0)
 }
 
 fn is_context_only_event(raw_event_type: &str) -> bool {
@@ -1108,6 +1133,23 @@ mod tests {
         assert_eq!(snapshot.zone_name.as_deref(), Some("Nerub-ar Palace"));
         assert_eq!(snapshot.important_events.len(), 1);
         assert_eq!(snapshot.important_events[0].event_type, "PARTY_KILL");
+    }
+
+    #[test]
+    fn captures_mythic_plus_key_level_from_challenge_start() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        let challenge_start_line = build_line("CHALLENGE_MODE_START", &["2451", "14"]);
+        accumulator.consume_combat_log_line(&challenge_start_line, 0.25);
+
+        let party_kill_line = build_party_kill_line(1);
+        accumulator.consume_combat_log_line(&party_kill_line, 1.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.key_level, Some(14));
+        assert_eq!(snapshot.important_events.len(), 1);
+        assert_eq!(snapshot.important_events[0].event_type, "PARTY_KILL");
+        assert_eq!(snapshot.important_events[0].key_level, Some(14));
     }
 
     fn build_party_kill_line(index: usize) -> String {

@@ -74,6 +74,8 @@ pub struct RecordingInfo {
     pub encounter_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encounter_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_level: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -195,15 +197,16 @@ fn read_recordings_list(folder_path: &str) -> Result<Vec<RecordingInfo>, String>
                     None
                 }
             };
-            let (zone_name, encounter_name, encounter_category) =
+            let (zone_name, encounter_name, encounter_category, key_level) =
                 if let Some(metadata) = sidecar_metadata {
                     (
                         metadata.zone_name,
                         metadata.encounter_name,
                         metadata.encounter_category,
+                        metadata.key_level,
                     )
                 } else {
-                    (None, None, None)
+                    (None, None, None, None)
                 };
 
             recordings.push(RecordingInfo {
@@ -214,6 +217,7 @@ fn read_recordings_list(folder_path: &str) -> Result<Vec<RecordingInfo>, String>
                 zone_name,
                 encounter_name,
                 encounter_category,
+                key_level,
             });
         }
     }

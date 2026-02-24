@@ -8,15 +8,34 @@ export interface GameEvent {
 
 export interface RecordingImportantEventMetadata {
   timestampSeconds: number;
+  logTimestamp?: string;
   eventType: string;
   source?: string;
   target?: string;
+  zoneName?: string;
+  encounterName?: string;
+  encounterCategory?: string;
+  keyLevel?: number;
+}
+
+export interface RecordingEncounterMetadata {
+  name: string;
+  category: string;
+  startedAtSeconds?: number;
+  endedAtSeconds?: number;
 }
 
 export interface RecordingMetadata {
   schemaVersion: number;
   recordingFile: string;
+  zoneName?: string;
+  encounterName?: string;
+  encounterCategory?: string;
+  keyLevel?: number;
+  encounters?: RecordingEncounterMetadata[];
   importantEvents?: RecordingImportantEventMetadata[];
+  importantEventCounts?: Record<string, number>;
+  importantEventsDroppedCount?: number;
 }
 
 export interface CombatEvent {
@@ -36,6 +55,7 @@ export interface ParsedCombatEvent {
   zoneName?: string;
   encounterName?: string;
   encounterCategory?: "mythicPlus" | "raid" | "pvp" | "unknown";
+  keyLevel?: number;
 }
 
 export interface ParseCombatLogDebugResult {

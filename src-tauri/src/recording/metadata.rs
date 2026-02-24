@@ -34,6 +34,8 @@ pub struct RecordingImportantEventMetadata {
     pub encounter_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encounter_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_level: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +49,8 @@ pub struct RecordingMetadata {
     pub encounter_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encounter_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_level: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub encounters: Vec<RecordingEncounterMetadata>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -71,6 +75,7 @@ pub(crate) struct RecordingMetadataSnapshot {
     pub(crate) zone_name: Option<String>,
     pub(crate) encounter_name: Option<String>,
     pub(crate) encounter_category: Option<String>,
+    pub(crate) key_level: Option<u32>,
     pub(crate) encounters: Vec<RecordingEncounterSnapshot>,
     pub(crate) important_events: Vec<RecordingImportantEventMetadata>,
     pub(crate) important_event_counts: BTreeMap<String, u64>,
@@ -99,6 +104,7 @@ impl RecordingMetadata {
             zone_name: None,
             encounter_name: None,
             encounter_category: None,
+            key_level: None,
             encounters: Vec::new(),
             important_events: Vec::new(),
             important_event_counts: BTreeMap::new(),
@@ -111,6 +117,7 @@ impl RecordingMetadata {
         self.zone_name = snapshot.zone_name;
         self.encounter_name = snapshot.encounter_name;
         self.encounter_category = snapshot.encounter_category;
+        self.key_level = snapshot.key_level;
         self.encounters = snapshot
             .encounters
             .into_iter()
@@ -132,6 +139,7 @@ impl RecordingMetadataSnapshot {
         self.zone_name.is_some()
             || self.encounter_name.is_some()
             || self.encounter_category.is_some()
+            || self.key_level.is_some()
             || !self.encounters.is_empty()
             || !self.important_events.is_empty()
             || !self.important_event_counts.is_empty()
@@ -286,6 +294,7 @@ mod tests {
         metadata.zone_name = Some("Nerub-ar Palace".to_string());
         metadata.encounter_name = Some("Queen Ansurek".to_string());
         metadata.encounter_category = Some("raid".to_string());
+        metadata.key_level = Some(12);
 
         write_recording_metadata(&recording_path, &metadata)
             .expect("Expected metadata write to succeed");
@@ -300,6 +309,7 @@ mod tests {
             loaded_metadata.encounter_category,
             metadata.encounter_category
         );
+        assert_eq!(loaded_metadata.key_level, metadata.key_level);
         assert_eq!(
             loaded_metadata.important_events_dropped_count,
             metadata.important_events_dropped_count
@@ -336,6 +346,7 @@ mod tests {
                 zone_name: Some("Test Zone".to_string()),
                 encounter_name: Some("Test Encounter".to_string()),
                 encounter_category: Some("raid".to_string()),
+                key_level: None,
             });
         metadata
             .important_event_counts
