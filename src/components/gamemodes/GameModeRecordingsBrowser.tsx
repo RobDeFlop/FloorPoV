@@ -7,6 +7,7 @@ import { useSettings } from "../../contexts/SettingsContext";
 import { useVideo } from "../../contexts/VideoContext";
 import { RecordingInfo } from "../../types/recording";
 import { formatBytes, formatDate } from "../../utils/format";
+import { getRecordingDisplayTitle, isRecordingInGameMode } from "../../utils/recording-title";
 import { SettingsSelect, type SettingsSelectOption } from "../settings/SettingsSelect";
 
 type GameMode = "mythic-plus" | "raid" | "pvp";
@@ -143,31 +144,35 @@ export function GameModeRecordingsBrowser({
     return [...recordings].sort((left, right) => right.created_at - left.created_at);
   }, [recordings]);
 
+  const modeRecordings = useMemo(() => {
+    return sortedRecordings.filter((recording) => isRecordingInGameMode(recording, gameMode));
+  }, [gameMode, sortedRecordings]);
+
   const zoneOptions = useMemo(() => {
     return Array.from(
-      new Set(
-        sortedRecordings
-          .map((recording) => recording.zone_name?.trim())
-          .filter((zoneName): zoneName is string => Boolean(zoneName)),
-      ),
-    ).sort((left, right) => left.localeCompare(right));
-  }, [sortedRecordings]);
+        new Set(
+          modeRecordings
+            .map((recording) => recording.zone_name?.trim())
+            .filter((zoneName): zoneName is string => Boolean(zoneName)),
+        ),
+      ).sort((left, right) => left.localeCompare(right));
+  }, [modeRecordings]);
 
   const encounterOptions = useMemo(() => {
     return Array.from(
-      new Set(
-        sortedRecordings
-          .map((recording) => recording.encounter_name?.trim())
-          .filter((encounterName): encounterName is string => Boolean(encounterName)),
-      ),
-    ).sort((left, right) => left.localeCompare(right));
-  }, [sortedRecordings]);
+        new Set(
+          modeRecordings
+            .map((recording) => recording.encounter_name?.trim())
+            .filter((encounterName): encounterName is string => Boolean(encounterName)),
+        ),
+      ).sort((left, right) => left.localeCompare(right));
+  }, [modeRecordings]);
 
   const filteredRecordings = useMemo(() => {
     const threshold = getDateThresholdUnixSeconds(selectedDateRange);
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    return sortedRecordings.filter((recording) => {
+    return modeRecordings.filter((recording) => {
       if (selectedZone !== "all" && recording.zone_name !== selectedZone) {
         return false;
       }
@@ -186,7 +191,7 @@ export function GameModeRecordingsBrowser({
 
       return true;
     });
-  }, [searchQuery, selectedDateRange, selectedEncounter, selectedZone, sortedRecordings]);
+  }, [modeRecordings, searchQuery, selectedDateRange, selectedEncounter, selectedZone]);
 
   const loadRecordings = useCallback(async () => {
     if (!settings.outputFolder) {
@@ -352,8 +357,8 @@ export function GameModeRecordingsBrowser({
 
       {!settings.outputFolder ? (
         <p className="text-xs text-neutral-400">Select an output folder to browse recordings.</p>
-      ) : sortedRecordings.length === 0 && !isLoading ? (
-        <p className="text-xs text-neutral-400">No recordings found in {settings.outputFolder}</p>
+      ) : modeRecordings.length === 0 && !isLoading ? (
+        <p className="text-xs text-neutral-400">No {gameMode.replace("-", " ")} sessions found yet.</p>
       ) : filteredRecordings.length === 0 && !isLoading ? (
         <p className="text-xs text-neutral-400">No sessions match the current filters.</p>
       ) : (
@@ -361,6 +366,7 @@ export function GameModeRecordingsBrowser({
           {filteredRecordings.map((recording) => {
             const modeFields = getModeFields(recording, gameMode);
             const isActivating = activatingRecordingPath === recording.file_path;
+            const displayTitle = getRecordingDisplayTitle(recording, gameMode);
 
             return (
               <li key={`${recording.file_path}-${recording.created_at}`}>
@@ -374,8 +380,8 @@ export function GameModeRecordingsBrowser({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-neutral-100" title={recording.filename}>
-                        {recording.filename}
+                      <p className="truncate text-sm font-medium text-neutral-100" title={displayTitle}>
+                        {displayTitle}
                       </p>
                       <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-neutral-400">
                         <Clock3 className="h-3 w-3" />

@@ -9,6 +9,7 @@ import { useVideo } from '../../contexts/VideoContext';
 import { panelVariants, smoothTransition } from '../../lib/motion';
 import { RecordingInfo } from '../../types/recording';
 import { formatBytes, formatDate } from '../../utils/format';
+import { getRecordingDisplayTitle, isRecordingInGameMode } from '../../utils/recording-title';
 import { useRecordingSelection } from './useRecordingSelection';
 
 interface RecordingsListProps {
@@ -107,7 +108,13 @@ export function RecordingsList({
     isDeletingRecordings ||
     hasPendingDeleteRecordings ||
     isVideoLoading;
-  const filteredRecordings = recordings;
+  const filteredRecordings = useMemo(() => {
+    if (!gameModeContext) {
+      return recordings;
+    }
+
+    return recordings.filter((recording) => isRecordingInGameMode(recording, gameModeContext));
+  }, [gameModeContext, recordings]);
 
   const loadRecordings = useCallback(async () => {
     if (!settings.outputFolder) {
@@ -451,6 +458,7 @@ export function RecordingsList({
               const isSelectedRecording = selectedRecordingPathSet.has(recording.file_path);
               const isActiveRecording = activeRecordingPath === recording.file_path;
               const modeDetails = getModeDetails(recording, gameModeContext);
+              const displayTitle = getRecordingDisplayTitle(recording, gameModeContext);
 
               return (
                 <motion.li
@@ -475,7 +483,7 @@ export function RecordingsList({
                       onClick={handleSelectionControlClick}
                       disabled={isActionLocked}
                        className="h-3.5 w-3.5 rounded-sm border-white/30 bg-black/30 accent-emerald-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 disabled:cursor-not-allowed disabled:opacity-50"
-                      aria-label={`Select recording ${recording.filename}`}
+                      aria-label={`Select recording ${displayTitle}`}
                     />
                   </label>
                   <button
@@ -489,8 +497,8 @@ export function RecordingsList({
                     <span className="min-w-0 flex items-center gap-2">
                       <HardDrive className="w-3.5 h-3.5 text-neutral-300/80 shrink-0" />
                       <span className="min-w-0">
-                        <span className="block truncate text-xs text-neutral-200" title={recording.filename}>
-                          {recording.filename}
+                        <span className="block truncate text-xs text-neutral-200" title={displayTitle}>
+                          {displayTitle}
                         </span>
                         {modeDetails && (
                           <span className="mt-0.5 block truncate text-[11px] text-neutral-400">

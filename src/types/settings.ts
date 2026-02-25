@@ -14,6 +14,7 @@ export interface RecordingSettings {
   maxStorageGB: number;
   enableSystemAudio: boolean;
   enableRecordingDiagnostics: boolean;
+  enableAutoRecording: boolean;
   markerHotkey: MarkerHotkey;
 }
 
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   maxStorageGB: 30,
   enableSystemAudio: false,
   enableRecordingDiagnostics: false,
+  enableAutoRecording: false,
   markerHotkey: 'F9',
 };
 

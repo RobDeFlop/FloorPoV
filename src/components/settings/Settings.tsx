@@ -66,6 +66,7 @@ const FIELD_IDS = {
   markerHotkey: "settings-marker-hotkey",
   enableSystemAudio: "settings-enable-system-audio",
   enableRecordingDiagnostics: "settings-enable-recording-diagnostics",
+  enableAutoRecording: "settings-enable-auto-recording",
 };
 
 const NUMBER_FIELD_CLASS_NAME =
@@ -510,6 +511,19 @@ export function Settings() {
 
           <SettingsSection title="Combat Log" icon={<CheckCircle2 className="h-4 w-4" />}>
             <div className="space-y-4">
+              <SettingsToggleField
+                id={FIELD_IDS.enableAutoRecording}
+                checked={formData.enableAutoRecording}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    enableAutoRecording: checked,
+                  });
+                }}
+                label="Enable Auto Recording"
+                description="Arms combat-log triggers and starts recordings on M+, raid, or PvP start events."
+              />
+
               <div>
                 <ReadOnlyPathField
                   inputId={FIELD_IDS.wowFolder}

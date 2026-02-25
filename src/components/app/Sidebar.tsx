@@ -31,7 +31,13 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
   const [recordingAction, setRecordingAction] = useState<'starting' | 'stopping' | null>(null);
   const reduceMotion = useReducedMotion();
-  const { isRecording, recordingDuration, startRecording, stopRecording } = useRecording();
+  const {
+    isRecording,
+    recordingDuration,
+    appStatusDetail,
+    startRecording,
+    stopRecording,
+  } = useRecording();
   const isMain = currentView === "main";
   const isSettings = currentView === "settings";
   const isDebug = currentView === "debug";
@@ -275,6 +281,11 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                   )}
                 </AnimatePresence>
               </div>
+              {appStatusDetail && (
+                <p className="mt-1 truncate text-[10px] text-neutral-400" title={appStatusDetail}>
+                  {appStatusDetail}
+                </p>
+              )}
             </div>
           </div>
         </motion.button>

@@ -15,6 +15,7 @@ import { TabControls, type TabControlItem } from "../ui/TabControls";
 import { RecordingMetadata } from "../../types/events";
 import { RecordingInfo } from "../../types/recording";
 import { formatBytes, formatDate, formatTime } from "../../utils/format";
+import { getRecordingDisplayTitle } from "../../utils/recording-title";
 
 type GameMode = "mythic-plus" | "raid" | "pvp";
 type AnalysisTab = "video-analysis" | "log-analysis";
@@ -195,7 +196,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   {config.analysisTitle}
                 </h1>
                 <p className="max-w-[60ch] truncate text-xs text-neutral-400">
-                  {selectedRecording.filename}
+                  {getRecordingDisplayTitle(selectedRecording, gameMode)}
                 </p>
               </div>
             </div>
@@ -232,8 +233,8 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-neutral-300">
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-[0.09em] text-neutral-500">File</div>
-                      <div className="mt-1 truncate text-neutral-100" title={selectedRecording.filename}>
-                        {selectedRecording.filename}
+                      <div className="mt-1 truncate text-neutral-100" title={selectedRecording.file_path}>
+                        {getRecordingDisplayTitle(selectedRecording, gameMode)}
                       </div>
                     </div>
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">

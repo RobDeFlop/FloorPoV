@@ -45,6 +45,20 @@ export interface CombatEvent {
   target?: string;
 }
 
+export interface CombatTriggerEvent {
+  triggerType: "start" | "end";
+  mode: "mythicPlus" | "raid" | "pvp";
+  eventType: string;
+  encounterName?: string;
+  keyLevel?: number;
+}
+
+export interface CombatWatchStatusEvent {
+  level: "info" | "warn" | "error";
+  message: string;
+  watchedLogPath?: string;
+}
+
 export interface ParsedCombatEvent {
   lineNumber: number;
   logTimestamp: string;

@@ -91,6 +91,7 @@ pub fn run() {
             settings::cleanup_old_recordings,
             combat_log::start_combat_watch,
             combat_log::stop_combat_watch,
+            combat_log::set_combat_watch_recording_output,
             combat_log::validate_wow_folder,
             combat_log::emit_manual_marker,
             combat_log::parse_combat_log_file,

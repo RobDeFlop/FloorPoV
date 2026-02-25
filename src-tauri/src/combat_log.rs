@@ -2,7 +2,7 @@ use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime};
@@ -22,6 +22,24 @@ pub struct CombatEvent {
     pub event_type: String,
     pub source: Option<String>,
     pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CombatTriggerEvent {
+    pub trigger_type: String,
+    pub mode: String,
+    pub event_type: String,
+    pub encounter_name: Option<String>,
+    pub key_level: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CombatWatchStatusEvent {
+    pub level: String,
+    pub message: String,
+    pub watched_log_path: Option<String>,
 }
 
 const MAX_DEBUG_EVENTS: usize = 2_000;
@@ -75,8 +93,14 @@ pub async fn start_combat_watch(
 ) -> Result<(), String> {
     let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
 
-    if state.is_some() {
-        return Err("Combat watch already running".to_string());
+    if let Some(watch_state) = state.as_mut() {
+        if let Some(output_path) =
+            normalized_output_recording_path(recording_output_path.as_deref())
+        {
+            begin_watch_recording_session(watch_state, output_path);
+        }
+        emit_combat_watch_status(&app_handle, "info", "Combat watch already armed", None);
+        return Ok(());
     }
 
     let logs_directory = build_combat_log_directory_path(&wow_folder);
@@ -93,15 +117,38 @@ pub async fn start_combat_watch(
         .len();
 
     let app_handle_clone = app_handle.clone();
+    let logs_directory_clone = logs_directory.clone();
     let log_path_clone = log_path.clone();
     let start_time = Instant::now();
     let metadata_accumulator = Arc::new(Mutex::new(RecordingMetadataAccumulator::default()));
+    if let Err(error) = seed_metadata_context_from_log_tail(&log_path, &metadata_accumulator) {
+        emit_combat_watch_status(
+            &app_handle,
+            "warn",
+            &format!("Combat context seed failed: {error}"),
+            Some(&log_path),
+        );
+    } else {
+        let seeded_zone = metadata_accumulator
+            .lock()
+            .ok()
+            .and_then(|accumulator| accumulator.current_context_zone_name());
+        if let Some(zone_name) = seeded_zone {
+            emit_combat_watch_status(
+                &app_handle,
+                "info",
+                &format!("Context seeded: {zone_name}"),
+                Some(&log_path),
+            );
+        }
+    }
     let metadata_accumulator_clone = Arc::clone(&metadata_accumulator);
 
     let handle = tokio::spawn(async move {
         if let Err(error) = watch_combat_log(
             app_handle_clone,
-            &log_path_clone,
+            logs_directory_clone,
+            log_path_clone,
             initial_offset,
             start_time,
             metadata_accumulator_clone,
@@ -119,6 +166,14 @@ pub async fn start_combat_watch(
         metadata_accumulator,
     });
 
+    if let Some(watch_state) = state.as_mut() {
+        if let Some(output_path) = watch_state.recording_output_path.clone() {
+            begin_watch_recording_session(watch_state, output_path);
+        }
+    }
+
+    emit_combat_watch_status(&app_handle, "info", "Combat watch armed", Some(&log_path));
+
     Ok(())
 }
 
@@ -130,7 +185,7 @@ fn normalized_output_recording_path(recording_output_path: Option<&str>) -> Opti
 }
 
 #[tauri::command]
-pub async fn stop_combat_watch() -> Result<(), String> {
+pub async fn stop_combat_watch(app_handle: AppHandle) -> Result<(), String> {
     let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
 
     if let Some(watch_state) = state.take() {
@@ -139,6 +194,87 @@ pub async fn stop_combat_watch() -> Result<(), String> {
         }
 
         persist_watch_metadata_if_configured(&watch_state);
+    }
+
+    emit_combat_watch_status(&app_handle, "info", "Combat watch stopped", None);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_combat_watch_recording_output(
+    recording_output_path: Option<String>,
+) -> Result<(), String> {
+    let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
+    let Some(watch_state) = state.as_mut() else {
+        return Err("Combat watch not running".to_string());
+    };
+
+    if let Some(output_path) = normalized_output_recording_path(recording_output_path.as_deref()) {
+        begin_watch_recording_session(watch_state, output_path);
+        return Ok(());
+    }
+
+    persist_watch_metadata_if_configured(watch_state);
+    watch_state.recording_output_path = None;
+    match watch_state.metadata_accumulator.lock() {
+        Ok(mut metadata_accumulator) => metadata_accumulator.finish_recording_session(),
+        Err(error) => {
+            tracing::warn!(
+                metadata_error = %error,
+                "Failed to lock metadata accumulator while clearing recording output"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn begin_watch_recording_session(watch_state: &mut WatchState, output_path: PathBuf) {
+    watch_state.recording_output_path = Some(output_path);
+    let elapsed_seconds = watch_state.start_time.elapsed().as_secs_f64();
+
+    match watch_state.metadata_accumulator.lock() {
+        Ok(mut metadata_accumulator) => {
+            metadata_accumulator.begin_recording_session(elapsed_seconds)
+        }
+        Err(error) => {
+            tracing::warn!(
+                metadata_error = %error,
+                "Failed to lock metadata accumulator while starting recording session"
+            );
+        }
+    }
+}
+
+fn seed_metadata_context_from_log_tail(
+    log_path: &Path,
+    metadata_accumulator: &Arc<Mutex<RecordingMetadataAccumulator>>,
+) -> Result<(), String> {
+    const CONTEXT_SEED_BYTES: u64 = 256 * 1024;
+
+    let mut file = File::open(log_path).map_err(|error| error.to_string())?;
+    let file_length = file.metadata().map_err(|error| error.to_string())?.len();
+    let seed_start_offset = file_length.saturating_sub(CONTEXT_SEED_BYTES);
+
+    file.seek(SeekFrom::Start(seed_start_offset))
+        .map_err(|error| error.to_string())?;
+
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)
+        .map_err(|error| error.to_string())?;
+
+    let text = String::from_utf8_lossy(&buffer);
+    let mut lines = text.lines();
+    if seed_start_offset > 0 {
+        let _ = lines.next();
+    }
+
+    let mut accumulator = metadata_accumulator
+        .lock()
+        .map_err(|error| error.to_string())?;
+    for line in lines {
+        let _ = accumulator.consume_combat_log_line(line, 0.0);
     }
 
     Ok(())
@@ -179,15 +315,21 @@ pub async fn emit_manual_marker(app_handle: AppHandle) -> Result<(), String> {
 
     if let Some(watch_state) = state.as_ref() {
         let elapsed = watch_state.start_time.elapsed().as_secs_f64();
-        let event = CombatEvent {
-            timestamp: elapsed,
-            event_type: EVENT_MANUAL_MARKER.to_string(),
-            source: None,
-            target: None,
-        };
+        let mut should_emit_event = false;
+        let mut event_timestamp = elapsed;
 
         match watch_state.metadata_accumulator.lock() {
-            Ok(mut metadata_accumulator) => metadata_accumulator.record_manual_marker(elapsed),
+            Ok(mut metadata_accumulator) => {
+                if metadata_accumulator.is_recording_session_active() {
+                    metadata_accumulator.record_manual_marker(elapsed);
+                    if let Some(recording_elapsed_seconds) =
+                        metadata_accumulator.recording_elapsed_seconds(elapsed, None)
+                    {
+                        event_timestamp = recording_elapsed_seconds;
+                    }
+                    should_emit_event = true;
+                }
+            }
             Err(error) => {
                 tracing::error!(
                     metadata_error = %error,
@@ -196,7 +338,16 @@ pub async fn emit_manual_marker(app_handle: AppHandle) -> Result<(), String> {
             }
         }
 
-        emit_combat_event(&app_handle, &event);
+        if should_emit_event {
+            let event = CombatEvent {
+                timestamp: event_timestamp,
+                event_type: EVENT_MANUAL_MARKER.to_string(),
+                source: None,
+                target: None,
+            };
+            emit_combat_event(&app_handle, &event);
+        }
+
         return Ok(());
     }
 
@@ -210,6 +361,33 @@ fn emit_combat_event(app_handle: &AppHandle, event: &CombatEvent) {
             emit_error = %error,
             "Failed to emit combat event"
         );
+    }
+}
+
+fn emit_combat_trigger_event(app_handle: &AppHandle, event: &CombatTriggerEvent) {
+    if let Err(error) = app_handle.emit("combat-trigger", event) {
+        tracing::warn!(
+            event_type = %event.event_type,
+            emit_error = %error,
+            "Failed to emit combat trigger event"
+        );
+    }
+}
+
+fn emit_combat_watch_status(
+    app_handle: &AppHandle,
+    level: &str,
+    message: &str,
+    watched_log_path: Option<&Path>,
+) {
+    let status_event = CombatWatchStatusEvent {
+        level: level.to_string(),
+        message: message.to_string(),
+        watched_log_path: watched_log_path.map(|path| path.to_string_lossy().to_string()),
+    };
+
+    if let Err(error) = app_handle.emit("combat-watch-status", status_event) {
+        tracing::warn!(emit_error = %error, "Failed to emit combat watch status event");
     }
 }
 
@@ -268,7 +446,18 @@ pub fn parse_combat_log_file(file_path: String) -> Result<ParseCombatLogDebugRes
 }
 
 fn build_combat_log_directory_path(wow_folder: &str) -> PathBuf {
-    Path::new(wow_folder).join("Logs")
+    let candidate_path = Path::new(wow_folder);
+    let is_logs_directory = candidate_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case("Logs"))
+        .unwrap_or(false);
+
+    if is_logs_directory {
+        candidate_path.to_path_buf()
+    } else {
+        candidate_path.join("Logs")
+    }
 }
 
 fn is_combat_log_file_name(file_name: &str) -> bool {
@@ -278,7 +467,11 @@ fn is_combat_log_file_name(file_name: &str) -> bool {
 
 fn find_latest_combat_log_path(wow_folder: &str) -> Result<Option<PathBuf>, String> {
     let logs_directory = build_combat_log_directory_path(wow_folder);
-    let directory_entries = match std::fs::read_dir(&logs_directory) {
+    find_latest_combat_log_in_directory(&logs_directory)
+}
+
+fn find_latest_combat_log_in_directory(logs_directory: &Path) -> Result<Option<PathBuf>, String> {
+    let directory_entries = match std::fs::read_dir(logs_directory) {
         Ok(entries) => entries,
         Err(error) => {
             if logs_directory.exists() {
@@ -323,7 +516,8 @@ fn find_latest_combat_log_path(wow_folder: &str) -> Result<Option<PathBuf>, Stri
 
 async fn watch_combat_log(
     app_handle: AppHandle,
-    log_path: &Path,
+    logs_directory: PathBuf,
+    initial_log_path: PathBuf,
     initial_offset: u64,
     start_time: Instant,
     metadata_accumulator: Arc<Mutex<RecordingMetadataAccumulator>>,
@@ -338,24 +532,36 @@ async fn watch_combat_log(
     })
     .map_err(|error| error.to_string())?;
 
-    let watch_directory = log_path
-        .parent()
-        .ok_or_else(|| "Invalid WoW combat log path".to_string())?;
     watcher
-        .watch(watch_directory, RecursiveMode::NonRecursive)
+        .watch(&logs_directory, RecursiveMode::NonRecursive)
         .map_err(|error| error.to_string())?;
 
+    let mut current_log_path = initial_log_path;
     let mut file_offset = initial_offset;
     while let Some(notification_result) = notify_receiver.recv().await {
         match notification_result {
             Ok(event) => {
-                if !is_relevant_notification(&event, log_path) {
+                if !is_relevant_notification(&event) {
                     continue;
+                }
+
+                if let Some(latest_log_path) = find_latest_combat_log_in_directory(&logs_directory)?
+                {
+                    if latest_log_path != current_log_path {
+                        current_log_path = latest_log_path.clone();
+                        file_offset = 0;
+                        emit_combat_watch_status(
+                            &app_handle,
+                            "info",
+                            "Switched watched combat log file",
+                            Some(&latest_log_path),
+                        );
+                    }
                 }
 
                 if let Err(error) = read_and_emit_new_events(
                     &app_handle,
-                    log_path,
+                    &current_log_path,
                     &mut file_offset,
                     start_time,
                     &metadata_accumulator,
@@ -372,22 +578,17 @@ async fn watch_combat_log(
     Ok(())
 }
 
-fn is_relevant_notification(event: &Event, log_path: &Path) -> bool {
+fn is_relevant_notification(event: &Event) -> bool {
     let relevant_kind = matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
     if !relevant_kind {
         return false;
     }
 
-    let Some(log_file_name) = log_path.file_name() else {
-        return false;
-    };
-
     event.paths.iter().any(|path| {
-        path == log_path
-            || path
-                .file_name()
-                .map(|file_name| file_name == log_file_name)
-                .unwrap_or(false)
+        path.file_name()
+            .and_then(|value| value.to_str())
+            .map(is_combat_log_file_name)
+            .unwrap_or(false)
     })
 }
 
@@ -422,15 +623,31 @@ fn read_and_emit_new_events(
 
         *file_offset = file_offset.saturating_add(bytes_read as u64);
         let elapsed_seconds = start_time.elapsed().as_secs_f64();
-        let parsed_event = {
+        let log_timestamp_seconds = line.trim().split(',').next().and_then(|header| {
+            let ts = extract_log_timestamp(header);
+            LogTimestamp::parse(&ts).map(|t| t.to_seconds_since_midnight())
+        });
+        let (parsed_event, recording_active, recording_elapsed_seconds) = {
             let mut accumulator = metadata_accumulator
                 .lock()
                 .map_err(|error| error.to_string())?;
-            accumulator.consume_combat_log_line(&line, elapsed_seconds)
+            let parsed_event = accumulator.consume_combat_log_line(&line, elapsed_seconds);
+            let recording_active = accumulator.is_recording_session_active();
+            let recording_elapsed_seconds =
+                accumulator.recording_elapsed_seconds(elapsed_seconds, log_timestamp_seconds);
+            (parsed_event, recording_active, recording_elapsed_seconds)
         };
 
-        if let Some(event) = parsed_event.and_then(|value| value.into_live_event(elapsed_seconds)) {
-            emit_combat_event(app_handle, &event);
+        if let Some(trigger_event) = parsed_event.as_ref().and_then(extract_combat_trigger_event) {
+            emit_combat_trigger_event(app_handle, &trigger_event);
+        }
+
+        if recording_active {
+            if let Some(event) =
+                parsed_event.and_then(|value| value.into_live_event(recording_elapsed_seconds))
+            {
+                emit_combat_event(app_handle, &event);
+            }
         }
     }
 
@@ -439,6 +656,7 @@ fn read_and_emit_new_events(
 
 #[derive(Debug, Clone)]
 struct ImportantCombatEvent {
+    raw_event_type: String,
     log_timestamp: Option<String>,
     event_type: String,
     source: Option<String>,
@@ -451,16 +669,79 @@ struct ImportantCombatEvent {
 }
 
 impl ImportantCombatEvent {
-    fn into_live_event(self, elapsed_seconds: f64) -> Option<CombatEvent> {
+    fn into_live_event(self, recording_elapsed_seconds: Option<f64>) -> Option<CombatEvent> {
+        let timestamp = recording_elapsed_seconds?;
         match self.event_type.as_str() {
             "PARTY_KILL" | "UNIT_DIED" => Some(CombatEvent {
-                timestamp: elapsed_seconds,
+                timestamp,
                 event_type: self.event_type,
                 source: self.source,
                 target: self.target,
             }),
             _ => None,
         }
+    }
+}
+
+fn extract_combat_trigger_event(event: &ImportantCombatEvent) -> Option<CombatTriggerEvent> {
+    match event.raw_event_type.as_str() {
+        "CHALLENGE_MODE_START" => Some(CombatTriggerEvent {
+            trigger_type: "start".to_string(),
+            mode: "mythicPlus".to_string(),
+            event_type: "CHALLENGE_MODE_START".to_string(),
+            encounter_name: event.encounter_name.clone(),
+            key_level: event.key_level,
+        }),
+        "CHALLENGE_MODE_END" => Some(CombatTriggerEvent {
+            trigger_type: "end".to_string(),
+            mode: "mythicPlus".to_string(),
+            event_type: "CHALLENGE_MODE_END".to_string(),
+            encounter_name: event.encounter_name.clone(),
+            key_level: event.key_level,
+        }),
+        "ENCOUNTER_START" => {
+            if event.encounter_category.as_deref() != Some("raid") {
+                return None;
+            }
+
+            Some(CombatTriggerEvent {
+                trigger_type: "start".to_string(),
+                mode: "raid".to_string(),
+                event_type: "ENCOUNTER_START".to_string(),
+                encounter_name: event.encounter_name.clone(),
+                key_level: event.key_level,
+            })
+        }
+        "ENCOUNTER_END" => {
+            if event.encounter_category.as_deref() != Some("raid") {
+                return None;
+            }
+
+            Some(CombatTriggerEvent {
+                trigger_type: "end".to_string(),
+                mode: "raid".to_string(),
+                event_type: "ENCOUNTER_END".to_string(),
+                encounter_name: event.encounter_name.clone(),
+                key_level: event.key_level,
+            })
+        }
+        "ARENA_MATCH_START" | "PVP_MATCH_START" | "BATTLEGROUND_START" => {
+            Some(CombatTriggerEvent {
+                trigger_type: "start".to_string(),
+                mode: "pvp".to_string(),
+                event_type: event.raw_event_type.clone(),
+                encounter_name: event.encounter_name.clone(),
+                key_level: event.key_level,
+            })
+        }
+        "ARENA_MATCH_END" | "PVP_MATCH_COMPLETE" | "BATTLEGROUND_END" => Some(CombatTriggerEvent {
+            trigger_type: "end".to_string(),
+            mode: "pvp".to_string(),
+            event_type: event.raw_event_type.clone(),
+            encounter_name: event.encounter_name.clone(),
+            key_level: event.key_level,
+        }),
+        _ => None,
     }
 }
 
@@ -479,15 +760,12 @@ fn parse_important_combat_event(
     let (encounter_name, encounter_category) =
         resolve_encounter_state_for_event(context, &parsed_line);
 
-    if is_context_only_event(&parsed_line.raw_event_type) {
-        return None;
-    }
-
     if is_guardian_target(parsed_line.target_kind.as_deref()) {
         return None;
     }
 
     Some(ImportantCombatEvent {
+        raw_event_type: parsed_line.raw_event_type,
         log_timestamp: Some(parsed_line.log_timestamp),
         event_type: parsed_line.normalized_event_type,
         source: parsed_line.source,
@@ -516,6 +794,8 @@ fn resolve_encounter_state_for_event(
             let category = classify_encounter_category(context, &parsed_line.fields).to_string();
             context.current_encounter_category = Some(category.clone());
             encounter_category = Some(category);
+            // Store the log timestamp so we can use it as anchor when recording starts mid-encounter
+            context.current_encounter_log_timestamp = Some(parsed_line.log_timestamp.clone());
         }
         EVENT_ENCOUNTER_END => {
             if let Some(finished_encounter_name) = extract_encounter_name(&parsed_line.fields) {
@@ -527,6 +807,7 @@ fn resolve_encounter_state_for_event(
             }
             context.current_encounter = None;
             context.current_encounter_category = None;
+            context.current_encounter_log_timestamp = None;
         }
         _ => {}
     }
@@ -540,6 +821,10 @@ fn parse_important_log_line(
     context: &mut DebugParseContext,
 ) -> Option<ParsedCombatEvent> {
     let parsed_event = parse_important_combat_event(line, context)?;
+
+    if is_context_only_event(&parsed_event.raw_event_type) {
+        return None;
+    }
 
     Some(ParsedCombatEvent {
         line_number,
@@ -560,7 +845,10 @@ struct DebugParseContext {
     current_zone: Option<String>,
     current_encounter: Option<String>,
     current_encounter_category: Option<String>,
+    current_encounter_log_timestamp: Option<String>,
     current_key_level: Option<u32>,
+    challenge_mode_start_log_timestamp: Option<String>,
+    pvp_match_start_log_timestamp: Option<String>,
     in_challenge_mode: bool,
     in_pvp_match: bool,
 }
@@ -578,6 +866,9 @@ pub(crate) struct RecordingMetadataAccumulator {
     important_event_counts: BTreeMap<String, u64>,
     important_events_dropped_count: u64,
     high_volume_events_in_buffer: usize,
+    recording_active: bool,
+    recording_elapsed_origin_seconds: f64,
+    session_log_origin_seconds: Option<f64>,
 }
 
 impl RecordingMetadataAccumulator {
@@ -587,12 +878,147 @@ impl RecordingMetadataAccumulator {
         elapsed_seconds: f64,
     ) -> Option<ImportantCombatEvent> {
         let parsed_event = parse_important_combat_event(line, &mut self.context)?;
-        self.record_important_event(&parsed_event, elapsed_seconds);
+
+        if self.recording_active && !is_context_only_event(&parsed_event.raw_event_type) {
+            self.record_important_event(&parsed_event, elapsed_seconds);
+        }
         Some(parsed_event)
     }
 
+    fn begin_recording_session(&mut self, elapsed_seconds: f64) {
+        self.reset_recording_data();
+        self.recording_active = true;
+        self.recording_elapsed_origin_seconds = elapsed_seconds;
+        self.zone_name = self.context.current_zone.clone();
+        self.latest_encounter_name = self.context.current_encounter.clone();
+        self.latest_encounter_category = self.context.current_encounter_category.clone();
+        self.key_level = self.context.current_key_level;
+
+        // Try to anchor log-clock to activity start time (encounter, M+, or PvP)
+        // Priority: ENCOUNTER_START > CHALLENGE_MODE_START > PVP_MATCH_START
+        let anchor_log_timestamp = self
+            .context
+            .current_encounter_log_timestamp
+            .clone()
+            .or_else(|| self.context.challenge_mode_start_log_timestamp.clone())
+            .or_else(|| self.context.pvp_match_start_log_timestamp.clone());
+
+        if let Some(ref log_ts) = anchor_log_timestamp {
+            if let Some(timestamp_seconds) =
+                LogTimestamp::parse(log_ts).map(|t| t.to_seconds_since_midnight())
+            {
+                self.session_log_origin_seconds = Some(timestamp_seconds);
+            }
+        }
+
+        if let (Some(encounter_name), Some(encounter_category)) = (
+            self.context.current_encounter.clone(),
+            self.context.current_encounter_category.clone(),
+        ) {
+            let encounter_key = encounter_key(&encounter_name, &encounter_category);
+            let index = self.encounters.len();
+            self.encounters.push(RecordingEncounterSnapshot {
+                name: encounter_name,
+                category: encounter_category,
+                started_at_seconds: 0.0,
+                ended_at_seconds: None,
+            });
+            self.active_encounters.insert(encounter_key, index);
+
+            *self
+                .important_event_counts
+                .entry(EVENT_ENCOUNTER_START.to_string())
+                .or_insert(0) += 1;
+            self.push_event_with_cap(RecordingImportantEventMetadata {
+                timestamp_seconds: 0.0,
+                log_timestamp: self.context.current_encounter_log_timestamp.clone(),
+                event_type: EVENT_ENCOUNTER_START.to_string(),
+                source: None,
+                target: None,
+                zone_name: self.zone_name.clone(),
+                encounter_name: self.latest_encounter_name.clone(),
+                encounter_category: self.latest_encounter_category.clone(),
+                key_level: self.key_level,
+            });
+        }
+    }
+
+    fn finish_recording_session(&mut self) {
+        self.recording_active = false;
+    }
+
+    fn is_recording_session_active(&self) -> bool {
+        self.recording_active
+    }
+
+    fn current_context_zone_name(&self) -> Option<String> {
+        self.context.current_zone.clone()
+    }
+
+    fn recording_elapsed_seconds(
+        &self,
+        elapsed_seconds: f64,
+        log_timestamp_seconds: Option<f64>,
+    ) -> Option<f64> {
+        if !self.recording_active {
+            return None;
+        }
+
+        // If we have both log origin and current log timestamp, use log-clock
+        if let (Some(origin), Some(current)) =
+            (self.session_log_origin_seconds, log_timestamp_seconds)
+        {
+            let diff = current - origin;
+
+            // Normal case: current >= origin
+            if diff >= 0.0 {
+                return Some(diff);
+            }
+
+            // Midnight rollover: current < origin means we crossed midnight
+            let next_day_diff = current + 86400.0 - origin;
+            if next_day_diff >= 0.0 {
+                return Some(next_day_diff);
+            }
+
+            tracing::warn!(
+                origin_seconds = origin,
+                current_seconds = current,
+                diff_seconds = diff,
+                "Log-clock produced negative diff even after midnight adjustment, using fallback"
+            );
+        }
+
+        // Fallback to wall-clock (for manual markers or when log timestamps unavailable)
+        let fallback = elapsed_seconds - self.recording_elapsed_origin_seconds;
+        if !fallback.is_finite() || fallback < 0.0 {
+            return None;
+        }
+
+        Some(fallback)
+    }
+
+    fn reset_recording_data(&mut self) {
+        self.zone_name = None;
+        self.latest_encounter_name = None;
+        self.latest_encounter_category = None;
+        self.key_level = None;
+        self.active_encounters.clear();
+        self.encounters.clear();
+        self.important_events.clear();
+        self.important_event_counts.clear();
+        self.important_events_dropped_count = 0;
+        self.high_volume_events_in_buffer = 0;
+        self.session_log_origin_seconds = None;
+    }
+
     fn record_manual_marker(&mut self, elapsed_seconds: f64) {
+        if !self.recording_active {
+            return;
+        }
+
         let manual_event = ImportantCombatEvent {
+            raw_event_type: EVENT_MANUAL_MARKER.to_string(),
             log_timestamp: None,
             event_type: EVENT_MANUAL_MARKER.to_string(),
             source: None,
@@ -607,6 +1033,22 @@ impl RecordingMetadataAccumulator {
     }
 
     fn record_important_event(&mut self, event: &ImportantCombatEvent, elapsed_seconds: f64) {
+        let log_timestamp_seconds = event
+            .log_timestamp
+            .as_ref()
+            .and_then(|ts| LogTimestamp::parse(ts).map(|t| t.to_seconds_since_midnight()));
+
+        // Anchor the log origin to the first recorded event with a log timestamp
+        if log_timestamp_seconds.is_some() && self.session_log_origin_seconds.is_none() {
+            self.session_log_origin_seconds = log_timestamp_seconds;
+        }
+
+        let Some(recording_elapsed_seconds) =
+            self.recording_elapsed_seconds(elapsed_seconds, log_timestamp_seconds)
+        else {
+            return;
+        };
+
         *self
             .important_event_counts
             .entry(event.event_type.clone())
@@ -626,13 +1068,13 @@ impl RecordingMetadataAccumulator {
         }
 
         match event.event_type.as_str() {
-            EVENT_ENCOUNTER_START => self.record_encounter_start(event, elapsed_seconds),
-            EVENT_ENCOUNTER_END => self.record_encounter_end(event, elapsed_seconds),
+            EVENT_ENCOUNTER_START => self.record_encounter_start(event, recording_elapsed_seconds),
+            EVENT_ENCOUNTER_END => self.record_encounter_end(event, recording_elapsed_seconds),
             _ => {}
         }
 
         self.push_event_with_cap(RecordingImportantEventMetadata {
-            timestamp_seconds: elapsed_seconds,
+            timestamp_seconds: recording_elapsed_seconds,
             log_timestamp: event.log_timestamp.clone(),
             event_type: event.event_type.clone(),
             source: event.source.clone(),
@@ -650,6 +1092,10 @@ impl RecordingMetadataAccumulator {
         };
 
         let encounter_key = encounter_key(&encounter_name, &encounter_category);
+        if self.active_encounters.contains_key(&encounter_key) {
+            return;
+        }
+
         let index = self.encounters.len();
         self.encounters.push(RecordingEncounterSnapshot {
             name: encounter_name,
@@ -676,7 +1122,7 @@ impl RecordingMetadataAccumulator {
         self.encounters.push(RecordingEncounterSnapshot {
             name: encounter_name,
             category: encounter_category,
-            started_at_seconds: elapsed_seconds,
+            started_at_seconds: 0.0,
             ended_at_seconds: Some(elapsed_seconds),
         });
     }
@@ -768,7 +1214,7 @@ fn persist_recording_metadata_snapshot(
 
     let mut metadata = crate::recording::metadata::read_recording_metadata(recording_output_path)?
         .unwrap_or_else(|| RecordingMetadata::new(recording_output_path));
-    metadata.apply_combat_log_snapshot(snapshot);
+    metadata.apply_combat_log_snapshot(snapshot.clone());
 
     crate::recording::metadata::write_recording_metadata(recording_output_path, &metadata)?;
     Ok(())
@@ -827,12 +1273,7 @@ fn normalize_important_event_type(event_type: &str) -> Option<&'static str> {
         "SPELL_DISPEL" => Some("SPELL_DISPEL"),
         "ENCOUNTER_START" => Some("ENCOUNTER_START"),
         "ENCOUNTER_END" => Some("ENCOUNTER_END"),
-        "ZONE_CHANGE"
-        | "ZONE_CHANGE_NEW_AREA"
-        | "ZONE_CHANGED"
-        | "ZONE_CHANGED_INDOORS"
-        | "PLAYER_ENTERING_WORLD"
-        | "MAP_CHANGE" => Some("ZONE_CONTEXT"),
+        event_type if is_zone_context_event_type(event_type) => Some("ZONE_CONTEXT"),
         "CHALLENGE_MODE_START" | "CHALLENGE_MODE_END" => Some("CHALLENGE_CONTEXT"),
         "ARENA_MATCH_START" | "ARENA_MATCH_END" | "PVP_MATCH_START" | "PVP_MATCH_COMPLETE"
         | "BATTLEGROUND_START" | "BATTLEGROUND_END" => Some("PVP_CONTEXT"),
@@ -845,16 +1286,20 @@ fn update_debug_context(context: &mut DebugParseContext, parsed_line: &ParsedLog
         "CHALLENGE_MODE_START" => {
             context.in_challenge_mode = true;
             context.current_key_level = extract_challenge_mode_key_level(&parsed_line.fields);
+            context.challenge_mode_start_log_timestamp = Some(parsed_line.log_timestamp.clone());
         }
         "CHALLENGE_MODE_END" => {
             context.in_challenge_mode = false;
             context.current_key_level = None;
+            context.challenge_mode_start_log_timestamp = None;
         }
         "ARENA_MATCH_START" | "PVP_MATCH_START" | "BATTLEGROUND_START" => {
             context.in_pvp_match = true;
+            context.pvp_match_start_log_timestamp = Some(parsed_line.log_timestamp.clone());
         }
         "ARENA_MATCH_END" | "PVP_MATCH_COMPLETE" | "BATTLEGROUND_END" => {
             context.in_pvp_match = false;
+            context.pvp_match_start_log_timestamp = None;
         }
         _ => {}
     }
@@ -868,23 +1313,18 @@ fn extract_challenge_mode_key_level(fields: &[String]) -> Option<u32> {
 }
 
 fn is_context_only_event(raw_event_type: &str) -> bool {
-    matches!(
-        raw_event_type,
-        "ZONE_CHANGE"
-            | "ZONE_CHANGE_NEW_AREA"
-            | "ZONE_CHANGED"
-            | "ZONE_CHANGED_INDOORS"
-            | "PLAYER_ENTERING_WORLD"
-            | "MAP_CHANGE"
-            | "CHALLENGE_MODE_START"
-            | "CHALLENGE_MODE_END"
-            | "ARENA_MATCH_START"
-            | "ARENA_MATCH_END"
-            | "PVP_MATCH_START"
-            | "PVP_MATCH_COMPLETE"
-            | "BATTLEGROUND_START"
-            | "BATTLEGROUND_END"
-    )
+    is_zone_context_event_type(raw_event_type)
+        || matches!(
+            raw_event_type,
+            "CHALLENGE_MODE_START"
+                | "CHALLENGE_MODE_END"
+                | "ARENA_MATCH_START"
+                | "ARENA_MATCH_END"
+                | "PVP_MATCH_START"
+                | "PVP_MATCH_COMPLETE"
+                | "BATTLEGROUND_START"
+                | "BATTLEGROUND_END"
+        )
 }
 
 fn classify_encounter_category(context: &DebugParseContext, fields: &[String]) -> &'static str {
@@ -920,7 +1360,22 @@ fn extract_encounter_name(fields: &[String]) -> Option<String> {
 }
 
 fn extract_zone_name(raw_event_type: &str, fields: &[String]) -> Option<String> {
-    let is_zone_context_event = matches!(
+    if !is_zone_context_event_type(raw_event_type) {
+        return None;
+    }
+
+    fields.iter().find_map(|value| {
+        let normalized = normalize_name(Some(value.as_str()))?;
+        if is_likely_zone_name(&normalized) {
+            Some(normalized)
+        } else {
+            None
+        }
+    })
+}
+
+fn is_zone_context_event_type(raw_event_type: &str) -> bool {
+    matches!(
         raw_event_type,
         "ZONE_CHANGE"
             | "ZONE_CHANGE_NEW_AREA"
@@ -928,15 +1383,21 @@ fn extract_zone_name(raw_event_type: &str, fields: &[String]) -> Option<String> 
             | "ZONE_CHANGED_INDOORS"
             | "PLAYER_ENTERING_WORLD"
             | "MAP_CHANGE"
-    );
+    )
+}
 
-    if !is_zone_context_event {
-        return None;
+fn is_likely_zone_name(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
     }
 
-    fields
-        .iter()
-        .find_map(|value| normalize_name(Some(value.as_str())))
+    if value.chars().all(|character| character.is_ascii_digit()) {
+        return false;
+    }
+
+    value.chars().any(|character| {
+        character.is_alphabetic() || character == ' ' || character == '-' || character == '\''
+    })
 }
 
 fn classify_unit_kind(unit_flags: Option<&str>, unit_guid: Option<&str>) -> Option<&'static str> {
@@ -1026,6 +1487,73 @@ fn extract_log_timestamp(header: &str) -> String {
         .join(" ")
 }
 
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
+struct LogTimestamp {
+    month: u32,
+    day: u32,
+    hour: u32,
+    minute: u32,
+    second: u32,
+    fractional_seconds: f64,
+}
+
+impl LogTimestamp {
+    fn parse(value: &str) -> Option<Self> {
+        let parts: Vec<&str> = value.split_whitespace().collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        let date_part = parts[0];
+        let time_part = parts[1];
+
+        let date_parts: Vec<&str> = date_part.split('/').collect();
+        if date_parts.len() != 2 && date_parts.len() != 3 {
+            return None;
+        }
+
+        let month: u32 = date_parts[0].parse().ok()?;
+        let day: u32 = date_parts[1].parse().ok()?;
+        // date_parts[2] would be the year (if present), but we ignore it since we only care about time-of-day
+
+        let time_parts: Vec<&str> = time_part.split(':').collect();
+        if time_parts.len() != 3 {
+            return None;
+        }
+
+        let hour: u32 = time_parts[0].parse().ok()?;
+        let minute: u32 = time_parts[1].parse().ok()?;
+
+        let second_and_millis = time_parts[2];
+        let (second, fractional) = if let Some((sec, frac_str)) = second_and_millis.split_once('.')
+        {
+            let sec_val: u32 = sec.parse().ok()?;
+            let frac_val: f64 = format!("0.{}", frac_str).parse().ok()?;
+            (sec_val, frac_val)
+        } else {
+            (second_and_millis.parse().ok()?, 0.0)
+        };
+
+        Some(LogTimestamp {
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            fractional_seconds: fractional,
+        })
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    fn to_seconds_since_midnight(&self) -> f64 {
+        (self.hour as f64) * 3600.0
+            + (self.minute as f64) * 60.0
+            + (self.second as f64)
+            + self.fractional_seconds
+    }
+}
+
 fn normalize_entity_name(name: Option<&str>, unit_kind: Option<&str>) -> Option<String> {
     let normalized_name = normalize_name(name)?;
     if unit_kind != Some("PLAYER") {
@@ -1078,6 +1606,7 @@ mod tests {
     #[test]
     fn caps_high_volume_events_but_keeps_structural_events() {
         let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
         accumulator.record_manual_marker(0.25);
 
         let encounter_start_line = build_line("ENCOUNTER_START", &["1", "\"Training Boss\"", "16"]);
@@ -1122,6 +1651,7 @@ mod tests {
     #[test]
     fn updates_zone_context_without_persisting_context_only_events() {
         let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
 
         let zone_line = build_line("ZONE_CHANGED", &["\"Nerub-ar Palace\""]);
         accumulator.consume_combat_log_line(&zone_line, 0.5);
@@ -1138,6 +1668,7 @@ mod tests {
     #[test]
     fn captures_mythic_plus_key_level_from_challenge_start() {
         let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
 
         let challenge_start_line = build_line("CHALLENGE_MODE_START", &["2451", "14"]);
         accumulator.consume_combat_log_line(&challenge_start_line, 0.25);
@@ -1150,6 +1681,218 @@ mod tests {
         assert_eq!(snapshot.important_events.len(), 1);
         assert_eq!(snapshot.important_events[0].event_type, "PARTY_KILL");
         assert_eq!(snapshot.important_events[0].key_level, Some(14));
+    }
+
+    #[test]
+    fn seeds_recording_context_from_recent_zone_state() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        let zone_line = build_line("ZONE_CHANGED", &["\"Nerub-ar Palace\""]);
+        accumulator.consume_combat_log_line(&zone_line, 0.25);
+
+        let encounter_start_line = build_line("ENCOUNTER_START", &["1", "\"Queen Ansurek\"", "16"]);
+        accumulator.consume_combat_log_line(&encounter_start_line, 0.5);
+
+        accumulator.begin_recording_session(2.0);
+        let snapshot = accumulator.snapshot();
+
+        assert_eq!(snapshot.zone_name.as_deref(), Some("Nerub-ar Palace"));
+        assert_eq!(snapshot.encounter_name.as_deref(), Some("Queen Ansurek"));
+        assert_eq!(snapshot.encounter_category.as_deref(), Some("raid"));
+        assert_eq!(snapshot.encounters.len(), 1);
+        assert_eq!(snapshot.encounters[0].started_at_seconds, 0.0);
+        assert!(snapshot.encounters[0].ended_at_seconds.is_none());
+    }
+
+    #[test]
+    fn unmatched_encounter_end_uses_zero_start_time() {
+        // An ENCOUNTER_END with no prior ENCOUNTER_START synthesizes a segment starting at 0.0.
+        // The end time is the log-clock diff from the origin anchor.
+        // We anchor with a PARTY_KILL at 20:15:11.000, then end the encounter 42 s later
+        // at 20:15:53.000, so ended_at_seconds should be 42.0.
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        // First event: anchors session_log_origin_seconds to 20:15:11.000 (72911.0 s)
+        let anchor_line = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/22 20:15:11.000",
+        );
+        accumulator.consume_combat_log_line(&anchor_line, 0.0);
+
+        // Second event: 42 log-seconds later at 20:15:53.000 (72953.0 s)
+        let encounter_end_line = build_line_at(
+            "ENCOUNTER_END",
+            &["1", "\"Queen Ansurek\"", "16"],
+            "2/22 20:15:53.000",
+        );
+        accumulator.consume_combat_log_line(&encounter_end_line, 42.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.encounters.len(), 1);
+        assert_eq!(snapshot.encounters[0].started_at_seconds, 0.0);
+        assert_eq!(snapshot.encounters[0].ended_at_seconds, Some(42.0));
+    }
+
+    #[test]
+    fn prefers_zone_name_over_numeric_zone_id() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let zone_line = build_line("ZONE_CHANGED", &["2450", "\"Nerub-ar Palace\""]);
+        accumulator.consume_combat_log_line(&zone_line, 0.5);
+
+        let party_kill_line = build_party_kill_line(5);
+        accumulator.consume_combat_log_line(&party_kill_line, 1.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.zone_name.as_deref(), Some("Nerub-ar Palace"));
+    }
+
+    #[test]
+    fn map_change_updates_zone_context_with_zone_name() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let map_change_line = build_line("MAP_CHANGE", &["2450", "\"Nerub-ar Palace\""]);
+        accumulator.consume_combat_log_line(&map_change_line, 0.5);
+
+        let party_kill_line = build_party_kill_line(6);
+        accumulator.consume_combat_log_line(&party_kill_line, 1.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.zone_name.as_deref(), Some("Nerub-ar Palace"));
+    }
+
+    #[test]
+    fn stale_log_timestamp_before_session_does_not_corrupt_event_timestamps() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        let stale_zone_line =
+            build_line_at("ZONE_CHANGED", &["\"Stale Zone\""], "2/22 10:00:00.000");
+        accumulator.consume_combat_log_line(&stale_zone_line, 0.0);
+
+        accumulator.begin_recording_session(100.0);
+
+        let first_kill = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/22 10:00:05.000",
+        );
+        accumulator.consume_combat_log_line(&first_kill, 105.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.important_events.len(), 1);
+        assert!(
+            snapshot.important_events[0].timestamp_seconds < 10.0,
+            "Event should be near recording start, got {}",
+            snapshot.important_events[0].timestamp_seconds
+        );
+    }
+
+    #[test]
+    fn first_event_after_idle_gap_anchors_log_origin() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let first_kill = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/22 20:00:00.000",
+        );
+        accumulator.consume_combat_log_line(&first_kill, 0.0);
+
+        let second_kill = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1002-0000000000",
+                "\"Enemy1\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/22 20:00:30.000",
+        );
+        accumulator.consume_combat_log_line(&second_kill, 30.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.important_events.len(), 2);
+        assert_eq!(snapshot.important_events[0].timestamp_seconds, 0.0);
+        assert_eq!(snapshot.important_events[1].timestamp_seconds, 30.0);
+    }
+
+    #[test]
+    fn midnight_rollover_computes_correct_elapsed_time() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let before_midnight = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/22 23:59:50.000",
+        );
+        accumulator.consume_combat_log_line(&before_midnight, 0.0);
+
+        let after_midnight = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1002-0000000000",
+                "\"Enemy1\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/23 00:00:10.000",
+        );
+        accumulator.consume_combat_log_line(&after_midnight, 20.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.important_events.len(), 2);
+        assert_eq!(snapshot.important_events[0].timestamp_seconds, 0.0);
+        assert_eq!(snapshot.important_events[1].timestamp_seconds, 20.0);
     }
 
     fn build_party_kill_line(index: usize) -> String {
@@ -1169,11 +1912,332 @@ mod tests {
     }
 
     fn build_line(event_type: &str, fields: &[&str]) -> String {
-        let mut line = format!("2/22 20:15:11.000  {event_type}");
+        build_line_at(event_type, fields, "2/22 20:15:11.000")
+    }
+
+    fn build_line_at(event_type: &str, fields: &[&str], log_timestamp: &str) -> String {
+        let mut line = format!("{log_timestamp}  {event_type}");
         if !fields.is_empty() {
             line.push(',');
             line.push_str(&fields.join(","));
         }
         line
+    }
+
+    #[test]
+    fn parses_real_world_log_timestamp_format() {
+        use super::LogTimestamp;
+
+        let timestamp_str = "2/17 12:42:43.224";
+        let parsed = LogTimestamp::parse(timestamp_str);
+        assert!(parsed.is_some());
+        let ts = parsed.unwrap();
+        assert_eq!(ts.month, 2);
+        assert_eq!(ts.day, 17);
+        assert_eq!(ts.hour, 12);
+        assert_eq!(ts.minute, 42);
+        assert_eq!(ts.second, 43);
+        assert!((ts.fractional_seconds - 0.224).abs() < 0.0001);
+
+        let seconds = ts.to_seconds_since_midnight();
+        let expected = 12.0 * 3600.0 + 42.0 * 60.0 + 43.0 + 0.224;
+        assert!((seconds - expected).abs() < 0.001);
+
+        let timestamp_4digit = "2/17 12:42:43.2241";
+        let parsed_4 = LogTimestamp::parse(timestamp_4digit);
+        assert!(parsed_4.is_some());
+        let ts4 = parsed_4.unwrap();
+        assert!((ts4.fractional_seconds - 0.2241).abs() < 0.00001);
+
+        let seconds_4 = ts4.to_seconds_since_midnight();
+        let expected_4 = 12.0 * 3600.0 + 42.0 * 60.0 + 43.0 + 0.2241;
+        assert!((seconds_4 - expected_4).abs() < 0.001);
+
+        // Test format with year (real WoW log format as of 2026)
+        let timestamp_with_year = "2/17/2026 12:42:43.2241";
+        let parsed_year = LogTimestamp::parse(timestamp_with_year);
+        assert!(parsed_year.is_some());
+        let ts_year = parsed_year.unwrap();
+        assert_eq!(ts_year.month, 2);
+        assert_eq!(ts_year.day, 17);
+        assert_eq!(ts_year.hour, 12);
+        assert_eq!(ts_year.minute, 42);
+        assert_eq!(ts_year.second, 43);
+        assert!((ts_year.fractional_seconds - 0.2241).abs() < 0.00001);
+
+        let seconds_year = ts_year.to_seconds_since_midnight();
+        let expected_year = 12.0 * 3600.0 + 42.0 * 60.0 + 43.0 + 0.2241;
+        assert!((seconds_year - expected_year).abs() < 0.001);
+    }
+
+    #[test]
+    fn real_world_scenario_events_hours_apart_in_log() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        // User starts combat watch at 10 AM, context gets seeded from log tail
+        let old_zone_line = build_line_at("ZONE_CHANGED", &["\"Old Zone\""], "2/17 10:00:00.000");
+        accumulator.consume_combat_log_line(&old_zone_line, 0.0);
+
+        // User clicks record at 2 PM (4 hours later), recording starts
+        let recording_start_elapsed = 4.0 * 3600.0; // 14400 seconds
+        accumulator.begin_recording_session(recording_start_elapsed);
+
+        // First kill happens at 2:00:05 PM, 5 seconds into recording (wall-clock)
+        // This anchors the log-clock origin to 14:00:05 (50405 seconds since midnight)
+        let first_kill = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/17 14:00:05.000", // 2 PM + 5 seconds
+        );
+        let first_kill_elapsed = recording_start_elapsed + 5.0;
+        accumulator.consume_combat_log_line(&first_kill, first_kill_elapsed);
+
+        // Second kill at 2:00:30 PM, 30 seconds into recording (wall-clock)
+        // Log-clock: 14:00:30 (50430) - 14:00:05 (50405) = 25 seconds
+        let second_kill = build_line_at(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1002-0000000000",
+                "\"Enemy1\"",
+                "0x10a48",
+                "0x0",
+            ],
+            "2/17 14:00:30.000", // 2 PM + 30 seconds
+        );
+        let second_kill_elapsed = recording_start_elapsed + 30.0;
+        accumulator.consume_combat_log_line(&second_kill, second_kill_elapsed);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.important_events.len(), 2);
+
+        // First event anchors the log-clock origin, so it's at t=0
+        // Second event is 25 seconds later in log time (50430 - 50405 = 25)
+        assert_eq!(
+            snapshot.important_events[0].timestamp_seconds, 0.0,
+            "First kill anchors timeline at t=0"
+        );
+        assert_eq!(
+            snapshot.important_events[1].timestamp_seconds, 25.0,
+            "Second kill should be 25s after first kill (log-clock)"
+        );
+    }
+
+    #[test]
+    fn log_clock_fixes_time_compression_from_stale_watcher() {
+        // This test demonstrates the fix for the time compression bug where
+        // elapsed_seconds from the watcher doesn't update frequently, causing
+        // events that are 25 seconds apart in log time to appear only 0.33s apart.
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        // First UNIT_DIED at 15:35:00.9481 (log time)
+        let first_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Stonewing-Garrosh\"",
+                "0xa48",
+                "0x0",
+            ],
+            "2/25/2026 15:35:00.9481",
+        );
+        // Wall-clock thinks only 90.11 seconds have passed since app start
+        accumulator.consume_combat_log_line(&first_death, 90.1099539);
+
+        // Second UNIT_DIED at 15:35:25.3621 (log time) - 24.414 seconds later!
+        let second_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "Creature-0-0-0-0-1002-0000000000",
+                "\"Nûggîe-Blackrock\"",
+                "0xa48",
+                "0x0",
+            ],
+            "2/25/2026 15:35:25.3621",
+        );
+        // Wall-clock thinks only 0.332 seconds passed (90.44 - 90.11)
+        accumulator.consume_combat_log_line(&second_death, 90.4418244);
+
+        // Third UNIT_DIED at 15:35:35.8541 (log time) - 10.492 seconds after second
+        let third_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "Creature-0-0-0-0-1003-0000000000",
+                "\"Ahyawaska-KhazModan\"",
+                "0xa48",
+                "0x0",
+            ],
+            "2/25/2026 15:35:35.8541",
+        );
+        // Wall-clock thinks only 0.086 seconds passed (90.527 - 90.441)
+        accumulator.consume_combat_log_line(&third_death, 90.52762179999999);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.important_events.len(), 3);
+
+        // With log-clock fix:
+        // Event 1: anchors at t=0 (15:35:00.9481)
+        // Event 2: 15:35:25.3621 - 15:35:00.9481 = 24.414 seconds
+        // Event 3: 15:35:35.8541 - 15:35:00.9481 = 34.906 seconds
+
+        let log_time_1 = 15.0 * 3600.0 + 35.0 * 60.0 + 0.9481;
+        let log_time_2 = 15.0 * 3600.0 + 35.0 * 60.0 + 25.3621;
+        let log_time_3 = 15.0 * 3600.0 + 35.0 * 60.0 + 35.8541;
+
+        let expected_diff_2 = log_time_2 - log_time_1;
+        let expected_diff_3 = log_time_3 - log_time_1;
+
+        assert_eq!(snapshot.important_events[0].timestamp_seconds, 0.0);
+        assert!(
+            (snapshot.important_events[1].timestamp_seconds - expected_diff_2).abs() < 0.001,
+            "Second event should be ~24.4s after first, got {}",
+            snapshot.important_events[1].timestamp_seconds
+        );
+        assert!(
+            (snapshot.important_events[2].timestamp_seconds - expected_diff_3).abs() < 0.001,
+            "Third event should be ~34.9s after first, got {}",
+            snapshot.important_events[2].timestamp_seconds
+        );
+    }
+
+    #[test]
+    fn encounter_start_anchors_timeline_when_recording_starts_mid_encounter() {
+        // This test replicates the exact bug scenario from the user's report:
+        // ENCOUNTER_START happens at 15:46:32.9921, user starts recording ~73s later,
+        // then deaths happen at 15:47:46.5961, 15:47:54.8351, etc.
+        // Expected: ENCOUNTER_START at t=0, deaths at t=73.6s, t=81.8s, etc.
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        // ENCOUNTER_START arrives before recording starts (context seeding)
+        let encounter_start_line = build_line_at(
+            "ENCOUNTER_START",
+            &["3129", "\"Plexus Sentinel\"", "15", "30", "2810"],
+            "2/25/2026 15:46:32.9921",
+        );
+        accumulator.consume_combat_log_line(&encounter_start_line, 0.0);
+
+        // User clicks "Start Recording" ~73 seconds later (wall-clock)
+        accumulator.begin_recording_session(73.0);
+
+        // First UNIT_DIED at 15:47:46.5961 (73.604s after ENCOUNTER_START in log time)
+        let first_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "0000000000000000",
+                "nil",
+                "0x80000000",
+                "0x80000000",
+                "Player-1104-09EB9A1B",
+                "\"Mêdokar-Rajaxx\"",
+                "0x514",
+                "0x80000000",
+                "0",
+            ],
+            "2/25/2026 15:47:46.5961",
+        );
+        accumulator.consume_combat_log_line(&first_death, 146.0); // wall-clock is unreliable
+
+        // Second UNIT_DIED at 15:47:54.8351 (8.239s after first death in log time)
+        let second_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "0000000000000000",
+                "nil",
+                "0x80000000",
+                "0x80000000",
+                "Creature-0-4239-2810-5244-233815-00001F0A58",
+                "\"Sieve Mouse\"",
+                "0xa48",
+                "0x80000000",
+                "0",
+            ],
+            "2/25/2026 15:47:54.8351",
+        );
+        accumulator.consume_combat_log_line(&second_death, 146.3); // wall-clock barely moved
+
+        // ENCOUNTER_END at 15:48:09.1331 (36.141s after ENCOUNTER_START)
+        let encounter_end_line = build_line_at(
+            "ENCOUNTER_END",
+            &["3129", "\"Plexus Sentinel\"", "15", "1"],
+            "2/25/2026 15:48:09.1331",
+        );
+        accumulator.consume_combat_log_line(&encounter_end_line, 146.5);
+
+        let snapshot = accumulator.snapshot();
+
+        // Verify ENCOUNTER_START exists with log timestamp
+        let encounter_start_event = snapshot
+            .important_events
+            .iter()
+            .find(|e| e.event_type == "ENCOUNTER_START")
+            .expect("ENCOUNTER_START event should exist");
+
+        assert_eq!(
+            encounter_start_event.timestamp_seconds, 0.0,
+            "ENCOUNTER_START should anchor timeline at t=0"
+        );
+        assert!(
+            encounter_start_event.log_timestamp.is_some(),
+            "ENCOUNTER_START should have log timestamp"
+        );
+        assert_eq!(
+            encounter_start_event.log_timestamp.as_deref(),
+            Some("2/25/2026 15:46:32.9921"),
+            "ENCOUNTER_START should store original log timestamp"
+        );
+
+        // Calculate expected timestamps (relative to ENCOUNTER_START)
+        let encounter_start_time = 15.0 * 3600.0 + 46.0 * 60.0 + 32.9921;
+        let first_death_time = 15.0 * 3600.0 + 47.0 * 60.0 + 46.5961;
+        let second_death_time = 15.0 * 3600.0 + 47.0 * 60.0 + 54.8351;
+        let encounter_end_time = 15.0 * 3600.0 + 48.0 * 60.0 + 9.1331;
+
+        let expected_first_death = first_death_time - encounter_start_time;
+        let expected_second_death = second_death_time - encounter_start_time;
+        let expected_encounter_end = encounter_end_time - encounter_start_time;
+
+        // Find death events
+        let death_events: Vec<_> = snapshot
+            .important_events
+            .iter()
+            .filter(|e| e.event_type == "UNIT_DIED")
+            .collect();
+
+        assert_eq!(death_events.len(), 2, "Should have 2 death events");
+
+        assert!(
+            (death_events[0].timestamp_seconds - expected_first_death).abs() < 0.001,
+            "First death should be ~73.6s after ENCOUNTER_START, got {}",
+            death_events[0].timestamp_seconds
+        );
+
+        assert!(
+            (death_events[1].timestamp_seconds - expected_second_death).abs() < 0.001,
+            "Second death should be ~81.8s after ENCOUNTER_START, got {}",
+            death_events[1].timestamp_seconds
+        );
+
+        // Verify encounter duration
+        assert_eq!(snapshot.encounters.len(), 1);
+        assert_eq!(snapshot.encounters[0].started_at_seconds, 0.0);
+        assert!(
+            (snapshot.encounters[0].ended_at_seconds.unwrap() - expected_encounter_end).abs()
+                < 0.001,
+            "Encounter should end at ~96.1s, got {:?}",
+            snapshot.encounters[0].ended_at_seconds
+        );
     }
 }

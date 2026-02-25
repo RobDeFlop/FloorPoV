@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useSettings } from "./SettingsContext";
@@ -9,6 +9,8 @@ import {
   convertCombatEvent,
   convertRecordingMetadataToGameEvents,
   CombatEvent,
+  CombatTriggerEvent,
+  CombatWatchStatusEvent,
   RecordingMetadata,
 } from "../types/events";
 
@@ -43,10 +45,15 @@ interface RecordingContextType {
   captureHeight: number;
   recordingPath: string | null;
   recordingDuration: number;
+  appStatusDetail: string | null;
   loadPlaybackMetadata: (filePath: string) => Promise<void>;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
 }
+
+type RecordingOrigin = "manual" | "auto";
+type AutoTriggerMode = "mythicPlus" | "raid" | "pvp";
+const AUTO_STOP_GRACE_MS = 5000;
 
 const RecordingContext = createContext<RecordingContextType | undefined>(undefined);
 
@@ -59,8 +66,72 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const [recordingPath, setRecordingPath] = useState<string | null>(null);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const [recordingOrigin, setRecordingOrigin] = useState<RecordingOrigin | null>(null);
+  const [activeAutoTriggerMode, setActiveAutoTriggerMode] = useState<AutoTriggerMode | null>(null);
+  const [isCombatWatchRunning, setIsCombatWatchRunning] = useState(false);
+  const [combatWatchWowFolder, setCombatWatchWowFolder] = useState<string | null>(null);
+  const [appStatusDetail, setAppStatusDetail] = useState<string | null>(null);
   const { settings } = useSettings();
   const { addEvent, setEvents, clearEvents } = useMarker();
+  const operationInFlightRef = useRef(false);
+  const isRecordingRef = useRef(false);
+  const recordingOriginRef = useRef<RecordingOrigin | null>(null);
+  const pendingAutoStopTimeoutRef = useRef<number | null>(null);
+  const pendingAutoStopModeRef = useRef<AutoTriggerMode | null>(null);
+
+  const clearPendingAutoStop = useCallback(() => {
+    if (pendingAutoStopTimeoutRef.current !== null) {
+      window.clearTimeout(pendingAutoStopTimeoutRef.current);
+      pendingAutoStopTimeoutRef.current = null;
+    }
+    pendingAutoStopModeRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
+  useEffect(() => {
+    recordingOriginRef.current = recordingOrigin;
+  }, [recordingOrigin]);
+
+  const ensureCombatWatchRunning = useCallback(async () => {
+    const wowFolder = settings.wowFolder.trim();
+    if (!wowFolder) {
+      if (settings.enableAutoRecording) {
+        setAppStatusDetail("Auto recording: set WoW folder in Settings.");
+      }
+      return false;
+    }
+
+    const wowFolderIsValid = await invoke<boolean>("validate_wow_folder", {
+      path: wowFolder,
+    });
+    if (!wowFolderIsValid) {
+      if (settings.enableAutoRecording) {
+        setAppStatusDetail("Auto recording: no WoWCombatLog*.txt found.");
+      }
+      return false;
+    }
+
+    await invoke("start_combat_watch", {
+      wowFolder,
+      recordingOutputPath: null,
+    });
+    setIsCombatWatchRunning(true);
+    setCombatWatchWowFolder(wowFolder);
+    return true;
+  }, [settings.enableAutoRecording, settings.wowFolder]);
+
+  const detachCombatWatchRecordingOutput = useCallback(async () => {
+    try {
+      await invoke("set_combat_watch_recording_output", {
+        recordingOutputPath: null,
+      });
+    } catch (error) {
+      console.warn("Failed to detach combat watch recording output:", error);
+    }
+  }, []);
 
   const waitForEvent = async (eventName: string, timeoutMs: number): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -120,9 +191,13 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unlistenRecordingStopped = listen("recording-stopped", () => {
+      clearPendingAutoStop();
       setIsRecording(false);
       setRecordingStartTime(null);
       setRecordingWarning(null);
+      setRecordingOrigin(null);
+      setActiveAutoTriggerMode(null);
+      operationInFlightRef.current = false;
     });
 
     const unlistenRecordingWarning = listen<string>("recording-warning", (event) => {
@@ -139,8 +214,71 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     });
 
     const unlistenCombatEvent = listen<CombatEvent>("combat-event", (event) => {
+      if (!isRecordingRef.current) {
+        return;
+      }
+
       const gameEvent = convertCombatEvent(event.payload);
       addEvent(gameEvent);
+    });
+
+    const unlistenCombatTrigger = listen<CombatTriggerEvent>("combat-trigger", (event) => {
+      const trigger = event.payload;
+      if (!settings.enableAutoRecording) {
+        return;
+      }
+
+      if (trigger.triggerType === "start") {
+        if (
+          pendingAutoStopTimeoutRef.current !== null &&
+          (pendingAutoStopModeRef.current === null || pendingAutoStopModeRef.current === trigger.mode)
+        ) {
+          clearPendingAutoStop();
+        }
+
+        if (operationInFlightRef.current || isRecordingRef.current) {
+          return;
+        }
+
+        void startRecordingInternal("auto", trigger.mode);
+        return;
+      }
+
+      if (
+        trigger.triggerType === "end" &&
+        !operationInFlightRef.current &&
+        isRecordingRef.current &&
+        recordingOriginRef.current === "auto" &&
+        activeAutoTriggerMode === trigger.mode
+      ) {
+        if (pendingAutoStopTimeoutRef.current !== null) {
+          return;
+        }
+
+        pendingAutoStopModeRef.current = trigger.mode;
+        pendingAutoStopTimeoutRef.current = window.setTimeout(() => {
+          pendingAutoStopTimeoutRef.current = null;
+          pendingAutoStopModeRef.current = null;
+
+          if (
+            !isRecordingRef.current ||
+            recordingOriginRef.current !== "auto" ||
+            operationInFlightRef.current
+          ) {
+            return;
+          }
+
+          void stopRecordingInternal(false);
+        }, AUTO_STOP_GRACE_MS);
+      }
+    });
+
+    const unlistenCombatWatchStatus = listen<CombatWatchStatusEvent>("combat-watch-status", (event) => {
+      const statusPayload = event.payload;
+      const logSuffix = statusPayload.watchedLogPath
+        ? ` (${statusPayload.watchedLogPath})`
+        : "";
+      setAppStatusDetail(`${statusPayload.message}${logSuffix}`);
     });
 
     return () => {
@@ -149,8 +287,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       unlistenRecordingWarningCleared.then((unsubscribe) => unsubscribe());
       unlistenCleanup.then((unsubscribe) => unsubscribe());
       unlistenCombatEvent.then((unsubscribe) => unsubscribe());
+      unlistenCombatTrigger.then((unsubscribe) => unsubscribe());
+      unlistenCombatWatchStatus.then((unsubscribe) => unsubscribe());
     };
-  }, [addEvent]);
+  }, [activeAutoTriggerMode, addEvent, clearPendingAutoStop, settings.enableAutoRecording]);
 
   const loadPlaybackMetadata = async (filePath: string) => {
     if (isRecording) {
@@ -175,100 +315,208 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const startRecording = async () => {
-    setLastError(null);
-    setRecordingWarning(null);
-    let recordingStarted = false;
-
-    try {
-      clearEvents();
-
-      const bitrateSettings = QUALITY_SETTINGS[settings.videoQuality];
-      const recordingSettings: RecordingCommandSettings = {
-        video_quality: settings.videoQuality,
-        frame_rate: settings.frameRate,
-        bitrate: bitrateSettings.bitrate,
-        capture_source: settings.captureSource,
-        capture_window_hwnd: settings.captureWindowHwnd,
-        capture_window_title: settings.captureWindowTitle,
-        enable_system_audio: settings.enableSystemAudio,
-        enable_recording_diagnostics: settings.enableRecordingDiagnostics,
-      };
-
-      const result = await invoke<RecordingStartedPayload>("start_recording", {
-        settings: recordingSettings,
-        outputFolder: settings.outputFolder,
-        maxStorageBytes: settings.maxStorageGB * 1024 * 1024 * 1024,
-      });
-
-      recordingStarted = true;
-
-      setIsRecording(true);
-      setRecordingPath(result.output_path);
-      setCaptureWidth(result.width);
-      setCaptureHeight(result.height);
-      setRecordingStartTime(Date.now());
-
-      if (settings.wowFolder.trim().length > 0) {
-        try {
-          const wowFolderIsValid = await invoke<boolean>("validate_wow_folder", {
-            path: settings.wowFolder,
-          });
-
-          if (wowFolderIsValid) {
-            await invoke("start_combat_watch", {
-              wowFolder: settings.wowFolder,
-              recordingOutputPath: result.output_path,
-            });
-          }
-        } catch (error) {
-          console.warn("Failed to start combat watch, continuing recording:", error);
-        }
+  const startRecordingInternal = useCallback(
+    async (origin: RecordingOrigin, autoTriggerMode: AutoTriggerMode | null = null) => {
+      if (operationInFlightRef.current || isRecordingRef.current) {
+        return;
       }
-    } catch (error) {
-      if (recordingStarted) {
-        await invoke("stop_recording").catch(() => undefined);
-        await invoke("stop_combat_watch").catch(() => undefined);
+
+      operationInFlightRef.current = true;
+      setLastError(null);
+      setRecordingWarning(null);
+      let recordingStarted = false;
+
+      try {
+        clearEvents();
+
+        const bitrateSettings = QUALITY_SETTINGS[settings.videoQuality];
+        const recordingSettings: RecordingCommandSettings = {
+          video_quality: settings.videoQuality,
+          frame_rate: settings.frameRate,
+          bitrate: bitrateSettings.bitrate,
+          capture_source: settings.captureSource,
+          capture_window_hwnd: settings.captureWindowHwnd,
+          capture_window_title: settings.captureWindowTitle,
+          enable_system_audio: settings.enableSystemAudio,
+          enable_recording_diagnostics: settings.enableRecordingDiagnostics,
+        };
+
+        const result = await invoke<RecordingStartedPayload>("start_recording", {
+          settings: recordingSettings,
+          outputFolder: settings.outputFolder,
+          maxStorageBytes: settings.maxStorageGB * 1024 * 1024 * 1024,
+        });
+
+        recordingStarted = true;
+
+        setIsRecording(true);
+        setRecordingOrigin(origin);
+        setActiveAutoTriggerMode(origin === "auto" ? autoTriggerMode : null);
+        setRecordingPath(result.output_path);
+        setCaptureWidth(result.width);
+        setCaptureHeight(result.height);
+        setRecordingStartTime(Date.now());
+
+        const watchStarted = await ensureCombatWatchRunning();
+        if (watchStarted) {
+          await invoke("set_combat_watch_recording_output", {
+            recordingOutputPath: result.output_path,
+          });
+        }
+      } catch (error) {
+        if (recordingStarted) {
+          await detachCombatWatchRecordingOutput();
+          await invoke("stop_recording").catch(() => undefined);
+          setIsRecording(false);
+          setRecordingStartTime(null);
+          setRecordingOrigin(null);
+          setActiveAutoTriggerMode(null);
+        }
+        setRecordingWarning(null);
+        console.error("Failed to start recording:", error);
+        setLastError(getErrorMessage(error));
+        throw error;
+      } finally {
+        operationInFlightRef.current = false;
+      }
+    },
+    [
+      clearEvents,
+      detachCombatWatchRecordingOutput,
+      ensureCombatWatchRunning,
+      settings.captureSource,
+      settings.captureWindowHwnd,
+      settings.captureWindowTitle,
+      settings.enableRecordingDiagnostics,
+      settings.enableSystemAudio,
+      settings.frameRate,
+      settings.maxStorageGB,
+      settings.outputFolder,
+      settings.videoQuality,
+    ],
+  );
+
+  const stopRecordingInternal = useCallback(
+    async (isManualStop: boolean) => {
+      if (operationInFlightRef.current) {
+        return;
+      }
+
+      clearPendingAutoStop();
+
+      operationInFlightRef.current = true;
+      setLastError(null);
+      try {
+        const waitForFinalize = waitForEvent("recording-finalized", RECORDING_EVENT_TIMEOUT_MS);
+        const waitForStopped = waitForEvent("recording-stopped", RECORDING_EVENT_TIMEOUT_MS);
+
+        await detachCombatWatchRecordingOutput();
+        await invoke("stop_recording");
+
+        const [finalizedReceived, stoppedReceived] = await Promise.all([
+          waitForFinalize,
+          waitForStopped,
+        ]);
+
+        if (!finalizedReceived) {
+          console.warn("Timed out waiting for recording-finalized event");
+        }
+        if (!stoppedReceived) {
+          console.warn("Timed out waiting for recording-stopped event");
+        }
+
         setIsRecording(false);
         setRecordingStartTime(null);
+        setRecordingWarning(null);
+        setRecordingOrigin(null);
+        setActiveAutoTriggerMode(null);
+
+        if (isManualStop && !settings.enableAutoRecording && isCombatWatchRunning) {
+          await invoke("stop_combat_watch").catch(() => undefined);
+          setIsCombatWatchRunning(false);
+          setCombatWatchWowFolder(null);
+        }
+      } catch (error) {
+        console.error("Failed to stop recording:", error);
+        setLastError(getErrorMessage(error));
+        throw error;
+      } finally {
+        operationInFlightRef.current = false;
       }
-      setRecordingWarning(null);
-      console.error("Failed to start recording:", error);
-      setLastError(getErrorMessage(error));
-      throw error;
-    }
-  };
+    },
+    [clearPendingAutoStop, detachCombatWatchRecordingOutput, isCombatWatchRunning, settings.enableAutoRecording],
+  );
 
-  const stopRecording = async () => {
-    setLastError(null);
-    try {
-      const waitForFinalize = waitForEvent("recording-finalized", RECORDING_EVENT_TIMEOUT_MS);
-      const waitForStopped = waitForEvent("recording-stopped", RECORDING_EVENT_TIMEOUT_MS);
+  const startRecording = useCallback(async () => {
+    await startRecordingInternal("manual", null);
+  }, [startRecordingInternal]);
 
-      await invoke("stop_combat_watch").catch(() => undefined);
-      await invoke("stop_recording");
+  const stopRecording = useCallback(async () => {
+    await stopRecordingInternal(true);
+  }, [stopRecordingInternal]);
 
-      const [finalizedReceived, stoppedReceived] = await Promise.all([
-        waitForFinalize,
-        waitForStopped,
-      ]);
+  useEffect(() => {
+    let isDisposed = false;
 
-      if (!finalizedReceived) {
-        console.warn("Timed out waiting for recording-finalized event");
+    const syncCombatWatch = async () => {
+      const wowFolder = settings.wowFolder.trim();
+      const shouldKeepWatchRunning = settings.enableAutoRecording || isRecording;
+
+      if (!wowFolder || !shouldKeepWatchRunning) {
+        if (isCombatWatchRunning) {
+          await invoke("stop_combat_watch").catch(() => undefined);
+          if (!isDisposed) {
+            setIsCombatWatchRunning(false);
+            setCombatWatchWowFolder(null);
+          }
+        }
+        return;
       }
-      if (!stoppedReceived) {
-        console.warn("Timed out waiting for recording-stopped event");
+
+      if (isCombatWatchRunning && combatWatchWowFolder && combatWatchWowFolder !== wowFolder) {
+        await invoke("stop_combat_watch").catch(() => undefined);
+        if (!isDisposed) {
+          setIsCombatWatchRunning(false);
+          setCombatWatchWowFolder(null);
+        }
       }
 
-      setIsRecording(false);
-      setRecordingStartTime(null);
-      setRecordingWarning(null);
-    } catch (error) {
-      console.error("Failed to stop recording:", error);
-      setLastError(getErrorMessage(error));
-      throw error;
-    }
-  };
+      try {
+        const watchStarted = await ensureCombatWatchRunning();
+        if (!isDisposed) {
+          if (watchStarted) {
+            setIsCombatWatchRunning(true);
+            setCombatWatchWowFolder(wowFolder);
+          } else if (isCombatWatchRunning) {
+            await invoke("stop_combat_watch").catch(() => undefined);
+            setIsCombatWatchRunning(false);
+            setCombatWatchWowFolder(null);
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to synchronize combat watch:", error);
+      }
+    };
+
+    void syncCombatWatch();
+
+    return () => {
+      isDisposed = true;
+    };
+  }, [
+    combatWatchWowFolder,
+    ensureCombatWatchRunning,
+    isCombatWatchRunning,
+    isRecording,
+    settings.enableAutoRecording,
+    settings.wowFolder,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      clearPendingAutoStop();
+    };
+  }, [clearPendingAutoStop]);
 
   return (
     <RecordingContext.Provider
@@ -280,6 +528,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         captureHeight,
         recordingPath,
         recordingDuration,
+        appStatusDetail,
         loadPlaybackMetadata,
         startRecording,
         stopRecording,
