@@ -9,7 +9,7 @@ import { formatTime } from "../../utils/format";
 
 export function Timeline() {
   const { currentTime, duration, seek } = useVideo();
-  const { events } = useMarker();
+  const { filteredEvents } = useMarker();
   const reduceMotion = useReducedMotion();
   const [hoveredEvent, setHoveredEvent] = useState<GameEvent | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
@@ -52,7 +52,7 @@ export function Timeline() {
           >
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-emerald-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
-          {events.map((event) => {
+          {filteredEvents.map((event) => {
             const position = duration > 0 ? (event.timestamp / duration) * 100 : 0;
             return (
               <motion.button

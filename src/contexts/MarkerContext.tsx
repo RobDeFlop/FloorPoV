@@ -1,10 +1,13 @@
-import { createContext, ReactNode, useContext, useState, useCallback } from "react";
-import { GameEvent } from "../types/events";
+import { createContext, ReactNode, useContext, useState, useCallback, useMemo } from "react";
+import { GameEvent, isNpcKind } from "../types/events";
 
 interface MarkerContextType {
   events: GameEvent[];
+  filteredEvents: GameEvent[];
+  hideNpcEvents: boolean;
   addEvent: (event: GameEvent) => void;
   setEvents: (events: GameEvent[]) => void;
+  setHideNpcEvents: (hide: boolean) => void;
   clearEvents: () => void;
 }
 
@@ -41,6 +44,12 @@ function insertEventByTimestamp(sortedEvents: GameEvent[], nextEvent: GameEvent)
 
 export function MarkerProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<GameEvent[]>([]);
+  const [hideNpcEvents, setHideNpcEvents] = useState(true);
+
+  const filteredEvents = useMemo(() => {
+    if (!hideNpcEvents) return events;
+    return events.filter((event) => !isNpcKind(event.targetKind, event.target));
+  }, [events, hideNpcEvents]);
 
   const addEvent = useCallback((event: GameEvent) => {
     setEvents((previousEvents) => insertEventByTimestamp(previousEvents, event));
@@ -55,7 +64,17 @@ export function MarkerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <MarkerContext.Provider value={{ events, addEvent, setEvents: replaceEvents, clearEvents }}>
+    <MarkerContext.Provider
+      value={{
+        events,
+        filteredEvents,
+        hideNpcEvents,
+        addEvent,
+        setEvents: replaceEvents,
+        setHideNpcEvents,
+        clearEvents,
+      }}
+    >
       {children}
     </MarkerContext.Provider>
   );

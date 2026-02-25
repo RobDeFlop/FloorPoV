@@ -4,6 +4,7 @@ export interface GameEvent {
   type: "kill" | "death" | "manual";
   source?: string;
   target?: string;
+  targetKind?: string;
 }
 
 export interface RecordingImportantEventMetadata {
@@ -12,6 +13,7 @@ export interface RecordingImportantEventMetadata {
   eventType: string;
   source?: string;
   target?: string;
+  targetKind?: string;
   zoneName?: string;
   encounterName?: string;
   encounterCategory?: string;
@@ -83,6 +85,29 @@ export interface ParseCombatLogDebugResult {
 
 const SUPPORTED_PLAYBACK_EVENT_TYPES = new Set(["PARTY_KILL", "UNIT_DIED", "MANUAL_MARKER"]);
 
+const NPC_KINDS = new Set(["NPC", "PET", "GUARDIAN", "UNKNOWN"]);
+const PLAYER_KINDS = new Set(["PLAYER"]);
+
+function inferTargetKind(target: string | undefined): string | undefined {
+  if (!target) return undefined;
+  if (target.includes("-")) {
+    return "PLAYER";
+  }
+  return undefined;
+}
+
+export function isNpcKind(targetKind: string | undefined, target?: string): boolean {
+  const resolvedKind = targetKind ?? inferTargetKind(target);
+  if (!resolvedKind) return false;
+  return NPC_KINDS.has(resolvedKind);
+}
+
+export function isPlayerKind(targetKind: string | undefined, target?: string): boolean {
+  const resolvedKind = targetKind ?? inferTargetKind(target);
+  if (!resolvedKind) return false;
+  return PLAYER_KINDS.has(resolvedKind);
+}
+
 function mapEventTypeToGameEventType(eventType: string): GameEvent["type"] {
   if (eventType === "PARTY_KILL") {
     return "kill";
@@ -118,6 +143,7 @@ export function convertRecordingMetadataToGameEvents(
         type: mapEventTypeToGameEventType(importantEvent.eventType),
         source: importantEvent.source,
         target: importantEvent.target,
+        targetKind: importantEvent.targetKind,
       }];
     })
     .sort((a, b) => a.timestamp - b.timestamp);

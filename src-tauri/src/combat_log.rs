@@ -172,7 +172,12 @@ pub async fn start_combat_watch(
         }
     }
 
-    emit_combat_watch_status(&app_handle, "info", "Combatlog watcher active!", Some(&log_path));
+    emit_combat_watch_status(
+        &app_handle,
+        "info",
+        "Combatlog watcher active!",
+        Some(&log_path),
+    );
 
     Ok(())
 }
@@ -550,12 +555,12 @@ async fn watch_combat_log(
                     if latest_log_path != current_log_path {
                         current_log_path = latest_log_path.clone();
                         file_offset = 0;
-                        emit_combat_watch_status(
-                            &app_handle,
-                            "info",
-                            "Switched watched combat log file",
-                            Some(&latest_log_path),
-                        );
+                        // emit_combat_watch_status(
+                        //     &app_handle,
+                        //     "info",
+                        //     "Switched watched combat log file",
+                        //     Some(&latest_log_path),
+                        // );
                     }
                 }
 
@@ -935,6 +940,7 @@ impl RecordingMetadataAccumulator {
                 event_type: EVENT_ENCOUNTER_START.to_string(),
                 source: None,
                 target: None,
+                target_kind: None,
                 zone_name: self.zone_name.clone(),
                 encounter_name: self.latest_encounter_name.clone(),
                 encounter_category: self.latest_encounter_category.clone(),
@@ -1079,6 +1085,7 @@ impl RecordingMetadataAccumulator {
             event_type: event.event_type.clone(),
             source: event.source.clone(),
             target: event.target.clone(),
+            target_kind: event.target_kind.clone(),
             zone_name: event.zone_name.clone(),
             encounter_name: event.encounter_name.clone(),
             encounter_category: event.encounter_category.clone(),
@@ -1307,9 +1314,11 @@ fn update_debug_context(context: &mut DebugParseContext, parsed_line: &ParsedLog
 
 fn extract_challenge_mode_key_level(fields: &[String]) -> Option<u32> {
     fields
-        .get(1)
-        .and_then(|value| value.trim_matches('"').parse::<u32>().ok())
-        .filter(|value| *value > 0)
+        .iter()
+        .find_map(|value| {
+            let trimmed = value.trim_matches('"');
+            trimmed.parse::<u32>().ok().filter(|&level| level > 0 && level <= 40)
+        })
 }
 
 fn is_context_only_event(raw_event_type: &str) -> bool {
@@ -1670,7 +1679,7 @@ mod tests {
         let mut accumulator = RecordingMetadataAccumulator::default();
         accumulator.begin_recording_session(0.0);
 
-        let challenge_start_line = build_line("CHALLENGE_MODE_START", &["2451", "14"]);
+        let challenge_start_line = build_line("CHALLENGE_MODE_START", &["2451", "2662", "505", "14"]);
         accumulator.consume_combat_log_line(&challenge_start_line, 0.25);
 
         let party_kill_line = build_party_kill_line(1);

@@ -9,7 +9,7 @@ import { GameEvent } from "../../types/events";
 
 export function GameEvents() {
   const { duration, seek } = useVideo();
-  const { events } = useMarker();
+  const { filteredEvents } = useMarker();
   const reduceMotion = useReducedMotion();
   const [hoveredEvent, setHoveredEvent] = useState<GameEvent | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
@@ -34,7 +34,7 @@ export function GameEvents() {
       </div>
       <div className="relative h-6 rounded-sm border border-white/10 bg-black/20 px-1">
         <div className="absolute inset-1 rounded-full bg-neutral-800" />
-        {events.map((event) => {
+        {filteredEvents.map((event) => {
           const position = duration > 0 ? (event.timestamp / duration) * 100 : 0;
           return (
             <motion.button

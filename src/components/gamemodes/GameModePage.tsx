@@ -118,7 +118,27 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   const [recordingMetadata, setRecordingMetadata] = useState<RecordingMetadata | null>(null);
   const [isMetadataLoading, setIsMetadataLoading] = useState(false);
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [filters, setFilters] = useState({
+    npc: true,
+    pet: true,
+    guardian: true,
+    unknown: true,
+  });
   const metadataRequestPathRef = useRef<string | null>(null);
+
+  const filterEvent = useCallback(
+    (targetKind: string | undefined, target: string | undefined) => {
+      if (!targetKind) {
+        targetKind = target?.includes("-") ? "PLAYER" : undefined;
+      }
+      if (targetKind === "NPC" && filters.npc) return false;
+      if (targetKind === "PET" && filters.pet) return false;
+      if (targetKind === "GUARDIAN" && filters.guardian) return false;
+      if (targetKind === "UNKNOWN" && filters.unknown) return false;
+      return true;
+    },
+    [filters],
+  );
 
   const loadRecordingMetadata = useCallback(async (recordingPath: string) => {
     metadataRequestPathRef.current = recordingPath;
@@ -169,7 +189,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
     });
   }, [recordingMetadata?.importantEventCounts]);
 
-  const importantEvents = recordingMetadata?.importantEvents ?? [];
+  const importantEvents = useMemo(() => {
+    const events = recordingMetadata?.importantEvents ?? [];
+    return events.filter((event) => filterEvent(event.targetKind, event.target));
+  }, [recordingMetadata?.importantEvents, filterEvent]);
   const encounters = recordingMetadata?.encounters ?? [];
 
   return (
@@ -240,7 +263,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-[0.09em] text-neutral-500">File</div>
                       <div className="mt-1 truncate text-neutral-100" title={selectedRecording.file_path}>
-                        {getRecordingDisplayTitle(selectedRecording, gameMode)}
+                        {selectedRecording.filename}
                       </div>
                     </div>
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
@@ -254,7 +277,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-[0.09em] text-neutral-500">Category</div>
                       <div className="mt-1 text-neutral-100">
-                        {formatEncounterCategory(recordingMetadata?.encounterCategory || selectedRecording.encounter_category)}
+                        {formatEncounterCategory(
+                          recordingMetadata?.encounterCategory ||
+                            (gameMode === "mythic-plus" ? "mythicPlus" : gameMode),
+                        )}
                       </div>
                     </div>
                     {gameMode === "mythic-plus" && (
@@ -348,9 +374,49 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                     </section>
 
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Important Events
-                      </h3>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
+                          Important Events
+                        </h3>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
+                          <label className="flex cursor-pointer items-center gap-1.5 hover:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={filters.npc}
+                              onChange={(e) => setFilters((f) => ({ ...f, npc: e.target.checked }))}
+                              className="h-3.5 w-3.5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                            />
+                            NPC
+                          </label>
+                          <label className="flex cursor-pointer items-center gap-1.5 hover:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={filters.pet}
+                              onChange={(e) => setFilters((f) => ({ ...f, pet: e.target.checked }))}
+                              className="h-3.5 w-3.5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                            />
+                            Pet
+                          </label>
+                          <label className="flex cursor-pointer items-center gap-1.5 hover:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={filters.guardian}
+                              onChange={(e) => setFilters((f) => ({ ...f, guardian: e.target.checked }))}
+                              className="h-3.5 w-3.5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                            />
+                            Guardian
+                          </label>
+                          <label className="flex cursor-pointer items-center gap-1.5 hover:text-neutral-300">
+                            <input
+                              type="checkbox"
+                              checked={filters.unknown}
+                              onChange={(e) => setFilters((f) => ({ ...f, unknown: e.target.checked }))}
+                              className="h-3.5 w-3.5 rounded border-neutral-600 bg-neutral-800 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+                            />
+                            Unknown
+                          </label>
+                        </div>
+                      </div>
                       {importantEvents.length === 0 ? (
                         <p className="mt-2 text-xs text-neutral-500">No important events in metadata.</p>
                       ) : (
