@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
+  AlertTriangle,
   AppWindow,
   CheckCircle2,
   HardDrive,
@@ -94,7 +95,7 @@ function isMarkerHotkey(value: string): value is MarkerHotkey {
 
 export function Settings() {
   const { settings, updateSettings } = useSettings();
-  const { isRecording } = useRecording();
+  const { isRecording, isSelectedWindowAlive } = useRecording();
   const [formData, setFormData] = useState<RecordingSettings>(settings);
   const [folderSize, setFolderSize] = useState<number>(0);
   const [isWowFolderValid, setIsWowFolderValid] = useState<boolean>(false);
@@ -158,6 +159,27 @@ export function Settings() {
     try {
       const windows = await invoke<CaptureWindowInfo[]>("list_capture_windows");
       setCaptureWindows(windows);
+
+      // If the saved HWND is stale but a window with the same title is now running
+      // (e.g. the game was restarted and got a new HWND), silently recover to the new
+      // HWND. This mirrors what the Rust backend does at recording time.
+      setFormData((prev) => {
+        if (
+          prev.captureSource !== "window" ||
+          !prev.captureWindowHwnd ||
+          windows.some((w) => w.hwnd === prev.captureWindowHwnd)
+        ) {
+          return prev;
+        }
+
+        const titleMatch = prev.captureWindowTitle
+          ? windows.find((w) => w.title === prev.captureWindowTitle)
+          : null;
+
+        return titleMatch
+          ? { ...prev, captureWindowHwnd: titleMatch.hwnd }
+          : prev;
+      });
     } catch (error) {
       console.error("Failed to list capturable windows:", error);
       setCaptureWindowsError("Could not list open windows. Try Refresh or restart the app.");
@@ -473,6 +495,13 @@ export function Settings() {
                     <p className="inline-flex items-center gap-1.5 text-xs text-amber-200">
                       <XCircle className="h-3.5 w-3.5" />
                       Your previously selected window is unavailable.
+                    </p>
+                  )}
+
+                  {!isSavedCaptureWindowUnavailable && !isSelectedWindowAlive && formData.captureWindowHwnd && (
+                    <p className="inline-flex items-center gap-1.5 text-xs text-amber-200">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Selected window is not currently running.
                     </p>
                   )}
 

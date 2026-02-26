@@ -36,12 +36,15 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
     isRecording,
     recordingDuration,
     appStatusDetail,
+    isSelectedWindowAlive,
     startRecording,
     stopRecording,
   } = useRecording();
   const isMain = currentView === "main";
   const isSettings = currentView === "settings";
   const isDebug = currentView === "debug";
+  // When idle and the selected window is gone, shift the status box to amber.
+  const idleTheme = isSelectedWindowAlive ? "emerald" : "amber";
 
   const handleRecordingToggle = async () => {
     if (isRecordingBusy) {
@@ -71,7 +74,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
       ? "text-amber-300" 
       : isRecording 
         ? "text-rose-300" 
-        : "text-emerald-300";
+        : idleTheme === "amber" ? "text-amber-300" : "text-emerald-300";
     
     if (recordingAction) {
       return <LoaderCircle className={`h-3 w-3 animate-spin ${iconClass}`} />;
@@ -101,11 +104,15 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
     if (recordingAction) {
       return recordingAction === 'stopping' ? 'Stopping...' : 'Starting...';
     }
-    
+
+    if (!isRecording && !isSelectedWindowAlive) {
+      return 'Selected window is not running';
+    }
+
     if (isRecording) {
       return `Stop recording (${formatTime(recordingDuration)})`;
     }
-    
+
     return 'Start recording';
   };
 
@@ -204,11 +211,13 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
         <motion.button
           type="button"
           onClick={handleRecordingToggle}
-          disabled={isRecordingBusy}
+          disabled={isRecordingBusy || (!isRecording && !isSelectedWindowAlive)}
           className={`relative rounded-sm px-3 py-2 transition-colors cursor-pointer w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
             isRecording
               ? "border border-rose-300/40 bg-rose-500/15 shadow-[0_0_0_1px_rgba(251,113,133,0.22)] hover:bg-rose-500/20"
-              : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)] hover:bg-emerald-500/18"
+              : idleTheme === "amber"
+                ? "border border-amber-300/40 bg-amber-500/15 shadow-[0_0_0_1px_rgba(251,191,36,0.22)] hover:bg-amber-500/20"
+                : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)] hover:bg-emerald-500/18"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
           whileHover={reduceMotion ? undefined : { y: -1 }}
           whileTap={reduceMotion ? undefined : { scale: 0.98 }}
@@ -241,7 +250,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               <div className="flex items-center gap-1.5">
                 <div
                   className={`text-[11px] uppercase tracking-[0.12em] ${
-                    isRecording ? "text-rose-200" : "text-emerald-300"
+                    isRecording ? "text-rose-200" : idleTheme === "amber" ? "text-amber-300" : "text-emerald-300"
                   }`}
                 >
                   App Status
@@ -265,13 +274,13 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                   ) : (
                     <motion.div
                       key="idle-status"
-                      className="flex h-4 items-center whitespace-nowrap text-xs text-neutral-300"
+                      className={`flex h-4 items-center whitespace-nowrap text-xs ${idleTheme === "amber" ? "text-amber-200" : "text-neutral-300"}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.2, ease: "easeOut" }}
                     >
-                      Ready to record.
+                      {idleTheme === "amber" ? "Window not running." : "Ready to record."}
                     </motion.div>
                   )}
                 </AnimatePresence>

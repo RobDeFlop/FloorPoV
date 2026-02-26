@@ -35,6 +35,7 @@ interface RecordingContextType {
   recordingPath: string | null;
   recordingDuration: number;
   appStatusDetail: string | null;
+  isSelectedWindowAlive: boolean;
   loadPlaybackMetadata: (filePath: string) => Promise<void>;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -59,8 +60,15 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const [activeAutoTriggerMode, setActiveAutoTriggerMode] = useState<AutoTriggerMode | null>(null);
   const [isCombatWatchRunning, setIsCombatWatchRunning] = useState(false);
   const [combatWatchWowFolder, setCombatWatchWowFolder] = useState<string | null>(null);
-  const [appStatusDetail, setAppStatusDetail] = useState<string | null>(null);
-  const { settings } = useSettings();
+  // Three priority-ordered slots for the sidebar App Status detail line.
+  // Priority: windowGoneDetail (1, highest) > combatWatchDetail (2) > autoRecordingConfigDetail (3).
+  // appStatusDetail is derived from these and passed to consumers.
+  const [windowGoneDetail, setWindowGoneDetail] = useState<string | null>(null);
+  const [combatWatchDetail, setCombatWatchDetail] = useState<string | null>(null);
+  const [autoRecordingConfigDetail, setAutoRecordingConfigDetail] = useState<string | null>(null);
+  const [isSelectedWindowAlive, setIsSelectedWindowAlive] = useState(true);
+  const appStatusDetail = windowGoneDetail ?? combatWatchDetail ?? autoRecordingConfigDetail;
+  const { settings, updateSettings } = useSettings();
   const { addEvent, setEvents, clearEvents } = useMarker();
   const operationInFlightRef = useRef(false);
   const isRecordingRef = useRef(false);
@@ -88,7 +96,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     const wowFolder = settings.wowFolder.trim();
     if (!wowFolder) {
       if (settings.enableAutoRecording) {
-        setAppStatusDetail("Auto recording: set WoW folder in Settings.");
+        setAutoRecordingConfigDetail("Auto recording: set WoW folder in Settings.");
       }
       return false;
     }
@@ -98,7 +106,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     });
     if (!wowFolderIsValid) {
       if (settings.enableAutoRecording) {
-        setAppStatusDetail("Auto recording: no WoWCombatLog*.txt found.");
+        setAutoRecordingConfigDetail("Auto recording: no WoWCombatLog*.txt found.");
       }
       return false;
     }
@@ -177,6 +185,62 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [isRecording, recordingStartTime]);
+
+  // Poll the running window list every 3 seconds while idle to detect if the selected window
+  // has been closed. Paused during recording because the Rust backend handles that at 150 ms.
+  // Falls back to title matching when the saved HWND is stale (e.g. after the program restarts).
+  useEffect(() => {
+    const hwnd = settings.captureWindowHwnd;
+    const title = settings.captureWindowTitle;
+    if (isRecording || settings.captureSource !== "window" || !hwnd) {
+      setWindowGoneDetail(null);
+      setIsSelectedWindowAlive(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const checkWindowAlive = async () => {
+      try {
+        const windows = await invoke<{ hwnd: string; title: string }[]>("list_capture_windows");
+        if (cancelled) {
+          return;
+        }
+
+        const exactMatch = windows.some((w) => w.hwnd === hwnd);
+        if (exactMatch) {
+          setIsSelectedWindowAlive(true);
+          setWindowGoneDetail(null);
+          return;
+        }
+
+        // HWND may be stale (program restarted and got a new HWND). Fall back to
+        // title matching, the same strategy the Rust backend uses at recording time.
+        const titleMatch = title ? windows.find((w) => w.title === title) : null;
+        if (titleMatch) {
+          // Silently recover the HWND in persisted settings so the rest of the app
+          // (and the next recording) uses the current handle without user action.
+          await updateSettings({ ...settings, captureWindowHwnd: titleMatch.hwnd });
+          setIsSelectedWindowAlive(true);
+          setWindowGoneDetail(null);
+          return;
+        }
+
+        setIsSelectedWindowAlive(false);
+        setWindowGoneDetail("Selected window is not running.");
+      } catch (error) {
+        console.warn("Failed to check if selected window is still running:", error);
+      }
+    };
+
+    void checkWindowAlive();
+    const intervalId = window.setInterval(checkWindowAlive, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [isRecording, settings, updateSettings]);
 
   useEffect(() => {
     const unlistenRecordingStopped = listen("recording-stopped", () => {
@@ -267,7 +331,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       const logSuffix = statusPayload.watchedLogPath
         ? ` (${statusPayload.watchedLogPath})`
         : "";
-      setAppStatusDetail(`${statusPayload.message}${logSuffix}`);
+      setCombatWatchDetail(`${statusPayload.message}${logSuffix}`);
     });
 
     return () => {
@@ -518,6 +582,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         recordingPath,
         recordingDuration,
         appStatusDetail,
+        isSelectedWindowAlive,
         loadPlaybackMetadata,
         startRecording,
         stopRecording,
