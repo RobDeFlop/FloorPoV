@@ -4,7 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(crate) const RECORDING_METADATA_SCHEMA_VERSION: u32 = 1;
+pub(crate) const RECORDING_METADATA_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +42,20 @@ pub struct RecordingImportantEventMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RecordingPlayerMetadata {
+    pub guid: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spec_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordingMetadata {
     pub schema_version: u32,
     pub recording_file: String,
@@ -61,6 +75,8 @@ pub struct RecordingMetadata {
     pub important_event_counts: BTreeMap<String, u64>,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub important_events_dropped_count: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub players: Vec<RecordingPlayerMetadata>,
     pub captured_at_unix: u64,
 }
 
@@ -82,6 +98,7 @@ pub(crate) struct RecordingMetadataSnapshot {
     pub(crate) important_events: Vec<RecordingImportantEventMetadata>,
     pub(crate) important_event_counts: BTreeMap<String, u64>,
     pub(crate) important_events_dropped_count: u64,
+    pub(crate) players: Vec<RecordingPlayerMetadata>,
 }
 
 fn is_zero(value: &u64) -> bool {
@@ -111,6 +128,7 @@ impl RecordingMetadata {
             important_events: Vec::new(),
             important_event_counts: BTreeMap::new(),
             important_events_dropped_count: 0,
+            players: Vec::new(),
             captured_at_unix,
         }
     }
@@ -133,6 +151,7 @@ impl RecordingMetadata {
         self.important_events = snapshot.important_events;
         self.important_event_counts = snapshot.important_event_counts;
         self.important_events_dropped_count = snapshot.important_events_dropped_count;
+        self.players = snapshot.players;
     }
 }
 
@@ -146,6 +165,7 @@ impl RecordingMetadataSnapshot {
             || !self.important_events.is_empty()
             || !self.important_event_counts.is_empty()
             || self.important_events_dropped_count > 0
+            || !self.players.is_empty()
     }
 }
 

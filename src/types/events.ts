@@ -27,6 +27,14 @@ export interface RecordingEncounterMetadata {
   endedAtSeconds?: number;
 }
 
+export interface RecordingPlayerMetadata {
+  guid: string;
+  name?: string;
+  className?: string;
+  specName?: string;
+  specId?: number;
+}
+
 export interface RecordingMetadata {
   schemaVersion: number;
   recordingFile: string;
@@ -38,6 +46,7 @@ export interface RecordingMetadata {
   importantEvents?: RecordingImportantEventMetadata[];
   importantEventCounts?: Record<string, number>;
   importantEventsDroppedCount?: number;
+  players?: RecordingPlayerMetadata[];
 }
 
 export interface CombatEvent {

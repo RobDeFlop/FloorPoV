@@ -21,6 +21,7 @@ import { GameEvents } from "../events/GameEvents";
 import { VideoPlayer } from "../playback/VideoPlayer";
 import { TabControls, type TabControlItem } from "../ui/TabControls";
 import { GameModeRecordingsBrowser } from "./GameModeRecordingsBrowser";
+import { PlayerOverviewTable } from "./PlayerOverviewTable";
 import { PlayerStatChart } from "./PlayerStatChart";
 
 type AnalysisTab = "video-analysis" | "log-analysis" | "metadata";
@@ -76,9 +77,6 @@ const gameModeConfig: Record<GameMode, GameModeConfigItem> = {
     icon: Trophy,
   },
 };
-
-
-
 
 export function GameModePage({ gameMode }: GameModePageProps) {
   const config = gameModeConfig[gameMode];
@@ -336,28 +334,9 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   <>
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Event Counts
+                        Player Overview
                       </h3>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {sortedEventCounts.length > 0 ? (
-                          sortedEventCounts.map(([eventType, count]) => (
-                            <span
-                              key={eventType}
-                              className="inline-flex items-center gap-1 rounded-sm border border-white/15 bg-black/25 px-2 py-1 text-xs text-neutral-200"
-                            >
-                              <span>{getEventTypeLabel(eventType)}</span>
-                              <span className="text-neutral-400">{count}</span>
-                            </span>
-                          ))
-                        ) : (
-                          <p className="text-xs text-neutral-500">No important events recorded.</p>
-                        )}
-                      </div>
-                      {(recordingMetadata.importantEventsDroppedCount ?? 0) > 0 && (
-                        <p className="mt-2 text-xs text-neutral-500">
-                          {recordingMetadata.importantEventsDroppedCount} high-volume events were dropped during buffering.
-                        </p>
-                      )}
+                      <PlayerOverviewTable players={recordingMetadata.players ?? []} />
                     </section>
 
                     {(playerStats.kicks.length > 0 ||
@@ -413,6 +392,32 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                             </li>
                           ))}
                         </ul>
+                      )}
+                    </section>
+
+                    <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
+                        Event Counts
+                      </h3>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {sortedEventCounts.length > 0 ? (
+                          sortedEventCounts.map(([eventType, count]) => (
+                            <span
+                              key={eventType}
+                              className="inline-flex items-center gap-1 rounded-sm border border-white/15 bg-black/25 px-2 py-1 text-xs text-neutral-200"
+                            >
+                              <span>{getEventTypeLabel(eventType)}</span>
+                              <span className="text-neutral-400">{count}</span>
+                            </span>
+                          ))
+                        ) : (
+                          <p className="text-xs text-neutral-500">No important events recorded.</p>
+                        )}
+                      </div>
+                      {(recordingMetadata.importantEventsDroppedCount ?? 0) > 0 && (
+                        <p className="mt-2 text-xs text-neutral-500">
+                          {recordingMetadata.importantEventsDroppedCount} high-volume events were dropped during buffering.
+                        </p>
                       )}
                     </section>
 

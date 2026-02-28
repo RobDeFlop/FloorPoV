@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 
 use crate::recording::metadata::{
     RecordingEncounterSnapshot, RecordingImportantEventMetadata, RecordingMetadata,
-    RecordingMetadataSnapshot,
+    RecordingMetadataSnapshot, RecordingPlayerMetadata,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -673,6 +673,20 @@ struct ImportantCombatEvent {
     key_level: Option<u32>,
 }
 
+#[derive(Debug, Clone)]
+struct CombatantInfoSnapshot {
+    player_guid: String,
+    spec_id: Option<u32>,
+    class_name: Option<String>,
+    spec_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PlayerIdentity {
+    guid: String,
+    name: Option<String>,
+}
+
 impl ImportantCombatEvent {
     fn into_live_event(self, recording_elapsed_seconds: Option<f64>) -> Option<CombatEvent> {
         let timestamp = recording_elapsed_seconds?;
@@ -861,6 +875,8 @@ struct DebugParseContext {
 #[derive(Debug, Default)]
 pub(crate) struct RecordingMetadataAccumulator {
     context: DebugParseContext,
+    context_players: BTreeMap<String, RecordingPlayerMetadata>,
+    recording_players: BTreeMap<String, RecordingPlayerMetadata>,
     zone_name: Option<String>,
     latest_encounter_name: Option<String>,
     latest_encounter_category: Option<String>,
@@ -882,6 +898,15 @@ impl RecordingMetadataAccumulator {
         line: &str,
         elapsed_seconds: f64,
     ) -> Option<ImportantCombatEvent> {
+        if let Some(raw_event_type) = extract_raw_event_type_from_line(line) {
+            if should_reset_player_roster_for_event(raw_event_type) {
+                self.reset_player_roster();
+            }
+        }
+
+        self.capture_combatant_info_snapshot(line);
+        self.capture_player_names_for_known_roster(line);
+
         let parsed_event = parse_important_combat_event(line, &mut self.context)?;
 
         if self.recording_active && !is_context_only_event(&parsed_event.raw_event_type) {
@@ -894,6 +919,7 @@ impl RecordingMetadataAccumulator {
         self.reset_recording_data();
         self.recording_active = true;
         self.recording_elapsed_origin_seconds = elapsed_seconds;
+        self.recording_players = self.context_players.clone();
         self.zone_name = self.context.current_zone.clone();
         self.latest_encounter_name = self.context.current_encounter.clone();
         self.latest_encounter_category = self.context.current_encounter_category.clone();
@@ -1009,6 +1035,7 @@ impl RecordingMetadataAccumulator {
         self.latest_encounter_name = None;
         self.latest_encounter_category = None;
         self.key_level = None;
+        self.recording_players.clear();
         self.active_encounters.clear();
         self.encounters.clear();
         self.important_events.clear();
@@ -1091,6 +1118,68 @@ impl RecordingMetadataAccumulator {
             encounter_category: event.encounter_category.clone(),
             key_level: event.key_level,
         });
+    }
+
+    fn reset_player_roster(&mut self) {
+        self.context_players.clear();
+        if self.recording_active {
+            self.recording_players.clear();
+        }
+    }
+
+    fn capture_combatant_info_snapshot(&mut self, line: &str) {
+        let Some(combatant_info) = parse_combatant_info_snapshot(line) else {
+            return;
+        };
+
+        self.apply_player_update(RecordingPlayerMetadata {
+            guid: combatant_info.player_guid,
+            name: None,
+            class_name: combatant_info.class_name,
+            spec_name: combatant_info.spec_name,
+            spec_id: combatant_info.spec_id,
+        });
+    }
+
+    fn capture_player_names_for_known_roster(&mut self, line: &str) {
+        let Some((source_identity, target_identity)) = parse_player_identities_from_log_line(line)
+        else {
+            return;
+        };
+
+        if let Some(source_player) = source_identity {
+            self.update_player_name_if_known(&source_player.guid, source_player.name.as_deref());
+        }
+
+        if let Some(target_player) = target_identity {
+            self.update_player_name_if_known(&target_player.guid, target_player.name.as_deref());
+        }
+    }
+
+    fn update_player_name_if_known(&mut self, player_guid: &str, player_name: Option<&str>) {
+        let Some(name) = player_name else {
+            return;
+        };
+
+        let normalized_name = name.to_string();
+
+        if let Some(player) = self.context_players.get_mut(player_guid) {
+            player.name = Some(normalized_name.clone());
+        }
+
+        if self.recording_active {
+            if let Some(player) = self.recording_players.get_mut(player_guid) {
+                player.name = Some(normalized_name);
+            }
+        }
+    }
+
+    fn apply_player_update(&mut self, update: RecordingPlayerMetadata) {
+        merge_player_update(&mut self.context_players, &update);
+
+        if self.recording_active {
+            merge_player_update(&mut self.recording_players, &update);
+        }
     }
 
     fn record_encounter_start(&mut self, event: &ImportantCombatEvent, elapsed_seconds: f64) {
@@ -1177,6 +1266,7 @@ impl RecordingMetadataAccumulator {
             important_events: self.important_events.clone(),
             important_event_counts: self.important_event_counts.clone(),
             important_events_dropped_count: self.important_events_dropped_count,
+            players: self.recording_players.values().cloned().collect(),
         }
     }
 }
@@ -1485,6 +1575,22 @@ fn extract_event_type(header: &str) -> Option<&str> {
     header.split_whitespace().last().map(str::trim)
 }
 
+fn extract_raw_event_type_from_line(line: &str) -> Option<&str> {
+    let header = line.trim().split(',').next()?.trim();
+    extract_event_type(header)
+}
+
+fn should_reset_player_roster_for_event(raw_event_type: &str) -> bool {
+    matches!(
+        raw_event_type,
+        "ENCOUNTER_START"
+            | "CHALLENGE_MODE_START"
+            | "ARENA_MATCH_START"
+            | "PVP_MATCH_START"
+            | "BATTLEGROUND_START"
+    )
+}
+
 fn extract_log_timestamp(header: &str) -> String {
     if let Some((timestamp, _)) = header.rsplit_once("  ") {
         return timestamp.trim().to_string();
@@ -1609,6 +1715,226 @@ fn normalize_name(name: Option<&str>) -> Option<String> {
     Some(value.trim_matches('"').to_string())
 }
 
+fn merge_player_update(
+    players_by_guid: &mut BTreeMap<String, RecordingPlayerMetadata>,
+    update: &RecordingPlayerMetadata,
+) {
+    let entry = players_by_guid
+        .entry(update.guid.clone())
+        .or_insert_with(|| RecordingPlayerMetadata {
+            guid: update.guid.clone(),
+            name: None,
+            class_name: None,
+            spec_name: None,
+            spec_id: None,
+        });
+
+    if let Some(player_name) = update
+        .name
+        .as_ref()
+        .and_then(|value| normalize_name(Some(value)))
+    {
+        entry.name = Some(player_name);
+    }
+
+    if let Some(class_name) = update.class_name.as_ref() {
+        entry.class_name = Some(class_name.clone());
+    }
+
+    if let Some(spec_name) = update.spec_name.as_ref() {
+        entry.spec_name = Some(spec_name.clone());
+    }
+
+    if let Some(spec_id) = update.spec_id {
+        entry.spec_id = Some(spec_id);
+    }
+}
+
+fn parse_player_identities_from_log_line(
+    line: &str,
+) -> Option<(Option<PlayerIdentity>, Option<PlayerIdentity>)> {
+    let trimmed_line = line.trim();
+    if trimmed_line.is_empty() {
+        return None;
+    }
+
+    let mut fields = trimmed_line.split(',');
+    let header = fields.next()?.trim();
+    let event_type = extract_event_type(header)?;
+    if event_type == "COMBATANT_INFO" {
+        return None;
+    }
+
+    let remaining_fields = fields.map(str::trim).collect::<Vec<&str>>();
+    if remaining_fields.is_empty() {
+        return None;
+    }
+
+    let source_identity = parse_player_identity(
+        remaining_fields.first().copied(),
+        remaining_fields.get(1).copied(),
+        remaining_fields.get(2).copied(),
+    );
+    let target_identity = parse_player_identity(
+        remaining_fields.get(4).copied(),
+        remaining_fields.get(5).copied(),
+        remaining_fields.get(6).copied(),
+    );
+
+    if source_identity.is_none() && target_identity.is_none() {
+        return None;
+    }
+
+    Some((source_identity, target_identity))
+}
+
+fn parse_player_identity(
+    raw_guid: Option<&str>,
+    raw_name: Option<&str>,
+    raw_flags: Option<&str>,
+) -> Option<PlayerIdentity> {
+    let guid = normalize_name(raw_guid)?;
+    if classify_unit_kind(raw_flags, Some(guid.as_str())) != Some("PLAYER") {
+        return None;
+    }
+
+    let name = normalize_entity_name(raw_name, Some("PLAYER"));
+    Some(PlayerIdentity { guid, name })
+}
+
+fn parse_combatant_info_snapshot(line: &str) -> Option<CombatantInfoSnapshot> {
+    let trimmed_line = line.trim();
+    if trimmed_line.is_empty() {
+        return None;
+    }
+
+    let mut fields = trimmed_line.split(',');
+    let header = fields.next()?.trim();
+    let event_type = extract_event_type(header)?;
+    if event_type != "COMBATANT_INFO" {
+        return None;
+    }
+
+    let remaining_fields = fields.map(str::trim).collect::<Vec<&str>>();
+    let player_guid = normalize_name(remaining_fields.first().copied())?;
+    let spec_id = extract_combatant_info_spec_id(&remaining_fields);
+    let (class_name, spec_name) = spec_id
+        .and_then(resolve_spec_details)
+        .map(|(class_name, spec_name)| (Some(class_name.to_string()), Some(spec_name.to_string())))
+        .unwrap_or((None, None));
+
+    Some(CombatantInfoSnapshot {
+        player_guid,
+        spec_id,
+        class_name,
+        spec_name,
+    })
+}
+
+fn extract_combatant_info_spec_id(fields: &[&str]) -> Option<u32> {
+    const SPEC_INDEX_CANDIDATES: [usize; 2] = [23, 22];
+
+    let indexed_spec = SPEC_INDEX_CANDIDATES.iter().find_map(|index| {
+        let spec_id = parse_u32_field_value(fields.get(*index).copied())?;
+        let next_field = fields
+            .get(index.saturating_add(1))
+            .map(|value| value.trim())
+            .unwrap_or_default();
+        if !next_field.is_empty() && !next_field.starts_with('(') && !next_field.starts_with('[') {
+            return None;
+        }
+
+        Some(spec_id)
+    });
+
+    if indexed_spec.is_some() {
+        return indexed_spec;
+    }
+
+    // COMBATANT_INFO payloads can shift between patches. The current spec id is
+    // the numeric value immediately before the first list-like segment
+    // (class talents or powers block), so use that as a resilient fallback.
+    for index in 1..fields.len() {
+        let current = fields[index].trim();
+        if !current.starts_with('(') && !current.starts_with('[') {
+            continue;
+        }
+
+        let previous = fields[index - 1].trim();
+        if let Some(spec_id) = parse_u32_field_value(Some(previous)) {
+            return Some(spec_id);
+        }
+    }
+
+    None
+}
+
+fn parse_u32_field_value(value: Option<&str>) -> Option<u32> {
+    let raw = value?.trim().trim_matches('"');
+    if raw.is_empty() {
+        return None;
+    }
+
+    if let Ok(parsed) = raw.parse::<u32>() {
+        return Some(parsed);
+    }
+
+    let digit_prefix = raw
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect::<String>();
+    if digit_prefix.is_empty() {
+        return None;
+    }
+
+    digit_prefix.parse::<u32>().ok()
+}
+
+fn resolve_spec_details(spec_id: u32) -> Option<(&'static str, &'static str)> {
+    match spec_id {
+        62 => Some(("Mage", "Arcane")),
+        63 => Some(("Mage", "Fire")),
+        64 => Some(("Mage", "Frost")),
+        65 => Some(("Paladin", "Holy")),
+        66 => Some(("Paladin", "Protection")),
+        70 => Some(("Paladin", "Retribution")),
+        71 => Some(("Warrior", "Arms")),
+        72 => Some(("Warrior", "Fury")),
+        73 => Some(("Warrior", "Protection")),
+        102 => Some(("Druid", "Balance")),
+        103 => Some(("Druid", "Feral")),
+        104 => Some(("Druid", "Guardian")),
+        105 => Some(("Druid", "Restoration")),
+        250 => Some(("Death Knight", "Blood")),
+        251 => Some(("Death Knight", "Frost")),
+        252 => Some(("Death Knight", "Unholy")),
+        253 => Some(("Hunter", "Beast Mastery")),
+        254 => Some(("Hunter", "Marksmanship")),
+        255 => Some(("Hunter", "Survival")),
+        256 => Some(("Priest", "Discipline")),
+        257 => Some(("Priest", "Holy")),
+        258 => Some(("Priest", "Shadow")),
+        259 => Some(("Rogue", "Assassination")),
+        260 => Some(("Rogue", "Outlaw")),
+        261 => Some(("Rogue", "Subtlety")),
+        262 => Some(("Shaman", "Elemental")),
+        263 => Some(("Shaman", "Enhancement")),
+        264 => Some(("Shaman", "Restoration")),
+        265 => Some(("Warlock", "Affliction")),
+        266 => Some(("Warlock", "Demonology")),
+        267 => Some(("Warlock", "Destruction")),
+        268 => Some(("Monk", "Brewmaster")),
+        269 => Some(("Monk", "Windwalker")),
+        270 => Some(("Monk", "Mistweaver")),
+        577 => Some(("Demon Hunter", "Havoc")),
+        581 => Some(("Demon Hunter", "Vengeance")),
+        1467 => Some(("Evoker", "Devastation")),
+        1468 => Some(("Evoker", "Preservation")),
+        1473 => Some(("Evoker", "Augmentation")),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{RecordingMetadataAccumulator, MAX_PERSISTED_HIGH_VOLUME_EVENTS};
@@ -1692,6 +2018,331 @@ mod tests {
         assert_eq!(snapshot.important_events.len(), 1);
         assert_eq!(snapshot.important_events[0].event_type, "PARTY_KILL");
         assert_eq!(snapshot.important_events[0].key_level, Some(14));
+    }
+
+    #[test]
+    fn captures_player_overview_from_combatant_info() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        let combatant_info_line = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000001",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "120",
+                "257",
+                "(193155)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&combatant_info_line, 0.0);
+
+        accumulator.begin_recording_session(1.0);
+
+        let party_kill_line = build_line(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+        );
+        accumulator.consume_combat_log_line(&party_kill_line, 2.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 1);
+
+        let player = &snapshot.players[0];
+        assert_eq!(player.guid, "Player-1111-00000001");
+        assert_eq!(player.name.as_deref(), Some("PlayerOne-NA"));
+        assert_eq!(player.class_name.as_deref(), Some("Priest"));
+        assert_eq!(player.spec_name.as_deref(), Some("Holy"));
+        assert_eq!(player.spec_id, Some(257));
+    }
+
+    #[test]
+    fn ignores_non_roster_players_from_regular_combat_events() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let party_kill_line = build_line(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"PlayerOne-NA\"",
+                "0x514",
+                "0x0",
+                "Creature-0-0-0-0-1001-0000000000",
+                "\"Enemy0\"",
+                "0x10a48",
+                "0x0",
+            ],
+        );
+        accumulator.consume_combat_log_line(&party_kill_line, 1.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 0);
+    }
+
+    #[test]
+    fn enriches_names_only_for_players_seen_in_combatant_info() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let combatant_info_line = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000001",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "120",
+                "257",
+                "(193155)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&combatant_info_line, 0.25);
+
+        let party_kill_line = build_line(
+            "PARTY_KILL",
+            &[
+                "Player-1111-00000001",
+                "\"RosteredOne-NA\"",
+                "0x514",
+                "0x0",
+                "Player-1111-00000002",
+                "\"Stranger-NA\"",
+                "0x514",
+                "0x0",
+            ],
+        );
+        accumulator.consume_combat_log_line(&party_kill_line, 1.0);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 1);
+
+        let player = &snapshot.players[0];
+        assert_eq!(player.guid, "Player-1111-00000001");
+        assert_eq!(player.name.as_deref(), Some("RosteredOne-NA"));
+    }
+
+    #[test]
+    fn keeps_unknown_spec_ids_without_class_mapping() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let combatant_info_line = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000001",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "120",
+                "9999",
+                "(193155)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&combatant_info_line, 0.5);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 1);
+
+        let player = &snapshot.players[0];
+        assert_eq!(player.guid, "Player-1111-00000001");
+        assert_eq!(player.class_name, None);
+        assert_eq!(player.spec_name, None);
+        assert_eq!(player.spec_id, Some(9999));
+    }
+
+    #[test]
+    fn clears_stale_roster_when_new_encounter_starts() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+
+        let first_roster = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000001",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "120",
+                "257",
+                "(193155)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&first_roster, 0.0);
+
+        let encounter_start_line = build_line("ENCOUNTER_START", &["1234", "\"Boss One\"", "16"]);
+        accumulator.consume_combat_log_line(&encounter_start_line, 1.0);
+
+        let second_roster = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000002",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "120",
+                "258",
+                "(193155)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&second_roster, 1.25);
+
+        accumulator.begin_recording_session(2.0);
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 1);
+
+        let player = &snapshot.players[0];
+        assert_eq!(player.guid, "Player-1111-00000002");
+        assert_eq!(player.spec_id, Some(258));
+    }
+
+    #[test]
+    fn captures_spec_id_when_combatant_info_stats_shift() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        // Simulates a patch that inserts an extra scalar stat before armor/spec,
+        // shifting the historical fixed spec index by one.
+        let combatant_info_line = build_line(
+            "COMBATANT_INFO",
+            &[
+                "Player-1111-00000001",
+                "1",
+                "132",
+                "184",
+                "906",
+                "653",
+                "0",
+                "0",
+                "0",
+                "257",
+                "257",
+                "257",
+                "11",
+                "0",
+                "188",
+                "188",
+                "188",
+                "0",
+                "118",
+                "90",
+                "90",
+                "90",
+                "77",
+                "120",
+                "257",
+                "(193155,64129,238136)",
+            ],
+        );
+        accumulator.consume_combat_log_line(&combatant_info_line, 0.5);
+
+        let snapshot = accumulator.snapshot();
+        assert_eq!(snapshot.players.len(), 1);
+
+        let player = &snapshot.players[0];
+        assert_eq!(player.guid, "Player-1111-00000001");
+        assert_eq!(player.class_name.as_deref(), Some("Priest"));
+        assert_eq!(player.spec_name.as_deref(), Some("Holy"));
+        assert_eq!(player.spec_id, Some(257));
     }
 
     #[test]
