@@ -1712,7 +1712,12 @@ fn normalize_name(name: Option<&str>) -> Option<String> {
         return None;
     }
 
-    Some(value.trim_matches('"').to_string())
+    let normalized = value.trim_matches('"').trim();
+    if normalized.is_empty() {
+        return None;
+    }
+
+    Some(normalized.to_string())
 }
 
 fn merge_player_update(

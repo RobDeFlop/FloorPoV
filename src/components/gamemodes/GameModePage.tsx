@@ -167,8 +167,21 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   const playerStats = useMemo(() => {
     const events = recordingMetadata?.importantEvents ?? [];
 
-    // Strip the realm suffix from "PlayerName-ServerName" WoW name format.
-    const stripRealm = (name: string) => name.split("-")[0];
+    const toPlayerLabel = (name: string): string => {
+      const trimmedName = name.trim();
+      if (!trimmedName) {
+        return "Unknown";
+      }
+
+      // Strip the realm suffix from "PlayerName-ServerName" WoW name format.
+      const [baseName] = trimmedName.split("-");
+      const normalizedBaseName = (baseName ?? "").trim();
+      if (normalizedBaseName) {
+        return normalizedBaseName;
+      }
+
+      return "Unknown";
+    };
 
     const kickCounts: Record<string, number> = {};
     const dispelCounts: Record<string, number> = {};
@@ -176,13 +189,13 @@ export function GameModePage({ gameMode }: GameModePageProps) {
 
     for (const event of events) {
       if (event.eventType === "SPELL_INTERRUPT" && event.source) {
-        const key = stripRealm(event.source);
+        const key = toPlayerLabel(event.source);
         kickCounts[key] = (kickCounts[key] ?? 0) + 1;
       } else if (event.eventType === "SPELL_DISPEL" && event.source) {
-        const key = stripRealm(event.source);
+        const key = toPlayerLabel(event.source);
         dispelCounts[key] = (dispelCounts[key] ?? 0) + 1;
       } else if (event.eventType === "UNIT_DIED" && event.target && event.targetKind === "PLAYER") {
-        const key = stripRealm(event.target);
+        const key = toPlayerLabel(event.target);
         deathCounts[key] = (deathCounts[key] ?? 0) + 1;
       }
     }
@@ -190,7 +203,13 @@ export function GameModePage({ gameMode }: GameModePageProps) {
     const toSorted = (counts: Record<string, number>) =>
       Object.entries(counts)
         .map(([player, count]) => ({ player, count }))
-        .sort((a, b) => b.count - a.count);
+        .sort((a, b) => {
+          if (b.count !== a.count) {
+            return b.count - a.count;
+          }
+
+          return a.player.localeCompare(b.player);
+        });
 
     return {
       kicks: toSorted(kickCounts),
