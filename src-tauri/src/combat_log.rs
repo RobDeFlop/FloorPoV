@@ -1928,6 +1928,7 @@ fn resolve_spec_details(spec_id: u32) -> Option<(&'static str, &'static str)> {
         270 => Some(("Monk", "Mistweaver")),
         577 => Some(("Demon Hunter", "Havoc")),
         581 => Some(("Demon Hunter", "Vengeance")),
+        1480 => Some(("Demon Hunter", "Devourer")),
         1467 => Some(("Evoker", "Devastation")),
         1468 => Some(("Evoker", "Preservation")),
         1473 => Some(("Evoker", "Augmentation")),
