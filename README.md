@@ -14,7 +14,7 @@ FloorPoV is a desktop application that records your World of Warcraft gameplay w
 |---------|-------------|
 |  **Smart Event Markers** | Automatically detects player deaths, kills, interrupts, dispels, and boss encounters |
 |  **High-Quality Recording** | FFmpeg-powered capture with H.264/MP4 output and quality presets |
-|  **Manual Markers** | Add custom markers during gameplay with configurable hotkeys (F9-F12) |
+|  **Manual Markers** | Add custom markers during gameplay with configurable hotkeys |
 |  **Combat Log Integration** | Real-time WoW combat log parsing for accurate event tracking |
 |  **Performance Optimized** | Lightweight recording that won't impact your gameplay performance |
 |  **System Audio Capture** | Optional desktop/game audio recording via WASAPI loopback |
@@ -62,10 +62,8 @@ Each recording includes a metadata file (.meta.json) preserving all events for l
 |-------|------------|
 | **Desktop Framework** | Tauri 2 (Rust backend) |
 | **Frontend** | React 19, TypeScript, Tailwind CSS, Vite |
-| **Screen Capture** | FFmpeg Desktop Duplication (ddagrab) |
+| **Screen Capture** | via FFmpeg Desktop Duplication (DDAgrab) |
 | **Audio Capture** | WASAPI system loopback |
-| **Hotkeys** | tauri-plugin-global-shortcut |
-| **Storage** | tauri-plugin-store |
 
 ### Development Commands
 
@@ -94,7 +92,6 @@ cargo test
 - **Mythic+ Analysis**: Review deaths and interrupts to improve dungeon runs
 - **Raid Progression**: Analyze boss encounters and player performance
 - **PvP Improvement**: Study key moments in arena and battlegrounds
-- **Content Creation**: Easily find highlights for streaming and videos
 
 ## 📋 Requirements
 
