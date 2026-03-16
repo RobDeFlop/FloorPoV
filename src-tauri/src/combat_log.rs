@@ -1348,8 +1348,8 @@ fn parse_log_line_fields(line: &str) -> Option<ParsedLogLine> {
     let dest_guid = remaining_fields.get(4).map(|value| value.as_str());
     let dest_name = remaining_fields.get(5).map(|value| value.as_str());
     let dest_flags = remaining_fields.get(6).map(|value| value.as_str());
-    let source_kind = classify_unit_kind(source_flags, source_guid).map(str::to_string);
-    let target_kind = classify_unit_kind(dest_flags, dest_guid).map(str::to_string);
+    let source_kind = classify_unit_type(source_flags, source_guid).map(str::to_string);
+    let target_kind = classify_unit_type(dest_flags, dest_guid).map(str::to_string);
 
     Some(ParsedLogLine {
         raw_event_type: raw_event_type.to_string(),
@@ -1500,7 +1500,7 @@ fn is_likely_zone_name(value: &str) -> bool {
     })
 }
 
-fn classify_unit_kind(unit_flags: Option<&str>, unit_guid: Option<&str>) -> Option<&'static str> {
+fn classify_unit_type(unit_flags: Option<&str>, unit_guid: Option<&str>) -> Option<&'static str> {
     if let Some(flags_value) = parse_combat_log_flags(unit_flags) {
         const TYPE_PLAYER: u32 = 0x0000_0400;
         const TYPE_NPC: u32 = 0x0000_0800;
@@ -1799,7 +1799,7 @@ fn parse_player_identity(
     raw_flags: Option<&str>,
 ) -> Option<PlayerIdentity> {
     let guid = normalize_name(raw_guid)?;
-    if classify_unit_kind(raw_flags, Some(guid.as_str())) != Some("PLAYER") {
+    if classify_unit_type(raw_flags, Some(guid.as_str())) != Some("PLAYER") {
         return None;
     }
 

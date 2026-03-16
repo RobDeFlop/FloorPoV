@@ -1,12 +1,15 @@
 # FloorPoV
 
-> **WoW Gameplay Recording with Automatic Event Markers**
+> **WoW Gameplay Recording and Combat-Log Analysis**
 
 [![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/RobDeFlop/FloorPoV)
 [![License](https://img.shields.io/badge/license-GPLv3-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 
 FloorPoV is a desktop application that records your World of Warcraft gameplay while automatically detecting and marking important events like player deaths, boss encounters, kills, and interrupts directly on the video timeline. Perfect for analyzing Mythic+ runs, raid progression, and PvP matches.
+
+![Video Analysis Screenshot](https://i.imgur.com/SEQw9I9.jpeg)
+![Log Analysis Screenshot](https://i.imgur.com/UwLeCqT.png)
 
 ## ✨ Features
 
@@ -23,22 +26,27 @@ FloorPoV is a desktop application that records your World of Warcraft gameplay w
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Windows 10/11
 - [FFmpeg](https://ffmpeg.org/download.html) (place `ffmpeg.exe` in `src-tauri/bin/`)
 
 ### Installation
+
 1. Clone the repository
+
 ```bash
 git clone https://github.com/RobDeFlop/FloorPoV.git
 cd FloorPoV
 ```
 
-2. Install dependencies
+1. Install dependencies
+
 ```bash
 bun install
 ```
 
-3. Run the application
+1. Run the application
+
 ```bash
 bun run tauri dev
 ```
@@ -87,7 +95,7 @@ cargo fmt --check
 cargo test
 ```
 
-##  Use Cases
+## Use Cases
 
 - **Mythic+ Analysis**: Review deaths and interrupts to improve dungeon runs
 - **Raid Progression**: Analyze boss encounters and player performance
