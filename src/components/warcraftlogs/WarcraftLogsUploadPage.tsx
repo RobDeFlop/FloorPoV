@@ -30,12 +30,25 @@ interface WclUploadErrorPayload {
 
 interface WclUploadCompletePayload {
   reportUrl: string;
-  reportCode: string;
 }
 
 interface StartWclUploadResponse {
   reportUrl: string;
-  reportCode: string;
+}
+
+interface WclGuild {
+  id: number;
+  name: string;
+}
+
+interface FetchWclGuildsResponse {
+  email: string;
+  guilds: WclGuild[];
+}
+
+interface WclLoginState {
+  savedEmail: string | null;
+  hasSavedCredentials: boolean;
 }
 
 const REGION_OPTIONS: SettingsSelectOption[] = [
@@ -52,14 +65,20 @@ const VISIBILITY_OPTIONS: SettingsSelectOption[] = [
   { value: "2", label: "Unlisted" },
 ];
 
+const GUILD_NONE_OPTION: SettingsSelectOption = {
+  value: "none",
+  label: "No guild (personal upload)",
+};
+
 const FIELD_IDS = {
   email: "wcl-email",
   password: "wcl-password",
   region: "wcl-region",
   visibility: "wcl-visibility",
-  guildId: "wcl-guild-id",
+  guildSelection: "wcl-guild-selection",
+  rememberLogin: "wcl-remember-login",
   logFilePath: "wcl-log-file-path",
-};
+} as const;
 
 const MAX_PROGRESS_LINES = 220;
 
@@ -68,9 +87,14 @@ export function WarcraftLogsUploadPage() {
   const [logFilePath, setLogFilePath] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [useSavedLogin, setUseSavedLogin] = useState(false);
+  const [rememberLogin, setRememberLogin] = useState(true);
+  const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [region, setRegion] = useState("2");
   const [visibility, setVisibility] = useState("2");
-  const [guildId, setGuildId] = useState("");
+  const [guildOptions, setGuildOptions] = useState<WclGuild[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState("none");
+  const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isResolvingLatestLog, setIsResolvingLatestLog] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
@@ -78,7 +102,35 @@ export function WarcraftLogsUploadPage() {
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportUrl, setReportUrl] = useState<string | null>(null);
-  const [reportCode, setReportCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadLoginState = async () => {
+      try {
+        const loginState = await invoke<WclLoginState>("get_wcl_login_state");
+        if (!mounted) {
+          return;
+        }
+        setHasSavedCredentials(loginState.hasSavedCredentials);
+        if (loginState.savedEmail) {
+          setEmail(loginState.savedEmail);
+          setUseSavedLogin(loginState.hasSavedCredentials);
+        }
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+        setErrorMessage(getErrorMessage(error));
+      }
+    };
+
+    void loadLoginState();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const appendProgressLine = useCallback((line: string) => {
     setProgressLines((previous) => {
@@ -118,7 +170,6 @@ export function WarcraftLogsUploadPage() {
           setIsUploading(false);
           setErrorMessage(null);
           setReportUrl(event.payload.reportUrl);
-          setReportCode(event.payload.reportCode);
           setProgressPercent(100);
           setProgressStatus("Upload complete");
           appendProgressLine(`Report ready: ${event.payload.reportUrl}`);
@@ -161,9 +212,77 @@ export function WarcraftLogsUploadPage() {
       !isUploading &&
       logFilePath.trim().length > 0 &&
       email.trim().length > 0 &&
-      password.trim().length > 0
+      (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
     );
-  }, [email, isUploading, logFilePath, password]);
+  }, [email, hasSavedCredentials, isUploading, logFilePath, password, useSavedLogin]);
+
+  const canLoadGuilds = useMemo(() => {
+    return (
+      !isUploading &&
+      !isLoadingGuilds &&
+      email.trim().length > 0 &&
+      (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
+    );
+  }, [email, hasSavedCredentials, isLoadingGuilds, isUploading, password, useSavedLogin]);
+
+  const handleLoadGuilds = async () => {
+    if (!canLoadGuilds) {
+      return;
+    }
+
+    setIsLoadingGuilds(true);
+    setErrorMessage(null);
+
+    try {
+      const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds", {
+        request: {
+          email: email.trim(),
+          password: password.trim() ? password : null,
+          useSavedLogin,
+          rememberLogin,
+        },
+      });
+
+      setEmail(response.email);
+      setGuildOptions(response.guilds);
+      if (rememberLogin) {
+        setHasSavedCredentials(true);
+      }
+      appendProgressLine(
+        response.guilds.length > 0
+          ? `Loaded ${response.guilds.length} guild(s) from WarcraftLogs.`
+          : "No guild found. Upload will continue as personal logs.",
+      );
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setIsLoadingGuilds(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedGuildId === "none") {
+      return;
+    }
+
+    const selectedStillExists = guildOptions.some(
+      (guild) => String(guild.id) === selectedGuildId,
+    );
+    if (!selectedStillExists) {
+      setSelectedGuildId("none");
+    }
+  }, [guildOptions, selectedGuildId]);
+
+  const handleClearSavedLogin = async () => {
+    try {
+      await invoke("clear_wcl_saved_login");
+      setUseSavedLogin(false);
+      setHasSavedCredentials(false);
+      setPassword("");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
 
   const handleBrowseLogFile = async () => {
     try {
@@ -223,7 +342,6 @@ export function WarcraftLogsUploadPage() {
     setIsUploading(true);
     setErrorMessage(null);
     setReportUrl(null);
-    setReportCode(null);
     setProgressPercent(0);
     setProgressStatus("Starting upload...");
     setProgressLines([]);
@@ -233,16 +351,17 @@ export function WarcraftLogsUploadPage() {
         request: {
           logFilePath: logFilePath.trim(),
           email: email.trim(),
-          password,
+          password: password.trim() ? password : null,
+          useSavedLogin,
+          rememberLogin,
           region: Number(region),
           visibility: Number(visibility),
-          guildId: guildId.trim() ? Number(guildId.trim()) : null,
+          guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
         },
       });
 
       setIsUploading(false);
       setReportUrl(result.reportUrl);
-      setReportCode(result.reportCode);
       setProgressPercent(100);
       setProgressStatus("Upload complete");
     } catch (error) {
@@ -316,6 +435,43 @@ export function WarcraftLogsUploadPage() {
                 />
               </FormField>
             </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
+                <input
+                  id={FIELD_IDS.rememberLogin}
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
+                  checked={rememberLogin}
+                  disabled={isUploading}
+                  onChange={(event) => setRememberLogin(event.target.checked)}
+                />
+                Remember login in secure OS keychain
+              </label>
+
+              {hasSavedCredentials && (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
+                      checked={useSavedLogin}
+                      disabled={isUploading}
+                      onChange={(event) => setUseSavedLogin(event.target.checked)}
+                    />
+                    Use saved login
+                  </label>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleClearSavedLogin}
+                    disabled={isUploading}
+                  >
+                    Forget saved login
+                  </Button>
+                </div>
+              )}
+            </div>
           </SettingsSection>
 
           <SettingsSection title="Upload Options" icon={<FileText className="h-4 w-4" />}>
@@ -349,20 +505,36 @@ export function WarcraftLogsUploadPage() {
                 />
               </div>
 
-              <FormField
-                id={FIELD_IDS.guildId}
-                label="Guild ID (Optional)"
-                description="Leave empty for no guild association."
-              >
-                <Input
-                  id={FIELD_IDS.guildId}
-                  type="number"
-                  min={1}
-                  value={guildId}
-                  disabled={isUploading}
-                  onChange={(event) => setGuildId(event.target.value)}
-                />
-              </FormField>
+              <div className="md:col-span-3">
+                <label
+                  htmlFor={FIELD_IDS.guildSelection}
+                  className="mb-2 block text-sm text-neutral-300"
+                >
+                  Guild
+                </label>
+                <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                  <SettingsSelect
+                    id={FIELD_IDS.guildSelection}
+                    value={selectedGuildId}
+                    options={[
+                      GUILD_NONE_OPTION,
+                      ...guildOptions.map((guild) => ({
+                        value: String(guild.id),
+                        label: guild.name,
+                      })),
+                    ]}
+                    disabled={isUploading || isLoadingGuilds}
+                    onChange={setSelectedGuildId}
+                  />
+                  <Button
+                    variant="secondary"
+                    onClick={handleLoadGuilds}
+                    disabled={!canLoadGuilds}
+                  >
+                    {isLoadingGuilds ? "Loading guilds..." : "Load Guilds"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </SettingsSection>
 
@@ -439,14 +611,14 @@ export function WarcraftLogsUploadPage() {
                     Upload complete
                   </p>
                   <p>
-                  <a
-                    href={reportUrl}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="break-all font-mono text-[11px] text-emerald-200 underline underline-offset-2 hover:text-emerald-100"
-                  >
-                    {reportUrl}
-                  </a>
+                    <a
+                      href={reportUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="break-all font-mono text-[11px] text-emerald-200 underline underline-offset-2 hover:text-emerald-100"
+                    >
+                      {reportUrl}
+                    </a>
                   </p>
                   <div className="mt-3">
                     <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>

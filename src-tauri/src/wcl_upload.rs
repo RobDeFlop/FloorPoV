@@ -3,6 +3,7 @@ use reqwest::blocking::{Client, RequestBuilder, Response};
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Write};
@@ -29,6 +30,8 @@ const MAX_RETRIES: u8 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 1_000;
 const PARSER_HARNESS_RESOURCE_PATH: &str = "bin/parser-harness.cjs";
 const NODE_RESOURCE_PATH_WINDOWS_X64: &str = "bin/node/win-x64/node.exe";
+const WCL_LOGIN_SERVICE: &str = "com.r0b.floorpov.wcl";
+const WCL_LOGIN_METADATA_FILE: &str = "wcl-login.json";
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -38,10 +41,42 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub struct StartWclUploadRequest {
     pub log_file_path: String,
     pub email: String,
-    pub password: String,
+    pub password: Option<String>,
+    pub use_saved_login: Option<bool>,
+    pub remember_login: Option<bool>,
     pub region: u8,
     pub visibility: u8,
     pub guild_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchWclGuildsRequest {
+    pub email: String,
+    pub password: Option<String>,
+    pub use_saved_login: Option<bool>,
+    pub remember_login: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclGuild {
+    pub id: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FetchWclGuildsResponse {
+    pub email: String,
+    pub guilds: Vec<WclGuild>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLoginState {
+    pub saved_email: Option<String>,
+    pub has_saved_credentials: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -159,6 +194,38 @@ struct LoginResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SidebarGuildsResponse {
+    guilds: Option<SidebarGuildsContainer>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidebarGuildsContainer {
+    guilds_panel: Option<SidebarGuildsPanel>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidebarGuildsPanel {
+    #[serde(default)]
+    sections: Vec<SidebarGuildSection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidebarGuildSection {
+    header: Option<SidebarGuildHeader>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidebarGuildHeader {
+    id: Option<String>,
+    title: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LoginUser {
     user_name: String,
 }
@@ -245,6 +312,18 @@ struct CreateReportRequest {
     region: u8,
     visibility: u8,
     guild_id: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SavedLoginMetadata {
+    saved_email: String,
+}
+
+#[derive(Debug)]
+struct ResolvedLoginCredentials {
+    email: String,
+    password: String,
+    used_saved_password: bool,
 }
 
 fn deserialize_i64_from_bool_or_int<'de, D>(deserializer: D) -> Result<i64, D::Error>
@@ -419,6 +498,48 @@ impl WclSession {
 
         let parsed = response.json::<LoginResponse>()?;
         Ok(parsed.user.map(|user| user.user_name))
+    }
+
+    fn fetch_sidebar_guilds(&self) -> Result<Vec<WclGuild>, UploadError> {
+        let response = self.request_with_retry("GET /user-sidebar/v2/", || {
+            self.client
+                .get(format!("{BASE_URL}/user-sidebar/v2/"))
+                .header("User-Agent", &self.user_agent)
+        })?;
+
+        let payload = response.json::<SidebarGuildsResponse>()?;
+        let sections = payload
+            .guilds
+            .and_then(|guilds| guilds.guilds_panel)
+            .map(|panel| panel.sections)
+            .unwrap_or_default();
+
+        let mut unique_ids = BTreeSet::new();
+        let mut guilds = Vec::<WclGuild>::new();
+
+        for section in sections {
+            let Some(header) = section.header else {
+                continue;
+            };
+            let Some(id_string) = header.id else {
+                continue;
+            };
+            let Ok(id) = id_string.parse::<u32>() else {
+                continue;
+            };
+            if !unique_ids.insert(id) {
+                continue;
+            }
+
+            let name = header
+                .title
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| format!("Guild {id}"));
+            guilds.push(WclGuild { id, name });
+        }
+
+        Ok(guilds)
     }
 
     fn fetch_parser_assets(&self) -> Result<ParserAssets, UploadError> {
@@ -968,11 +1089,85 @@ pub fn get_latest_combat_log_path(wow_folder: Option<String>) -> Result<Option<S
         .map(|maybe_path| maybe_path.map(|path| path.to_string_lossy().to_string()))
 }
 
+#[tauri::command]
+pub fn get_wcl_login_state(app_handle: AppHandle) -> Result<WclLoginState, String> {
+    match read_saved_login_email(&app_handle) {
+        Ok(Some(saved_email)) => {
+            let has_saved_credentials = resolve_saved_login_for_email(&app_handle, &saved_email)
+                .map(|value| value.is_some())
+                .unwrap_or(false);
+            Ok(WclLoginState {
+                saved_email: Some(saved_email),
+                has_saved_credentials,
+            })
+        }
+        Ok(None) => Ok(WclLoginState {
+            saved_email: None,
+            has_saved_credentials: false,
+        }),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn clear_wcl_saved_login(app_handle: AppHandle) -> Result<(), String> {
+    clear_saved_login(&app_handle).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn fetch_wcl_guilds(
+    app_handle: AppHandle,
+    request: FetchWclGuildsRequest,
+) -> Result<FetchWclGuildsResponse, String> {
+    if request.email.trim().is_empty() {
+        return Err("WarcraftLogs email is required".to_string());
+    }
+
+    let remember_login = request.remember_login.unwrap_or(false);
+    let resolved = resolve_login_credentials(
+        &app_handle,
+        request.email.trim(),
+        request.password,
+        request.use_saved_login.unwrap_or(false),
+        remember_login,
+    )
+    .map_err(|error| error.to_string())?;
+
+    let client_version = resolve_client_version();
+    let session = WclSession::new(client_version).map_err(|error| error.to_string())?;
+    session
+        .login(&resolved.email, &resolved.password)
+        .map_err(|error| error.to_string())?;
+
+    if remember_login {
+        save_login_credentials(&app_handle, &resolved.email, &resolved.password)
+            .map_err(|error| error.to_string())?;
+    }
+
+    let guilds = session
+        .fetch_sidebar_guilds()
+        .map_err(|error| error.to_string())?;
+
+    Ok(FetchWclGuildsResponse {
+        email: resolved.email,
+        guilds,
+    })
+}
+
 fn run_upload(
     app_handle: AppHandle,
     request: StartWclUploadRequest,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<StartWclUploadResponse, UploadError> {
+    let remember_login = request.remember_login.unwrap_or(false);
+    let resolved_login = resolve_login_credentials(
+        &app_handle,
+        request.email.trim(),
+        request.password.clone(),
+        request.use_saved_login.unwrap_or(false),
+        remember_login,
+    )?;
+
     let log_path = PathBuf::from(request.log_file_path.trim());
     if !log_path.exists() {
         return Err(UploadError::Message(format!(
@@ -1016,11 +1211,24 @@ fn run_upload(
     let client_version = resolve_client_version();
     let session = WclSession::new(client_version)?;
     emit_upload_progress(&app_handle, "auth", "Logging in to WarcraftLogs...", 6);
-    let login_username = session.login(&request.email, &request.password)?;
+    let login_username = session.login(&resolved_login.email, &resolved_login.password)?;
     if let Some(user_name) = login_username {
         emit_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 8);
     } else {
         emit_upload_progress(&app_handle, "auth", "Authenticated with WarcraftLogs", 8);
+    }
+
+    if remember_login {
+        save_login_credentials(&app_handle, &resolved_login.email, &resolved_login.password)?;
+    }
+
+    if resolved_login.used_saved_password {
+        emit_upload_progress(
+            &app_handle,
+            "auth",
+            "Using saved WarcraftLogs credentials",
+            8,
+        );
     }
 
     check_cancelled(&cancel_flag)?;
@@ -1080,6 +1288,8 @@ fn run_upload(
     let mut segment_id: u64 = 1;
     let mut last_master_ids: Option<MasterIds> = None;
 
+    let resolved_guild_id = request.guild_id;
+
     loop {
         check_cancelled(&cancel_flag)?;
 
@@ -1093,6 +1303,7 @@ fn run_upload(
                     &session,
                     &mut parser,
                     &request,
+                    resolved_guild_id,
                     &file_name,
                     &batch_lines,
                     batch_number,
@@ -1117,6 +1328,7 @@ fn run_upload(
                 &session,
                 &mut parser,
                 &request,
+                resolved_guild_id,
                 &file_name,
                 &batch_lines,
                 batch_number,
@@ -1175,6 +1387,7 @@ fn process_batch(
     session: &WclSession,
     parser: &mut ParserBridge,
     request: &StartWclUploadRequest,
+    resolved_guild_id: Option<u32>,
     file_name: &str,
     lines: &[String],
     batch_number: usize,
@@ -1211,7 +1424,7 @@ fn process_batch(
             end_time: fights_data.end_time,
             region: request.region,
             visibility: request.visibility,
-            guild_id: request.guild_id,
+            guild_id: resolved_guild_id,
         })?;
 
         *report_code = Some(created_code.clone());
@@ -1637,6 +1850,160 @@ fn check_cancelled(cancel_flag: &Arc<AtomicBool>) -> Result<(), UploadError> {
     }
 }
 
+fn resolve_login_credentials(
+    app_handle: &AppHandle,
+    email: &str,
+    password: Option<String>,
+    use_saved_login: bool,
+    _remember_login: bool,
+) -> Result<ResolvedLoginCredentials, UploadError> {
+    let trimmed_email = email.trim();
+    if trimmed_email.is_empty() {
+        return Err(UploadError::Message(
+            "WarcraftLogs email is required".to_string(),
+        ));
+    }
+
+    if let Some(password_value) = password {
+        let trimmed_password = password_value.trim();
+        if trimmed_password.is_empty() {
+            return Err(UploadError::Message(
+                "WarcraftLogs password is required".to_string(),
+            ));
+        }
+
+        return Ok(ResolvedLoginCredentials {
+            email: trimmed_email.to_string(),
+            password: trimmed_password.to_string(),
+            used_saved_password: false,
+        });
+    }
+
+    if !use_saved_login {
+        return Err(UploadError::Message(
+            "WarcraftLogs password is required".to_string(),
+        ));
+    }
+
+    let saved_password = resolve_saved_login_for_email(app_handle, trimmed_email)?;
+    let Some(saved_password) = saved_password else {
+        return Err(UploadError::Message(format!(
+            "No saved credentials found for {trimmed_email}"
+        )));
+    };
+
+    Ok(ResolvedLoginCredentials {
+        email: trimmed_email.to_string(),
+        password: saved_password,
+        used_saved_password: true,
+    })
+}
+
+fn login_metadata_path(app_handle: &AppHandle) -> Result<PathBuf, UploadError> {
+    let app_data_dir = app_handle.path().app_data_dir().map_err(|error| {
+        UploadError::Message(format!("Failed to resolve app data dir: {error}"))
+    })?;
+    Ok(app_data_dir.join(WCL_LOGIN_METADATA_FILE))
+}
+
+fn read_saved_login_email(app_handle: &AppHandle) -> Result<Option<String>, UploadError> {
+    let metadata_path = login_metadata_path(app_handle)?;
+    if !metadata_path.exists() {
+        return Ok(None);
+    }
+
+    let content = std::fs::read_to_string(&metadata_path)?;
+    let parsed = serde_json::from_str::<SavedLoginMetadata>(&content)?;
+    let email = parsed.saved_email.trim().to_string();
+    if email.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(email))
+}
+
+fn write_saved_login_email(app_handle: &AppHandle, email: &str) -> Result<(), UploadError> {
+    let metadata_path = login_metadata_path(app_handle)?;
+    if let Some(parent) = metadata_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let payload = SavedLoginMetadata {
+        saved_email: email.to_string(),
+    };
+    let json_content = serde_json::to_string_pretty(&payload)?;
+    std::fs::write(metadata_path, json_content)?;
+    Ok(())
+}
+
+fn save_login_credentials(
+    app_handle: &AppHandle,
+    email: &str,
+    password: &str,
+) -> Result<(), UploadError> {
+    let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, email).map_err(|error| {
+        UploadError::Message(format!("Failed to open secure credential store: {error}"))
+    })?;
+    entry.set_password(password).map_err(|error| {
+        UploadError::Message(format!("Failed to save WarcraftLogs credentials: {error}"))
+    })?;
+
+    write_saved_login_email(app_handle, email)?;
+    Ok(())
+}
+
+fn read_saved_password(email: &str) -> Result<Option<String>, UploadError> {
+    let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, email).map_err(|error| {
+        UploadError::Message(format!("Failed to open secure credential store: {error}"))
+    })?;
+
+    match entry.get_password() {
+        Ok(password) => Ok(Some(password)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(UploadError::Message(format!(
+            "Failed to read saved WarcraftLogs credentials: {error}"
+        ))),
+    }
+}
+
+fn clear_saved_login(app_handle: &AppHandle) -> Result<(), UploadError> {
+    let saved_email = read_saved_login_email(app_handle)?;
+    if let Some(email) = saved_email {
+        let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, &email).map_err(|error| {
+            UploadError::Message(format!("Failed to open secure credential store: {error}"))
+        })?;
+
+        match entry.delete_password() {
+            Ok(_) => {}
+            Err(keyring::Error::NoEntry) => {}
+            Err(error) => {
+                return Err(UploadError::Message(format!(
+                    "Failed to clear saved WarcraftLogs credentials: {error}"
+                )));
+            }
+        }
+    }
+
+    let metadata_path = login_metadata_path(app_handle)?;
+    if metadata_path.exists() {
+        std::fs::remove_file(metadata_path)?;
+    }
+    Ok(())
+}
+
+fn resolve_saved_login_for_email(
+    app_handle: &AppHandle,
+    email: &str,
+) -> Result<Option<String>, UploadError> {
+    let metadata_email = read_saved_login_email(app_handle)?;
+    match metadata_email {
+        Some(saved_email) if saved_email.eq_ignore_ascii_case(email) => {
+            read_saved_password(&saved_email)
+        }
+        _ => Ok(None),
+    }
+}
+
 fn sleep_with_backoff(attempt: u8) {
     let exponential = 2_u64.pow(attempt as u32);
     let delay = RETRY_BASE_DELAY_MS.saturating_mul(exponential);
@@ -1676,8 +2043,14 @@ fn validate_request(request: &StartWclUploadRequest) -> Result<(), String> {
         return Err("WarcraftLogs email is required".to_string());
     }
 
-    if request.password.trim().is_empty() {
+    if request.password.is_none() && !request.use_saved_login.unwrap_or(false) {
         return Err("WarcraftLogs password is required".to_string());
+    }
+
+    if let Some(password) = request.password.as_ref() {
+        if password.trim().is_empty() {
+            return Err("WarcraftLogs password is required".to_string());
+        }
     }
 
     if !(1..=5).contains(&request.region) {
