@@ -1,443 +1,54 @@
 use regex::Regex;
 use reqwest::blocking::{Client, RequestBuilder, Response};
-use serde::de::Deserializer;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Seek, SeekFrom, Write};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-const BASE_URL: &str = "https://www.warcraftlogs.com";
-const CLIENT_VERSION_FALLBACK: &str = "9.0.1";
-const CHROME_VERSION_FALLBACK: &str = "134.0.6998.205";
-const ELECTRON_VERSION_FALLBACK: &str = "37.7.0";
-const PARSER_VERSION_FALLBACK: u32 = 59;
-const BATCH_SIZE: usize = 100_000;
-const MAX_RETRIES: u8 = 3;
-const RETRY_BASE_DELAY_MS: u64 = 1_000;
-const PARSER_HARNESS_RESOURCE_PATH: &str = "bin/parser-harness.cjs";
-const NODE_RESOURCE_PATH_WINDOWS_X64: &str = "bin/node/win-x64/node.exe";
-const WCL_LOGIN_SERVICE: &str = "com.r0b.floorpov.wcl";
-const WCL_LOGIN_METADATA_FILE: &str = "wcl-login.json";
-const LIVE_POLL_INTERVAL_MS: u64 = 1_000;
-const LIVE_FLUSH_INTERVAL_MS: u64 = 5_000;
-const LIVE_MAX_READ_LINES_PER_POLL: usize = 4_000;
-
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartWclUploadRequest {
-    pub log_file_path: String,
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
-    pub description: Option<String>,
-    pub region: u8,
-    pub visibility: u8,
-    pub guild_id: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartWclLiveUploadRequest {
-    pub wow_folder: String,
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
-    pub description: Option<String>,
-    pub region: u8,
-    pub visibility: u8,
-    pub guild_id: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FetchWclGuildsRequest {
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WclGuild {
-    pub id: u32,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FetchWclGuildsResponse {
-    pub email: String,
-    pub guilds: Vec<WclGuild>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WclLoginState {
-    pub saved_email: Option<String>,
-    pub has_saved_credentials: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartWclUploadResponse {
-    pub report_url: String,
-    pub report_code: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StartWclLiveUploadResponse {
-    pub report_url: Option<String>,
-    pub report_code: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WclLiveUploadState {
-    pub is_running: bool,
-    pub report_url: Option<String>,
-    pub report_code: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WclUploadProgressEvent {
-    step: String,
-    message: String,
-    percent: u8,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WclUploadErrorEvent {
-    message: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WclUploadCompleteEvent {
-    report_url: String,
-    report_code: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WclLiveUploadCompleteEvent {
-    report_url: Option<String>,
-    report_code: Option<String>,
-}
-
-struct ActiveUpload {
-    cancel_flag: Arc<AtomicBool>,
-}
-
-struct ActiveLiveUpload {
-    cancel_flag: Arc<AtomicBool>,
-    handle: Option<std::thread::JoinHandle<()>>,
-    is_running: bool,
-    report_url: Option<String>,
-    report_code: Option<String>,
-}
-
-lazy_static::lazy_static! {
-    static ref ACTIVE_UPLOAD: Mutex<Option<ActiveUpload>> = Mutex::new(None);
-    static ref ACTIVE_LIVE_UPLOAD: Mutex<Option<ActiveLiveUpload>> = Mutex::new(None);
-}
-
-#[derive(Debug)]
-enum UploadError {
-    Message(String),
-    Cancelled,
-    Io(std::io::Error),
-    Json(serde_json::Error),
-    Http(reqwest::Error),
-    HttpStatus {
-        request_label: String,
-        status: u16,
-        body: String,
-    },
-    Zip(zip::result::ZipError),
-}
-
-impl std::fmt::Display for UploadError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Message(message) => write!(formatter, "{message}"),
-            Self::Cancelled => write!(formatter, "WarcraftLogs upload cancelled"),
-            Self::Io(error) => write!(formatter, "{error}"),
-            Self::Json(error) => write!(formatter, "{error}"),
-            Self::Http(error) => write!(formatter, "{error}"),
-            Self::HttpStatus {
-                request_label,
-                status,
-                body,
-            } => {
-                if body.trim().is_empty() {
-                    write!(
-                        formatter,
-                        "WarcraftLogs request '{request_label}' failed with status {status}"
-                    )
-                } else {
-                    write!(
-                        formatter,
-                        "WarcraftLogs request '{request_label}' failed with status {status}: {body}"
-                    )
-                }
-            }
-            Self::Zip(error) => write!(formatter, "{error}"),
-        }
-    }
-}
-
-impl std::error::Error for UploadError {}
-
-impl From<std::io::Error> for UploadError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<serde_json::Error> for UploadError {
-    fn from(error: serde_json::Error) -> Self {
-        Self::Json(error)
-    }
-}
-
-impl From<reqwest::Error> for UploadError {
-    fn from(error: reqwest::Error) -> Self {
-        Self::Http(error)
-    }
-}
-
-impl From<zip::result::ZipError> for UploadError {
-    fn from(error: zip::result::ZipError) -> Self {
-        Self::Zip(error)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoginResponse {
-    user: Option<LoginUser>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidebarGuildsResponse {
-    guilds: Option<SidebarGuildsContainer>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidebarGuildsContainer {
-    guilds_panel: Option<SidebarGuildsPanel>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidebarGuildsPanel {
-    #[serde(default)]
-    sections: Vec<SidebarGuildSection>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidebarGuildSection {
-    header: Option<SidebarGuildHeader>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SidebarGuildHeader {
-    id: Option<String>,
-    title: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoginUser {
-    user_name: String,
-}
-
-#[derive(Debug)]
-struct ParserAssets {
-    gamedata_code: String,
-    parser_code: String,
-    parser_version: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct CreateReportResponse {
-    code: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AddSegmentResponse {
-    next_segment_id: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ParseLinesResponse {
-    ok: bool,
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ParserFight {
-    event_count: u64,
-    events_string: String,
-    #[allow(dead_code)]
-    start_time: Option<i64>,
-    #[allow(dead_code)]
-    end_time: Option<i64>,
-    boss_percentage: Option<f64>,
-    #[allow(dead_code)]
-    is_trash: Option<bool>,
-    #[allow(dead_code)]
-    enemy_npcid: Option<i64>,
-    #[allow(dead_code)]
-    enemy_id: Option<i64>,
-    encounter_id: Option<i64>,
-    #[allow(dead_code)]
-    difficulty: Option<i64>,
-    #[allow(dead_code)]
-    zone_id: Option<i64>,
-    encounter_name: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CollectFightsResponse {
-    ok: bool,
-    error: Option<String>,
-    log_version: i64,
-    game_version: i64,
-    #[serde(deserialize_with = "deserialize_i64_from_bool_or_int")]
-    mythic: i64,
-    start_time: i64,
-    end_time: i64,
-    fights: Vec<ParserFight>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CollectMasterInfoResponse {
-    ok: bool,
-    error: Option<String>,
-    #[serde(rename = "lastAssignedActorID")]
-    last_assigned_actor_id: i64,
-    actors_string: String,
-    #[serde(rename = "lastAssignedAbilityID")]
-    last_assigned_ability_id: i64,
-    abilities_string: String,
-    #[serde(rename = "lastAssignedTupleID")]
-    last_assigned_tuple_id: i64,
-    tuples_string: String,
-    #[serde(rename = "lastAssignedPetID")]
-    last_assigned_pet_id: i64,
-    pets_string: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct MasterIds {
-    actor_id: i64,
-    ability_id: i64,
-    tuple_id: i64,
-    pet_id: i64,
-}
-
-#[derive(Debug, Clone)]
-struct CreateReportRequest {
-    file_name: String,
-    parser_version: u32,
-    start_time: i64,
-    end_time: i64,
-    description: String,
-    region: u8,
-    visibility: u8,
-    guild_id: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-struct UploadSessionParams {
-    region: u8,
-    visibility: u8,
-    guild_id: Option<u32>,
-    description: String,
-}
-
-struct LiveUploadRuntime {
-    session: WclSession,
-    parser: ParserBridge,
-    parser_version: u32,
-    report_code: Option<String>,
-    segment_id: u64,
-    last_master_ids: Option<MasterIds>,
-    upload_params: UploadSessionParams,
-    wow_folder: String,
-    file_name: String,
-    log_path: PathBuf,
-    file_offset: u64,
-    buffered_lines: Vec<String>,
-    last_flush_at: Instant,
-    total_uploaded_lines: u64,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct SavedLoginMetadata {
-    saved_email: String,
-}
-
-#[derive(Debug)]
-struct ResolvedLoginCredentials {
-    email: String,
-    password: String,
-    used_saved_password: bool,
-}
-
-fn deserialize_i64_from_bool_or_int<'de, D>(deserializer: D) -> Result<i64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    match value {
-        serde_json::Value::Bool(boolean) => Ok(i64::from(boolean)),
-        serde_json::Value::Number(number) => {
-            if let Some(as_i64) = number.as_i64() {
-                return Ok(as_i64);
-            }
-            Err(serde::de::Error::custom(
-                "expected boolean or integer for numeric field",
-            ))
-        }
-        _ => Err(serde::de::Error::custom(
-            "expected boolean or integer value",
-        )),
-    }
-}
+use crate::wcl_upload::auth::{
+    clear_saved_login, read_saved_login_email, resolve_login_credentials,
+    resolve_saved_login_for_email, save_login_credentials,
+};
+use crate::wcl_upload::constants::{
+    BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK, CREATE_NO_WINDOW,
+    ELECTRON_VERSION_FALLBACK, LIVE_FLUSH_INTERVAL_MS, LIVE_MAX_READ_LINES_PER_POLL,
+    LIVE_POLL_INTERVAL_MS, MAX_RETRIES, PARSER_VERSION_FALLBACK, RETRY_BASE_DELAY_MS,
+};
+use crate::wcl_upload::error::UploadError;
+use crate::wcl_upload::events::{
+    emit_live_report_created, emit_live_upload_complete, emit_live_upload_error,
+    emit_live_upload_progress, emit_upload_complete, emit_upload_error, emit_upload_progress,
+};
+use crate::wcl_upload::filesystem::{
+    check_node_runtime, find_latest_combat_log_path, read_child_stderr, resolve_node_binary_path,
+    resolve_parser_harness_path,
+};
+use crate::wcl_upload::state::{
+    begin_upload_session, check_cancelled, end_upload_session, set_live_report_info,
+    ACTIVE_LIVE_UPLOAD, ACTIVE_UPLOAD,
+};
+use crate::wcl_upload::types::{
+    ActiveLiveUpload, AddSegmentResponse, CollectFightsResponse, CollectMasterInfoResponse,
+    CreateReportRequest, CreateReportResponse, FetchWclGuildsRequest, FetchWclGuildsResponse,
+    LiveUploadRuntime, LoginResponse, MasterIds, ParseLinesResponse, ParserAssets, ParserFight,
+    SidebarGuildsResponse, StartWclLiveUploadRequest, StartWclLiveUploadResponse,
+    StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclGuild,
+    WclLiveUploadState, WclLoginState,
+};
+use crate::wcl_upload::validation::{validate_live_request, validate_request};
 
 enum MultipartFieldValue {
     Text(String),
@@ -501,7 +112,7 @@ fn random_multipart_boundary() -> String {
     format!("----WebKitFormBoundary{nonce:x}")
 }
 
-struct WclSession {
+pub(crate) struct WclSession {
     client: Client,
     client_version: String,
     user_agent: String,
@@ -852,7 +463,7 @@ fn sanitize_http_error_body(body: &str) -> String {
     }
 }
 
-struct ParserBridge {
+pub(crate) struct ParserBridge {
     child: Child,
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
@@ -1122,7 +733,6 @@ impl Drop for ParserBridge {
     }
 }
 
-#[tauri::command]
 pub async fn start_wcl_upload(
     app_handle: AppHandle,
     request: StartWclUploadRequest,
@@ -1156,7 +766,6 @@ pub async fn start_wcl_upload(
     }
 }
 
-#[tauri::command]
 pub fn cancel_wcl_upload() -> Result<(), String> {
     let state = ACTIVE_UPLOAD
         .lock()
@@ -1170,7 +779,6 @@ pub fn cancel_wcl_upload() -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
 pub fn get_latest_combat_log_path(wow_folder: Option<String>) -> Result<Option<String>, String> {
     let Some(folder) = wow_folder else {
         return Ok(None);
@@ -1185,7 +793,6 @@ pub fn get_latest_combat_log_path(wow_folder: Option<String>) -> Result<Option<S
         .map(|maybe_path| maybe_path.map(|path| path.to_string_lossy().to_string()))
 }
 
-#[tauri::command]
 pub fn get_wcl_login_state(app_handle: AppHandle) -> Result<WclLoginState, String> {
     match read_saved_login_email(&app_handle) {
         Ok(Some(saved_email)) => {
@@ -1205,12 +812,10 @@ pub fn get_wcl_login_state(app_handle: AppHandle) -> Result<WclLoginState, Strin
     }
 }
 
-#[tauri::command]
 pub fn clear_wcl_saved_login(app_handle: AppHandle) -> Result<(), String> {
     clear_saved_login(&app_handle).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
 pub fn fetch_wcl_guilds(
     app_handle: AppHandle,
     request: FetchWclGuildsRequest,
@@ -1250,7 +855,6 @@ pub fn fetch_wcl_guilds(
     })
 }
 
-#[tauri::command]
 pub fn get_wcl_live_upload_state() -> Result<WclLiveUploadState, String> {
     let state = ACTIVE_LIVE_UPLOAD
         .lock()
@@ -1270,7 +874,6 @@ pub fn get_wcl_live_upload_state() -> Result<WclLiveUploadState, String> {
     })
 }
 
-#[tauri::command]
 pub fn start_wcl_live_upload(
     app_handle: AppHandle,
     request: StartWclLiveUploadRequest,
@@ -1320,7 +923,6 @@ pub fn start_wcl_live_upload(
     })
 }
 
-#[tauri::command]
 pub fn stop_wcl_live_upload() -> Result<(), String> {
     let handle_to_join = {
         let mut state = ACTIVE_LIVE_UPLOAD
@@ -2172,6 +1774,9 @@ fn resolve_client_version() -> String {
     CLIENT_VERSION_FALLBACK.to_string()
 }
 
+pub(crate) type PublicWclSession = WclSession;
+pub(crate) type PublicParserBridge = ParserBridge;
+
 fn fetch_latest_archon_version() -> Result<String, UploadError> {
     #[derive(Deserialize)]
     struct LatestRelease {
@@ -2202,560 +1807,8 @@ fn fetch_latest_archon_version() -> Result<String, UploadError> {
     Ok(version.to_string())
 }
 
-fn resolve_parser_harness_path(app_handle: &AppHandle) -> Result<PathBuf, UploadError> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-
-    if let Ok(resource_path) = app_handle
-        .path()
-        .resolve(PARSER_HARNESS_RESOURCE_PATH, BaseDirectory::Resource)
-    {
-        candidates.push(resource_path);
-    }
-
-    let manifest_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("bin")
-        .join("parser-harness.cjs");
-    candidates.push(manifest_candidate.clone());
-    candidates.push(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("bin")
-            .join("parser-harness.js"),
-    );
-
-    if let Ok(current_executable) = std::env::current_exe() {
-        if let Some(executable_directory) = current_executable.parent() {
-            candidates.push(executable_directory.join("parser-harness.js"));
-            candidates.push(executable_directory.join("parser-harness.cjs"));
-            candidates.push(
-                executable_directory
-                    .join("resources")
-                    .join("bin")
-                    .join("parser-harness.js"),
-            );
-            candidates.push(
-                executable_directory
-                    .join("resources")
-                    .join("bin")
-                    .join("parser-harness.cjs"),
-            );
-        }
-    }
-
-    if let Some(found_path) = candidates.into_iter().find(|candidate| {
-        candidate
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| {
-                (name.eq_ignore_ascii_case("parser-harness.cjs")
-                    || name.eq_ignore_ascii_case("parser-harness.js"))
-                    && candidate.is_file()
-            })
-            .unwrap_or(false)
-    }) {
-        return found_path.canonicalize().map_err(|error| {
-            UploadError::Message(format!(
-                "Failed to canonicalize parser harness path '{}': {error}",
-                found_path.display()
-            ))
-        });
-    }
-
-    Err(UploadError::Message(format!(
-        "Parser harness was not found. Expected '{}'.",
-        manifest_candidate.display()
-    )))
-}
-
-fn read_child_stderr(stderr: &mut ChildStderr) -> Result<String, UploadError> {
-    let mut buffer = String::new();
-    stderr.read_to_string(&mut buffer)?;
-    Ok(buffer)
-}
-
-fn resolve_node_binary_path(app_handle: &AppHandle) -> Result<PathBuf, UploadError> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-
-    if let Ok(resource_path) = app_handle
-        .path()
-        .resolve(NODE_RESOURCE_PATH_WINDOWS_X64, BaseDirectory::Resource)
-    {
-        candidates.push(resource_path);
-    }
-
-    let manifest_candidate = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("bin")
-        .join("node")
-        .join("win-x64")
-        .join("node.exe");
-    candidates.push(manifest_candidate.clone());
-
-    if let Ok(current_executable) = std::env::current_exe() {
-        if let Some(executable_directory) = current_executable.parent() {
-            candidates.push(executable_directory.join("node.exe"));
-            candidates.push(
-                executable_directory
-                    .join("resources")
-                    .join("bin")
-                    .join("node")
-                    .join("win-x64")
-                    .join("node.exe"),
-            );
-        }
-    }
-
-    if let Some(found_path) = candidates.into_iter().find(|candidate| candidate.is_file()) {
-        return found_path.canonicalize().map_err(|error| {
-            UploadError::Message(format!(
-                "Failed to canonicalize bundled Node path '{}': {error}",
-                found_path.display()
-            ))
-        });
-    }
-
-    Err(UploadError::Message(format!(
-        "Bundled Node runtime was not found. Expected '{}'.",
-        manifest_candidate.display()
-    )))
-}
-
-fn check_node_runtime(node_binary_path: &Path) -> Result<(), UploadError> {
-    let mut command = Command::new(node_binary_path);
-    command.arg("--version");
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::piped());
-    #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW);
-
-    let output = command.output().map_err(|error| {
-        UploadError::Message(format!(
-            "Bundled Node runtime failed to start. Ensure node runtime exists at '{}'. Details: {error}",
-            node_binary_path.display()
-        ))
-    })?;
-
-    if !output.status.success() {
-        let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr_text.is_empty() {
-            return Err(UploadError::Message(
-                "Failed to run bundled 'node --version'.".to_string(),
-            ));
-        }
-
-        return Err(UploadError::Message(format!(
-            "Failed to run bundled 'node --version'. Details: {stderr_text}"
-        )));
-    }
-
-    let stdout_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let version_text = if stdout_text.is_empty() {
-        String::from_utf8_lossy(&output.stderr).trim().to_string()
-    } else {
-        stdout_text
-    };
-
-    let major = parse_node_major_version(&version_text).ok_or_else(|| {
-        UploadError::Message(format!(
-            "Could not parse bundled Node.js version '{version_text}'."
-        ))
-    })?;
-
-    if major < 18 {
-        return Err(UploadError::Message(format!(
-            "Node.js 18+ is required. Bundled runtime reports '{version_text}'."
-        )));
-    }
-
-    Ok(())
-}
-
-fn parse_node_major_version(version_text: &str) -> Option<u32> {
-    let trimmed = version_text.trim();
-    let normalized = trimmed.strip_prefix('v').unwrap_or(trimmed);
-    normalized.split('.').next()?.parse::<u32>().ok()
-}
-
-fn begin_upload_session() -> Result<Arc<AtomicBool>, String> {
-    let mut state = ACTIVE_UPLOAD
-        .lock()
-        .map_err(|error| format!("Failed to lock upload state: {error}"))?;
-
-    if state.is_some() {
-        return Err("A WarcraftLogs upload is already in progress".to_string());
-    }
-
-    let cancel_flag = Arc::new(AtomicBool::new(false));
-    *state = Some(ActiveUpload {
-        cancel_flag: cancel_flag.clone(),
-    });
-    Ok(cancel_flag)
-}
-
-fn end_upload_session() {
-    if let Ok(mut state) = ACTIVE_UPLOAD.lock() {
-        *state = None;
-    }
-}
-
-fn check_cancelled(cancel_flag: &Arc<AtomicBool>) -> Result<(), UploadError> {
-    if cancel_flag.load(Ordering::SeqCst) {
-        Err(UploadError::Cancelled)
-    } else {
-        Ok(())
-    }
-}
-
-fn resolve_login_credentials(
-    app_handle: &AppHandle,
-    email: &str,
-    password: Option<String>,
-    use_saved_login: bool,
-    _remember_login: bool,
-) -> Result<ResolvedLoginCredentials, UploadError> {
-    let trimmed_email = email.trim();
-    if trimmed_email.is_empty() {
-        return Err(UploadError::Message(
-            "WarcraftLogs email is required".to_string(),
-        ));
-    }
-
-    if let Some(password_value) = password {
-        let trimmed_password = password_value.trim();
-        if trimmed_password.is_empty() {
-            return Err(UploadError::Message(
-                "WarcraftLogs password is required".to_string(),
-            ));
-        }
-
-        return Ok(ResolvedLoginCredentials {
-            email: trimmed_email.to_string(),
-            password: trimmed_password.to_string(),
-            used_saved_password: false,
-        });
-    }
-
-    if !use_saved_login {
-        return Err(UploadError::Message(
-            "WarcraftLogs password is required".to_string(),
-        ));
-    }
-
-    let saved_password = resolve_saved_login_for_email(app_handle, trimmed_email)?;
-    let Some(saved_password) = saved_password else {
-        return Err(UploadError::Message(format!(
-            "No saved credentials found for {trimmed_email}"
-        )));
-    };
-
-    Ok(ResolvedLoginCredentials {
-        email: trimmed_email.to_string(),
-        password: saved_password,
-        used_saved_password: true,
-    })
-}
-
-fn login_metadata_path(app_handle: &AppHandle) -> Result<PathBuf, UploadError> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(|error| {
-        UploadError::Message(format!("Failed to resolve app data dir: {error}"))
-    })?;
-    Ok(app_data_dir.join(WCL_LOGIN_METADATA_FILE))
-}
-
-fn read_saved_login_email(app_handle: &AppHandle) -> Result<Option<String>, UploadError> {
-    let metadata_path = login_metadata_path(app_handle)?;
-    if !metadata_path.exists() {
-        return Ok(None);
-    }
-
-    let content = std::fs::read_to_string(&metadata_path)?;
-    let parsed = serde_json::from_str::<SavedLoginMetadata>(&content)?;
-    let email = parsed.saved_email.trim().to_string();
-    if email.is_empty() {
-        return Ok(None);
-    }
-
-    Ok(Some(email))
-}
-
-fn write_saved_login_email(app_handle: &AppHandle, email: &str) -> Result<(), UploadError> {
-    let metadata_path = login_metadata_path(app_handle)?;
-    if let Some(parent) = metadata_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    let payload = SavedLoginMetadata {
-        saved_email: email.to_string(),
-    };
-    let json_content = serde_json::to_string_pretty(&payload)?;
-    std::fs::write(metadata_path, json_content)?;
-    Ok(())
-}
-
-fn save_login_credentials(
-    app_handle: &AppHandle,
-    email: &str,
-    password: &str,
-) -> Result<(), UploadError> {
-    let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, email).map_err(|error| {
-        UploadError::Message(format!("Failed to open secure credential store: {error}"))
-    })?;
-    entry.set_password(password).map_err(|error| {
-        UploadError::Message(format!("Failed to save WarcraftLogs credentials: {error}"))
-    })?;
-
-    write_saved_login_email(app_handle, email)?;
-    Ok(())
-}
-
-fn read_saved_password(email: &str) -> Result<Option<String>, UploadError> {
-    let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, email).map_err(|error| {
-        UploadError::Message(format!("Failed to open secure credential store: {error}"))
-    })?;
-
-    match entry.get_password() {
-        Ok(password) => Ok(Some(password)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(error) => Err(UploadError::Message(format!(
-            "Failed to read saved WarcraftLogs credentials: {error}"
-        ))),
-    }
-}
-
-fn clear_saved_login(app_handle: &AppHandle) -> Result<(), UploadError> {
-    let saved_email = read_saved_login_email(app_handle)?;
-    if let Some(email) = saved_email {
-        let entry = keyring::Entry::new(WCL_LOGIN_SERVICE, &email).map_err(|error| {
-            UploadError::Message(format!("Failed to open secure credential store: {error}"))
-        })?;
-
-        match entry.delete_password() {
-            Ok(_) => {}
-            Err(keyring::Error::NoEntry) => {}
-            Err(error) => {
-                return Err(UploadError::Message(format!(
-                    "Failed to clear saved WarcraftLogs credentials: {error}"
-                )));
-            }
-        }
-    }
-
-    let metadata_path = login_metadata_path(app_handle)?;
-    if metadata_path.exists() {
-        std::fs::remove_file(metadata_path)?;
-    }
-    Ok(())
-}
-
-fn resolve_saved_login_for_email(
-    app_handle: &AppHandle,
-    email: &str,
-) -> Result<Option<String>, UploadError> {
-    let metadata_email = read_saved_login_email(app_handle)?;
-    match metadata_email {
-        Some(saved_email) if saved_email.eq_ignore_ascii_case(email) => {
-            read_saved_password(&saved_email)
-        }
-        _ => Ok(None),
-    }
-}
-
 fn sleep_with_backoff(attempt: u8) {
     let exponential = 2_u64.pow(attempt as u32);
     let delay = RETRY_BASE_DELAY_MS.saturating_mul(exponential);
     thread::sleep(Duration::from_millis(delay));
-}
-
-fn emit_upload_progress(app_handle: &AppHandle, step: &str, message: &str, percent: u8) {
-    let payload = WclUploadProgressEvent {
-        step: step.to_string(),
-        message: message.to_string(),
-        percent,
-    };
-    let _ = app_handle.emit("wcl-upload-progress", payload);
-}
-
-fn emit_upload_complete(app_handle: &AppHandle, result: &StartWclUploadResponse) {
-    let payload = WclUploadCompleteEvent {
-        report_url: result.report_url.clone(),
-        report_code: result.report_code.clone(),
-    };
-    let _ = app_handle.emit("wcl-upload-complete", payload);
-}
-
-fn emit_upload_error(app_handle: &AppHandle, message: &str) {
-    let payload = WclUploadErrorEvent {
-        message: message.to_string(),
-    };
-    let _ = app_handle.emit("wcl-upload-error", payload);
-}
-
-fn emit_live_upload_error(app_handle: &AppHandle, message: &str) {
-    let payload = WclUploadErrorEvent {
-        message: message.to_string(),
-    };
-    let _ = app_handle.emit("wcl-live-upload-error", payload);
-}
-
-fn emit_live_upload_progress(app_handle: &AppHandle, step: &str, message: &str, percent: u8) {
-    let payload = WclUploadProgressEvent {
-        step: step.to_string(),
-        message: message.to_string(),
-        percent,
-    };
-    let _ = app_handle.emit("wcl-live-upload-progress", payload);
-}
-
-fn emit_live_upload_complete(
-    app_handle: &AppHandle,
-    report_url: Option<String>,
-    report_code: Option<String>,
-) {
-    let payload = WclLiveUploadCompleteEvent {
-        report_url,
-        report_code,
-    };
-    let _ = app_handle.emit("wcl-live-upload-complete", payload);
-}
-
-fn emit_live_report_created(app_handle: &AppHandle, report_url: &str, report_code: &str) {
-    let payload = WclLiveUploadCompleteEvent {
-        report_url: Some(report_url.to_string()),
-        report_code: Some(report_code.to_string()),
-    };
-    let _ = app_handle.emit("wcl-live-upload-report-created", payload);
-}
-
-fn set_live_report_info(report_url: Option<String>, report_code: Option<String>, is_running: bool) {
-    if let Ok(mut state) = ACTIVE_LIVE_UPLOAD.lock() {
-        if let Some(active) = state.as_mut() {
-            active.report_url = report_url;
-            active.report_code = report_code;
-            active.is_running = is_running;
-        }
-    }
-}
-
-fn validate_request(request: &StartWclUploadRequest) -> Result<(), String> {
-    if request.log_file_path.trim().is_empty() {
-        return Err("Please choose a combat log file".to_string());
-    }
-
-    if request.email.trim().is_empty() {
-        return Err("WarcraftLogs email is required".to_string());
-    }
-
-    if request.password.is_none() && !request.use_saved_login.unwrap_or(false) {
-        return Err("WarcraftLogs password is required".to_string());
-    }
-
-    if let Some(password) = request.password.as_ref() {
-        if password.trim().is_empty() {
-            return Err("WarcraftLogs password is required".to_string());
-        }
-    }
-
-    if !(1..=5).contains(&request.region) {
-        return Err("Region must be one of: 1 (US), 2 (EU), 3 (KR), 4 (TW), 5 (CN)".to_string());
-    }
-
-    if request.visibility > 2 {
-        return Err("Visibility must be one of: 0 (Public), 1 (Private), 2 (Unlisted)".to_string());
-    }
-
-    Ok(())
-}
-
-fn validate_live_request(request: &StartWclLiveUploadRequest) -> Result<(), String> {
-    if request.wow_folder.trim().is_empty() {
-        return Err("WoW folder is required for live upload".to_string());
-    }
-
-    if request.email.trim().is_empty() {
-        return Err("WarcraftLogs email is required".to_string());
-    }
-
-    if request.password.is_none() && !request.use_saved_login.unwrap_or(false) {
-        return Err("WarcraftLogs password is required".to_string());
-    }
-
-    if let Some(password) = request.password.as_ref() {
-        if password.trim().is_empty() {
-            return Err("WarcraftLogs password is required".to_string());
-        }
-    }
-
-    if !(1..=5).contains(&request.region) {
-        return Err("Region must be one of: 1 (US), 2 (EU), 3 (KR), 4 (TW), 5 (CN)".to_string());
-    }
-
-    if request.visibility > 2 {
-        return Err("Visibility must be one of: 0 (Public), 1 (Private), 2 (Unlisted)".to_string());
-    }
-
-    Ok(())
-}
-
-fn build_combat_log_directory_path(wow_folder: &str) -> PathBuf {
-    let candidate_path = Path::new(wow_folder);
-    let is_logs_directory = candidate_path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case("Logs"))
-        .unwrap_or(false);
-
-    if is_logs_directory {
-        candidate_path.to_path_buf()
-    } else {
-        candidate_path.join("Logs")
-    }
-}
-
-fn is_combat_log_file_name(file_name: &str) -> bool {
-    let lower_file_name = file_name.to_ascii_lowercase();
-    lower_file_name.starts_with("wowcombatlog") && lower_file_name.ends_with(".txt")
-}
-
-fn find_latest_combat_log_path(wow_folder: &str) -> Result<Option<PathBuf>, String> {
-    let logs_directory = build_combat_log_directory_path(wow_folder);
-    let directory_entries = match std::fs::read_dir(&logs_directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            if logs_directory.exists() {
-                return Err(error.to_string());
-            }
-            return Ok(None);
-        }
-    };
-
-    let mut latest_match: Option<(SystemTime, PathBuf)> = None;
-
-    for entry_result in directory_entries {
-        let entry = entry_result.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-
-        if !is_combat_log_file_name(file_name) {
-            continue;
-        }
-
-        let modified_time = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-
-        if latest_match
-            .as_ref()
-            .map(|(latest_time, _)| modified_time > *latest_time)
-            .unwrap_or(true)
-        {
-            latest_match = Some((modified_time, path));
-        }
-    }
-
-    Ok(latest_match.map(|(_, path)| path))
 }
