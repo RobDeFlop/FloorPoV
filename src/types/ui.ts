@@ -4,4 +4,4 @@
 export type GameMode = "mythic-plus" | "raid" | "pvp";
 
 /** All navigable views in the app shell. */
-export type AppView = "main" | "settings" | "debug" | GameMode;
+export type AppView = "main" | "settings" | "warcraftlogs" | "debug" | GameMode;

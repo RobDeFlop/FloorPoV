@@ -9,6 +9,7 @@ import { VideoPlayer } from "../playback/VideoPlayer";
 import { RecordingsList } from "../playback/RecordingsList";
 import { Settings } from "../settings/Settings";
 import { CombatLogDebug } from "../debug/CombatLogDebug";
+import { WarcraftLogsUploadPage } from "../warcraftlogs/WarcraftLogsUploadPage";
 import { VideoProvider } from "../../contexts/VideoContext";
 import { RecordingProvider } from "../../contexts/RecordingContext";
 import { SettingsProvider } from "../../contexts/SettingsContext";
@@ -185,6 +186,18 @@ export function Layout() {
                     >
                       <Settings />
                     </motion.div>
+      ) : currentView === "warcraftlogs" ? (
+        <motion.div
+          key="warcraftlogs-view"
+          className="h-full flex-1 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
+          variants={panelVariants}
+          initial={reduceMotion ? false : "initial"}
+          animate="animate"
+          exit={reduceMotion ? undefined : "exit"}
+          transition={smoothTransition}
+        >
+          <WarcraftLogsUploadPage />
+        </motion.div>
       ) : currentView === "mythic-plus" ? (
         <motion.div
           key="mythic-plus-view"

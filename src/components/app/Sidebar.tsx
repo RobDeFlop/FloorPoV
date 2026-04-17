@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Swords,
   Trophy,
+  UploadCloud,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
@@ -42,6 +43,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
   } = useRecording();
   const isMain = currentView === "main";
   const isSettings = currentView === "settings";
+  const isWarcraftLogs = currentView === "warcraftlogs";
   const isDebug = currentView === "debug";
   // When idle and the selected window is gone, shift the status box to amber.
   const idleTheme = isSelectedWindowAlive ? "emerald" : "amber";
@@ -189,6 +191,20 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                 />
               );
             })}
+          </div>
+        </SidebarDividerBlock>
+
+        <SidebarDividerBlock>
+          <SidebarSectionLabel label="WarcraftLogs" />
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+            <SidebarNavButton
+              label="Upload"
+              icon={UploadCloud}
+              isActive={isWarcraftLogs}
+              activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
+              defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+              onClick={() => onNavigate("warcraftlogs")}
+            />
           </div>
         </SidebarDividerBlock>
       </nav>

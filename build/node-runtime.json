@@ -1,0 +1,10 @@
+{
+  "version": "20.17.0",
+  "platforms": {
+    "win-x64": {
+      "archive": "https://nodejs.org/dist/v20.17.0/node-v20.17.0-win-x64.zip",
+      "archiveSha256": "e323fff0aba197090faabd29c4c23f334557ff24454324f0c83faa7e399dbb74",
+      "nodeExeSha256": "0740b4a681b320f966b57f51c87c11f897e8605064b6ae62d03e177bc66f01b9"
+    }
+  }
+}

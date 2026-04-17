@@ -2,6 +2,7 @@ mod combat_log;
 mod hotkey;
 mod recording;
 mod settings;
+mod wcl_upload;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -95,6 +96,9 @@ pub fn run() {
             combat_log::validate_wow_folder,
             combat_log::emit_manual_marker,
             combat_log::parse_combat_log_file,
+            wcl_upload::start_wcl_upload,
+            wcl_upload::cancel_wcl_upload,
+            wcl_upload::get_latest_combat_log_path,
             hotkey::register_marker_hotkey,
             hotkey::unregister_marker_hotkey,
         ])

@@ -28,3 +28,4 @@ dist-ssr
 
 # Local binaries
 src-tauri/bin/ffmpeg.exe
+src-tauri/bin/node/
