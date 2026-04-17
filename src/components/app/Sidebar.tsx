@@ -14,6 +14,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
+import { useWclUpload } from "../../contexts/WclUploadContext";
 import { formatTime } from "../../utils/format";
 import { type AppView } from "../../types/ui";
 import { SidebarDividerBlock } from "./sidebar/SidebarDividerBlock";
@@ -41,6 +42,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
     startRecording,
     stopRecording,
   } = useRecording();
+  const { isLiveUploading, stopLiveUpload } = useWclUpload();
   const isMain = currentView === "main";
   const isSettings = currentView === "settings";
   const isWarcraftLogs = currentView === "warcraftlogs";
@@ -205,6 +207,18 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
               onClick={() => onNavigate("warcraftlogs")}
             />
+            {isLiveUploading && (
+              <button
+                type="button"
+                className="inline-flex items-center justify-between rounded-sm border border-amber-300/35 bg-amber-500/12 px-3 py-2 text-xs text-amber-100 transition-colors hover:bg-amber-500/20"
+                onClick={() => {
+                  void stopLiveUpload();
+                }}
+              >
+                <span>Live upload active</span>
+                <span className="font-medium">Stop</span>
+              </button>
+            )}
           </div>
         </SidebarDividerBlock>
       </nav>

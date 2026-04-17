@@ -1,15 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   FileText,
   LoaderCircle,
   ShieldCheck,
+  Terminal,
   UploadCloud,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  StartWclLiveUploadPayload,
+  StartWclUploadPayload,
+  useWclUpload,
+} from "../../contexts/WclUploadContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { getErrorMessage } from "../../services/tauri";
 import { SettingsSection } from "../settings/SettingsSection";
@@ -17,37 +25,6 @@ import { SettingsSelect, type SettingsSelectOption } from "../settings/SettingsS
 import { Button } from "../ui/Button";
 import { FormField } from "../ui/FormField";
 import { Input } from "../ui/Input";
-
-interface WclUploadProgressPayload {
-  step: string;
-  message: string;
-  percent: number;
-}
-
-interface WclUploadErrorPayload {
-  message: string;
-}
-
-interface WclUploadCompletePayload {
-  reportUrl: string;
-}
-
-interface StartWclUploadResponse {
-  reportUrl: string;
-}
-
-interface StartWclLiveUploadResponse {
-  reportUrl: string | null;
-}
-
-interface WclLiveUploadState {
-  isRunning: boolean;
-  reportUrl: string | null;
-}
-
-interface WclLiveUploadCompletePayload {
-  reportUrl: string | null;
-}
 
 interface WclGuild {
   id: number;
@@ -94,10 +71,24 @@ const FIELD_IDS = {
   logFilePath: "wcl-log-file-path",
 } as const;
 
-const MAX_PROGRESS_LINES = 220;
-
 export function WarcraftLogsUploadPage() {
   const { settings } = useSettings();
+  const {
+    isUploading,
+    isLiveUploading,
+    progressPercent,
+    progressStatus,
+    progressLines,
+    errorMessage,
+    reportUrl,
+    setWclError,
+    clearProgress,
+    startUpload,
+    cancelUpload,
+    startLiveUpload,
+    stopLiveUpload,
+  } = useWclUpload();
+
   const [logFilePath, setLogFilePath] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -110,14 +101,12 @@ export function WarcraftLogsUploadPage() {
   const [guildOptions, setGuildOptions] = useState<WclGuild[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("none");
   const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isLiveUploading, setIsLiveUploading] = useState(false);
   const [isResolvingLatestLog, setIsResolvingLatestLog] = useState(false);
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [progressStatus, setProgressStatus] = useState<string | null>(null);
-  const [progressLines, setProgressLines] = useState<string[]>([]);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [reportUrl, setReportUrl] = useState<string | null>(null);
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
+
+  const hasCredentialInput =
+    email.trim().length > 0 &&
+    (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials));
 
   useEffect(() => {
     let mounted = true;
@@ -137,188 +126,30 @@ export function WarcraftLogsUploadPage() {
         if (!mounted) {
           return;
         }
-        setErrorMessage(getErrorMessage(error));
+        setWclError(getErrorMessage(error));
       }
     };
 
     void loadLoginState();
 
-    const loadLiveState = async () => {
-      try {
-        const liveState = await invoke<WclLiveUploadState>("get_wcl_live_upload_state");
-        if (!mounted) {
-          return;
-        }
-        setIsLiveUploading(liveState.isRunning);
-        if (liveState.reportUrl) {
-          setReportUrl(liveState.reportUrl);
-        }
-      } catch (_error) {
-        // ignore
-      }
-    };
-    void loadLiveState();
-
     return () => {
       mounted = false;
     };
-  }, []);
-
-  const appendProgressLine = useCallback((line: string) => {
-    setProgressLines((previous) => {
-      const next = [...previous, line];
-      if (next.length > MAX_PROGRESS_LINES) {
-        return next.slice(next.length - MAX_PROGRESS_LINES);
-      }
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const bindListeners = async () => {
-      const unlistenProgress = await listen<WclUploadProgressPayload>(
-        "wcl-upload-progress",
-        (event) => {
-          if (!isMounted) {
-            return;
-          }
-
-          const payload = event.payload;
-          setProgressPercent((previous) => Math.max(previous, payload.percent));
-          setProgressStatus(payload.message);
-          appendProgressLine(payload.message);
-        },
-      );
-
-      const unlistenComplete = await listen<WclUploadCompletePayload>(
-        "wcl-upload-complete",
-        (event) => {
-          if (!isMounted) {
-            return;
-          }
-
-          setIsUploading(false);
-          setErrorMessage(null);
-          setReportUrl(event.payload.reportUrl);
-          setProgressPercent(100);
-          setProgressStatus("Upload complete");
-          appendProgressLine(`Report ready: ${event.payload.reportUrl}`);
-        },
-      );
-
-      const unlistenError = await listen<WclUploadErrorPayload>("wcl-upload-error", (event) => {
-        if (!isMounted) {
-          return;
-        }
-
-        setIsUploading(false);
-        setErrorMessage(event.payload.message);
-        setProgressStatus("Upload failed");
-        appendProgressLine(`Error: ${event.payload.message}`);
-      });
-
-      const unlistenLiveProgress = await listen<WclUploadProgressPayload>(
-        "wcl-live-upload-progress",
-        (event) => {
-          if (!isMounted) {
-            return;
-          }
-
-          const payload = event.payload;
-          setProgressPercent((previous) => Math.max(previous, payload.percent));
-          setProgressStatus(payload.message);
-          appendProgressLine(payload.message);
-        },
-      );
-
-      const unlistenLiveComplete = await listen<WclLiveUploadCompletePayload>(
-        "wcl-live-upload-complete",
-        (event) => {
-          if (!isMounted) {
-            return;
-          }
-          setIsLiveUploading(false);
-          if (event.payload.reportUrl) {
-            setReportUrl(event.payload.reportUrl);
-          }
-          setProgressStatus("Live upload stopped");
-          setProgressPercent(100);
-        },
-      );
-
-      const unlistenLiveError = await listen<WclUploadErrorPayload>(
-        "wcl-live-upload-error",
-        (event) => {
-          if (!isMounted) {
-            return;
-          }
-          setIsLiveUploading(false);
-          setErrorMessage(event.payload.message);
-          setProgressStatus("Live upload failed");
-          appendProgressLine(`Live upload error: ${event.payload.message}`);
-        },
-      );
-
-      return () => {
-        unlistenProgress();
-        unlistenComplete();
-        unlistenError();
-        unlistenLiveProgress();
-        unlistenLiveComplete();
-        unlistenLiveError();
-      };
-    };
-
-    let disposeListeners: (() => void) | undefined;
-    void bindListeners().then((dispose) => {
-      disposeListeners = dispose;
-    });
-
-    return () => {
-      isMounted = false;
-      if (disposeListeners) {
-        disposeListeners();
-      }
-    };
-  }, [appendProgressLine]);
+  }, [setWclError]);
 
   const canStartUpload = useMemo(() => {
-    return (
-      !isUploading &&
-      !isLiveUploading &&
-      logFilePath.trim().length > 0 &&
-      email.trim().length > 0 &&
-      (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
-    );
-  }, [
-    email,
-    hasSavedCredentials,
-    isLiveUploading,
-    isUploading,
-    logFilePath,
-    password,
-    useSavedLogin,
-  ]);
+    return !isUploading && !isLiveUploading && logFilePath.trim().length > 0 && hasCredentialInput;
+  }, [hasCredentialInput, isLiveUploading, isUploading, logFilePath]);
 
   const canLoadGuilds = useMemo(() => {
-    return (
-      !isUploading &&
-      !isLiveUploading &&
-      !isLoadingGuilds &&
-      email.trim().length > 0 &&
-      (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
-    );
-  }, [
-    email,
-    hasSavedCredentials,
-    isLiveUploading,
-    isLoadingGuilds,
-    isUploading,
-    password,
-    useSavedLogin,
-  ]);
+    return !isUploading && !isLiveUploading && !isLoadingGuilds && hasCredentialInput;
+  }, [hasCredentialInput, isLiveUploading, isLoadingGuilds, isUploading]);
+
+  const canStartLiveUpload = useMemo(() => {
+    return !isUploading && !isLiveUploading && hasCredentialInput;
+  }, [hasCredentialInput, isLiveUploading, isUploading]);
+
+  const progressBarTheme = errorMessage ? "bg-rose-400/90" : "bg-emerald-400/85";
 
   const handleLoadGuilds = async () => {
     if (!canLoadGuilds) {
@@ -326,7 +157,7 @@ export function WarcraftLogsUploadPage() {
     }
 
     setIsLoadingGuilds(true);
-    setErrorMessage(null);
+    setWclError(null);
 
     try {
       const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds", {
@@ -343,13 +174,8 @@ export function WarcraftLogsUploadPage() {
       if (rememberLogin) {
         setHasSavedCredentials(true);
       }
-      appendProgressLine(
-        response.guilds.length > 0
-          ? `Loaded ${response.guilds.length} guild(s) from WarcraftLogs.`
-          : "No guild found. Upload will continue as personal logs.",
-      );
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setWclError(getErrorMessage(error));
     } finally {
       setIsLoadingGuilds(false);
     }
@@ -360,9 +186,7 @@ export function WarcraftLogsUploadPage() {
       return;
     }
 
-    const selectedStillExists = guildOptions.some(
-      (guild) => String(guild.id) === selectedGuildId,
-    );
+    const selectedStillExists = guildOptions.some((guild) => String(guild.id) === selectedGuildId);
     if (!selectedStillExists) {
       setSelectedGuildId("none");
     }
@@ -375,7 +199,7 @@ export function WarcraftLogsUploadPage() {
       setHasSavedCredentials(false);
       setPassword("");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setWclError(getErrorMessage(error));
     }
   };
 
@@ -385,19 +209,14 @@ export function WarcraftLogsUploadPage() {
         directory: false,
         multiple: false,
         defaultPath: settings.wowFolder || undefined,
-        filters: [
-          {
-            name: "Combat Logs",
-            extensions: ["txt"],
-          },
-        ],
+        filters: [{ name: "Combat Logs", extensions: ["txt"] }],
       });
 
       if (selected && typeof selected === "string") {
         setLogFilePath(selected);
       }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setWclError(getErrorMessage(error));
     }
   };
 
@@ -407,7 +226,7 @@ export function WarcraftLogsUploadPage() {
     }
 
     setIsResolvingLatestLog(true);
-    setErrorMessage(null);
+    setWclError(null);
 
     try {
       const latestLogPath = await invoke<string | null>("get_latest_combat_log_path", {
@@ -415,15 +234,13 @@ export function WarcraftLogsUploadPage() {
       });
 
       if (!latestLogPath) {
-        setErrorMessage(
-          "Could not find a WoWCombatLog*.txt file. Check your WoW Folder in Settings.",
-        );
+        setWclError("Could not find a WoWCombatLog*.txt file. Check your WoW Folder in Settings.");
         return;
       }
 
       setLogFilePath(latestLogPath);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setWclError(getErrorMessage(error));
     } finally {
       setIsResolvingLatestLog(false);
     }
@@ -434,94 +251,68 @@ export function WarcraftLogsUploadPage() {
       return;
     }
 
-    setIsUploading(true);
-    setErrorMessage(null);
-    setReportUrl(null);
-    setProgressPercent(0);
-    setProgressStatus("Starting upload...");
-    setProgressLines([]);
+    const payload: StartWclUploadPayload = {
+      logFilePath: logFilePath.trim(),
+      email: email.trim(),
+      password: password.trim() ? password : null,
+      useSavedLogin,
+      rememberLogin,
+      description,
+      region: Number(region),
+      visibility: Number(visibility),
+      guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
+    };
 
     try {
-      const result = await invoke<StartWclUploadResponse>("start_wcl_upload", {
-        request: {
-          logFilePath: logFilePath.trim(),
-          email: email.trim(),
-          password: password.trim() ? password : null,
-          useSavedLogin,
-          rememberLogin,
-          description,
-          region: Number(region),
-          visibility: Number(visibility),
-          guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
-        },
-      });
-
-      setIsUploading(false);
-      setReportUrl(result.reportUrl);
-      setProgressPercent(100);
-      setProgressStatus("Upload complete");
-    } catch (error) {
-      setIsUploading(false);
-      setErrorMessage(getErrorMessage(error));
+      await startUpload(payload);
+    } catch {
+      // error already handled in context
     }
   };
 
   const handleCancelUpload = async () => {
     try {
-      await invoke("cancel_wcl_upload");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      await cancelUpload();
+    } catch {
+      // error already handled in context
     }
   };
 
   const handleStartLiveUpload = async () => {
-    if (isUploading || isLiveUploading) {
+    if (!canStartLiveUpload) {
       return;
     }
 
     const wowFolder = settings.wowFolder.trim();
     if (!wowFolder) {
-      setErrorMessage("Set your WoW folder in Settings before starting live upload.");
+      setWclError("Set your WoW folder in Settings before starting live upload.");
       return;
     }
 
-    setErrorMessage(null);
-    setProgressPercent(0);
-    setProgressStatus("Starting live upload...");
-    setProgressLines([]);
+    const payload: StartWclLiveUploadPayload = {
+      wowFolder,
+      email: email.trim(),
+      password: password.trim() ? password : null,
+      useSavedLogin,
+      rememberLogin,
+      description,
+      region: Number(region),
+      visibility: Number(visibility),
+      guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
+    };
 
     try {
-      const result = await invoke<StartWclLiveUploadResponse>("start_wcl_live_upload", {
-        request: {
-          wowFolder,
-          email: email.trim(),
-          password: password.trim() ? password : null,
-          useSavedLogin,
-          rememberLogin,
-          description,
-          region: Number(region),
-          visibility: Number(visibility),
-          guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
-        },
-      });
-      setIsLiveUploading(true);
-      if (result.reportUrl) {
-        setReportUrl(result.reportUrl);
-      }
-      appendProgressLine("Live upload started.");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-      setIsLiveUploading(false);
+      await startLiveUpload(payload);
+    } catch {
+      // error already handled in context
     }
   };
 
   const handleStopLiveUpload = async () => {
     try {
-      await invoke("stop_wcl_live_upload");
-      setIsLiveUploading(false);
-      appendProgressLine("Stopping live upload...");
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      await stopLiveUpload();
+    } catch {
+      // error already handled in context
     }
   };
 
@@ -533,30 +324,40 @@ export function WarcraftLogsUploadPage() {
     try {
       await navigator.clipboard.writeText(reportUrl);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      setWclError(getErrorMessage(error));
+    }
+  };
+
+  const handleCopyConsole = async () => {
+    if (progressLines.length === 0) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(progressLines.join("\n"));
+    } catch (error) {
+      setWclError(getErrorMessage(error));
     }
   };
 
   return (
     <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden bg-(--surface-0)">
       <div className="flex shrink-0 items-center gap-4 border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
-              <UploadCloud className="h-4 w-4 text-neutral-300" />
-              WarcraftLogs Upload
-            </h1>
-            <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
-              Upload WoW combat logs directly from FloorPoV
-            </p>
-          </div>
+        <div>
+          <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
+            <UploadCloud className="h-4 w-4 text-neutral-300" />
+            WarcraftLogs Upload
+          </h1>
+          <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
+            Upload logs and manage live logging from FloorPoV
+          </p>
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 md:px-6">
         <div className="mx-auto w-full max-w-5xl space-y-4">
           <SettingsSection title="Account" icon={<ShieldCheck className="h-4 w-4" />}>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               <FormField id={FIELD_IDS.email} label="WarcraftLogs Email">
                 <Input
                   id={FIELD_IDS.email}
@@ -571,7 +372,7 @@ export function WarcraftLogsUploadPage() {
               <FormField
                 id={FIELD_IDS.password}
                 label="WarcraftLogs Password"
-                description="Password is used only for this upload and is not persisted by FloorPoV."
+                description="Used only for login and upload steps."
               >
                 <Input
                   id={FIELD_IDS.password}
@@ -583,7 +384,7 @@ export function WarcraftLogsUploadPage() {
               </FormField>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
                 <input
                   id={FIELD_IDS.rememberLogin}
@@ -597,7 +398,7 @@ export function WarcraftLogsUploadPage() {
               </label>
 
               {hasSavedCredentials && (
-                <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
                     <input
                       type="checkbox"
@@ -619,11 +420,10 @@ export function WarcraftLogsUploadPage() {
                 </div>
               )}
             </div>
-
           </SettingsSection>
 
-          <SettingsSection title="Upload Options" icon={<FileText className="h-4 w-4" />}>
-            <div className="grid gap-4 md:grid-cols-3">
+          <SettingsSection title="Upload Setup" icon={<FileText className="h-4 w-4" />}>
+            <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <label htmlFor={FIELD_IDS.region} className="mb-2 block text-sm text-neutral-300">
                   Region
@@ -638,10 +438,7 @@ export function WarcraftLogsUploadPage() {
               </div>
 
               <div>
-                <label
-                  htmlFor={FIELD_IDS.visibility}
-                  className="mb-2 block text-sm text-neutral-300"
-                >
+                <label htmlFor={FIELD_IDS.visibility} className="mb-2 block text-sm text-neutral-300">
                   Visibility
                 </label>
                 <SettingsSelect
@@ -657,7 +454,7 @@ export function WarcraftLogsUploadPage() {
                 id={FIELD_IDS.description}
                 label="Description"
                 description="Optional report description shown on WarcraftLogs."
-                className="md:col-span-3"
+                className="lg:col-span-3"
               >
                 <Input
                   id={FIELD_IDS.description}
@@ -669,14 +466,11 @@ export function WarcraftLogsUploadPage() {
                 />
               </FormField>
 
-              <div className="md:col-span-3">
-                <label
-                  htmlFor={FIELD_IDS.guildSelection}
-                  className="mb-2 block text-sm text-neutral-300"
-                >
+              <div className="lg:col-span-3">
+                <label htmlFor={FIELD_IDS.guildSelection} className="mb-2 block text-sm text-neutral-300">
                   Guild
                 </label>
-                <div className="grid gap-2 md:grid-cols-[1fr_auto]">
+                <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
                   <SettingsSelect
                     id={FIELD_IDS.guildSelection}
                     value={selectedGuildId}
@@ -690,14 +484,14 @@ export function WarcraftLogsUploadPage() {
                     disabled={isUploading || isLiveUploading || isLoadingGuilds}
                     onChange={setSelectedGuildId}
                   />
-                  <Button
-                    variant="secondary"
-                    onClick={handleLoadGuilds}
-                    disabled={!canLoadGuilds}
-                  >
+                  <Button variant="secondary" onClick={handleLoadGuilds} disabled={!canLoadGuilds}>
                     {isLoadingGuilds ? "Loading guilds..." : "Load Guilds"}
                   </Button>
                 </div>
+                <p className="mt-2 text-xs text-neutral-500">
+                  Load guilds after entering credentials. You can keep "No guild" for personal
+                  uploads.
+                </p>
               </div>
             </div>
           </SettingsSection>
@@ -707,12 +501,13 @@ export function WarcraftLogsUploadPage() {
               <FormField
                 id={FIELD_IDS.logFilePath}
                 label="Log File"
-                description="Choose a WoWCombatLog*.txt file to upload."
+                description="Choose a WoWCombatLog*.txt file, or resolve the latest one from your WoW folder."
               >
                 <Input
                   id={FIELD_IDS.logFilePath}
                   type="text"
                   value={logFilePath}
+                  readOnly
                   disabled={isUploading || isLiveUploading}
                   placeholder="No file selected"
                 />
@@ -737,88 +532,137 @@ export function WarcraftLogsUploadPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Upload Progress" icon={<LoaderCircle className="h-4 w-4" />}>
-            <div className="space-y-3">
-              <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
-                <div
-                  className={`h-full rounded-full transition-all duration-300 ${
-                    errorMessage ? "bg-rose-400/90" : "bg-emerald-400/85"
-                  }`}
-                  style={{ width: `${Math.min(100, Math.max(progressPercent, 0))}%` }}
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <span className="text-neutral-300">{progressStatus ?? "Idle"}</span>
-                <span className="font-mono text-neutral-400">{progressPercent}%</span>
-              </div>
-
-              <div className="max-h-52 overflow-y-auto rounded-sm border border-white/10 bg-black/20 p-3 font-mono text-xs text-neutral-300">
-                {progressLines.length === 0 ? (
-                  <p className="text-neutral-500">Upload logs will appear here.</p>
-                ) : (
-                  progressLines.map((line, index) => (
-                    <p key={`${line}-${index}`} className="leading-relaxed">
-                      {line}
-                    </p>
-                  ))
-                )}
-              </div>
-
-              {errorMessage && (
-                <p className="inline-flex items-center gap-1.5 rounded-sm border border-rose-300/30 bg-rose-500/12 px-2 py-1 text-xs text-rose-200">
-                  <XCircle className="h-3.5 w-3.5 text-rose-300" />
-                  {errorMessage}
+          <SettingsSection title="Upload Control" icon={<LoaderCircle className="h-4 w-4" />}>
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+              <div className="space-y-3">
+                <p className="text-xs text-neutral-400">
+                  One-shot upload sends the selected file once. Live upload tails your active combat
+                  log until stopped.
                 </p>
-              )}
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="primary" onClick={handleStartUpload} disabled={!canStartUpload}>
+                    {isUploading ? "Uploading..." : "Start Upload"}
+                  </Button>
+                  <Button variant="danger" onClick={handleCancelUpload} disabled={!isUploading}>
+                    Cancel Upload
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={handleStartLiveUpload}
+                    disabled={!canStartLiveUpload}
+                  >
+                    {isLiveUploading ? "Live Upload Active" : "Start Live Upload"}
+                  </Button>
+                  <Button variant="danger" onClick={handleStopLiveUpload} disabled={!isLiveUploading}>
+                    Stop Live Upload
+                  </Button>
+                </div>
+              </div>
 
-              {reportUrl && (
-                <div className="rounded-sm border border-emerald-300/30 bg-emerald-500/12 p-3 text-xs text-emerald-100">
-                  <p className="mb-2 inline-flex items-center gap-1.5 font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                    Upload complete
+              <div className="rounded-sm border border-white/10 bg-black/20 p-3">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
+                    Upload Status
                   </p>
-                  <p>
-                    <a
-                      href={reportUrl}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="break-all font-mono text-[11px] text-emerald-200 underline underline-offset-2 hover:text-emerald-100"
-                    >
-                      {reportUrl}
-                    </a>
-                  </p>
-                  <div className="mt-3">
-                    <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>
-                      Copy URL
-                    </Button>
+                  <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${progressBarTheme}`}
+                      style={{ width: `${Math.min(100, Math.max(progressPercent, 0))}%` }}
+                    />
                   </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="text-neutral-300">{progressStatus ?? "Idle"}</span>
+                    <span className="font-mono text-neutral-400">{progressPercent}%</span>
+                  </div>
+
+                  {errorMessage && (
+                    <p className="inline-flex items-center gap-1.5 rounded-sm border border-rose-300/30 bg-rose-500/12 px-2 py-1 text-xs text-rose-200">
+                      <XCircle className="h-3.5 w-3.5 text-rose-300" />
+                      {errorMessage}
+                    </p>
+                  )}
+
+                  {reportUrl && (
+                    <div className="rounded-sm border border-emerald-300/30 bg-emerald-500/12 p-3 text-xs text-emerald-100">
+                      <p className="mb-2 inline-flex items-center gap-1.5 font-medium">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                        Report URL
+                      </p>
+                      <p>
+                        <a
+                          href={reportUrl}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="break-all font-mono text-[11px] text-emerald-200 underline underline-offset-2 hover:text-emerald-100"
+                        >
+                          {reportUrl}
+                        </a>
+                      </p>
+                      <div className="mt-3">
+                        <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>
+                          Copy URL
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection title="Activity Console" icon={<Terminal className="h-4 w-4" />}>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 text-xs text-neutral-300 hover:text-neutral-100"
+                  onClick={() => setIsConsoleExpanded((current) => !current)}
+                >
+                  {isConsoleExpanded ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                  {isConsoleExpanded ? "Hide Console" : "Show Console"}
+                </button>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleCopyConsole}
+                    disabled={progressLines.length === 0}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy Logs
+                    </span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={clearProgress}
+                    disabled={progressLines.length === 0 || isUploading || isLiveUploading}
+                  >
+                    Clear Console
+                  </Button>
+                </div>
+              </div>
+
+              {isConsoleExpanded && (
+                <div className="max-h-72 overflow-y-auto rounded-sm border border-white/10 bg-black/20 p-3 font-mono text-xs text-neutral-300">
+                  {progressLines.length === 0 ? (
+                    <p className="text-neutral-500">Upload activity logs will appear here.</p>
+                  ) : (
+                    progressLines.map((line, index) => (
+                      <p key={`${line}-${index}`} className="leading-relaxed">
+                        {line}
+                      </p>
+                    ))
+                  )}
                 </div>
               )}
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button variant="primary" onClick={handleStartUpload} disabled={!canStartUpload}>
-                  {isUploading ? "Uploading..." : "Start Upload"}
-                </Button>
-                <Button variant="danger" onClick={handleCancelUpload} disabled={!isUploading}>
-                  Cancel Upload
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={handleStartLiveUpload}
-                  disabled={
-                    isUploading ||
-                    isLiveUploading ||
-                    email.trim().length === 0 ||
-                    (password.trim().length === 0 && !(useSavedLogin && hasSavedCredentials))
-                  }
-                >
-                  {isLiveUploading ? "Live Upload Active" : "Start Live Upload"}
-                </Button>
-                <Button variant="danger" onClick={handleStopLiveUpload} disabled={!isLiveUploading}>
-                  Stop Live Upload
-                </Button>
-              </div>
             </div>
           </SettingsSection>
         </div>

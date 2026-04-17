@@ -14,6 +14,7 @@ import { VideoProvider } from "../../contexts/VideoContext";
 import { RecordingProvider } from "../../contexts/RecordingContext";
 import { SettingsProvider } from "../../contexts/SettingsContext";
 import { MarkerProvider } from "../../contexts/MarkerContext";
+import { WclUploadProvider } from "../../contexts/WclUploadContext";
 import { panelVariants, smoothTransition } from "../../lib/motion";
 import { MEDIA_SECTION_RESIZE_DELTA } from "../../types/settings";
 import { type AppView } from "../../types/ui";
@@ -117,7 +118,8 @@ export function Layout() {
       <SettingsProvider>
         <MarkerProvider>
           <RecordingProvider>
-            <div className="h-screen w-screen flex flex-col bg-neutral-950 text-neutral-100 overflow-hidden">
+            <WclUploadProvider>
+              <div className="h-screen w-screen flex flex-col bg-neutral-950 text-neutral-100 overflow-hidden">
               <TitleBar />
               <div className="flex flex-1 min-h-0 flex-col gap-2 p-2 md:flex-row md:gap-3 md:p-3">
                 <Sidebar 
@@ -243,6 +245,7 @@ export function Layout() {
                 </AnimatePresence>
               </div>
             </div>
+            </WclUploadProvider>
           </RecordingProvider>
         </MarkerProvider>
       </SettingsProvider>

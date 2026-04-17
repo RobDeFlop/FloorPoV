@@ -1929,6 +1929,7 @@ fn flush_live_buffer(
             &format!("Live report created: {report_url}"),
             35,
         );
+        emit_live_report_created(app_handle, &report_url, &created_code);
         set_live_report_info(Some(report_url), Some(created_code), true);
     }
 
@@ -2613,6 +2614,14 @@ fn emit_live_upload_complete(
         report_code,
     };
     let _ = app_handle.emit("wcl-live-upload-complete", payload);
+}
+
+fn emit_live_report_created(app_handle: &AppHandle, report_url: &str, report_code: &str) {
+    let payload = WclLiveUploadCompleteEvent {
+        report_url: Some(report_url.to_string()),
+        report_code: Some(report_code.to_string()),
+    };
+    let _ = app_handle.emit("wcl-live-upload-report-created", payload);
 }
 
 fn set_live_report_info(report_url: Option<String>, report_code: Option<String>, is_running: bool) {

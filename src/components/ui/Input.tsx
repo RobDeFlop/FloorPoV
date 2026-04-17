@@ -6,6 +6,7 @@ interface InputProps {
   variant?: "default" | "filter";
   placeholder?: string;
   value?: string | number;
+  readOnly?: boolean;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void;
   disabled?: boolean;
@@ -24,6 +25,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       variant = "default",
       placeholder,
       value,
+      readOnly = false,
       onChange,
       onBlur,
       disabled = false,
@@ -51,6 +53,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         id={id}
         type={type}
         value={value}
+        readOnly={readOnly}
         onChange={onChange}
         onBlur={onBlur}
         placeholder={placeholder}
