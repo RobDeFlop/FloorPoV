@@ -1,5 +1,5 @@
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Clapperboard } from 'lucide-react';
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Clapperboard } from "lucide-react";
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();

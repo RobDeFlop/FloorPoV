@@ -11,8 +11,9 @@ import {
   Trophy,
   UploadCloud,
 } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useWclUpload } from "../../contexts/WclUploadContext";
 import { formatTime } from "../../utils/format";
@@ -33,6 +34,7 @@ interface SidebarProps {
 export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) {
   const [isRecordingBusy, setIsRecordingBusy] = useState(false);
   const [recordingAction, setRecordingAction] = useState<'starting' | 'stopping' | null>(null);
+  const [appVersion, setAppVersion] = useState<string>("...");
   const reduceMotion = useReducedMotion();
   const {
     isRecording,
@@ -119,6 +121,30 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
 
     return 'Start recording';
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadAppVersion = async () => {
+      try {
+        const version = await getVersion();
+        if (isMounted) {
+          setAppVersion(version);
+        }
+      } catch (error) {
+        console.error("Failed to load app version:", error);
+        if (isMounted) {
+          setAppVersion("unknown");
+        }
+      }
+    };
+
+    loadAppVersion();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-(--surface-1) backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
@@ -336,6 +362,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           </span>
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
+        <p className="mt-2 text-center text-[10px] tracking-[0.08em] text-neutral-500">{appVersion}</p>
       </div>
     </aside>
   );
