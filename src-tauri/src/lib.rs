@@ -102,6 +102,9 @@ pub fn run() {
             wcl_upload::fetch_wcl_guilds,
             wcl_upload::get_wcl_login_state,
             wcl_upload::clear_wcl_saved_login,
+            wcl_upload::start_wcl_live_upload,
+            wcl_upload::stop_wcl_live_upload,
+            wcl_upload::get_wcl_live_upload_state,
             hotkey::register_marker_hotkey,
             hotkey::unregister_marker_hotkey,
         ])

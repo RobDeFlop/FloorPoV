@@ -97,6 +97,16 @@ function startCommandLoop() {
           const fights = logFights.fights.map((fight) => ({
             eventCount: fight.eventCount,
             eventsString: fight.eventsString,
+            startTime: fight.startTime ?? null,
+            endTime: fight.endTime ?? null,
+            bossPercentage: fight.bossPercentage ?? null,
+            isTrash: fight.isTrash ?? null,
+            enemyNPCID: fight.enemyNPCID ?? null,
+            enemyID: fight.enemyID ?? null,
+            encounterID: fight.encounterID ?? null,
+            difficulty: fight.difficulty ?? null,
+            zoneID: fight.zoneID ?? null,
+            encounterName: fight.encounterName ?? null,
           }));
           respond({
             ok: true,

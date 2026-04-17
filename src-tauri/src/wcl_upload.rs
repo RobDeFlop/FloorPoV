@@ -6,7 +6,7 @@ use serde_json::json;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -14,7 +14,7 @@ use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager};
 use zip::write::SimpleFileOptions;
@@ -32,6 +32,9 @@ const PARSER_HARNESS_RESOURCE_PATH: &str = "bin/parser-harness.cjs";
 const NODE_RESOURCE_PATH_WINDOWS_X64: &str = "bin/node/win-x64/node.exe";
 const WCL_LOGIN_SERVICE: &str = "com.r0b.floorpov.wcl";
 const WCL_LOGIN_METADATA_FILE: &str = "wcl-login.json";
+const LIVE_POLL_INTERVAL_MS: u64 = 1_000;
+const LIVE_FLUSH_INTERVAL_MS: u64 = 5_000;
+const LIVE_MAX_READ_LINES_PER_POLL: usize = 4_000;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -44,6 +47,21 @@ pub struct StartWclUploadRequest {
     pub password: Option<String>,
     pub use_saved_login: Option<bool>,
     pub remember_login: Option<bool>,
+    pub description: Option<String>,
+    pub region: u8,
+    pub visibility: u8,
+    pub guild_id: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartWclLiveUploadRequest {
+    pub wow_folder: String,
+    pub email: String,
+    pub password: Option<String>,
+    pub use_saved_login: Option<bool>,
+    pub remember_login: Option<bool>,
+    pub description: Option<String>,
     pub region: u8,
     pub visibility: u8,
     pub guild_id: Option<u32>,
@@ -88,6 +106,21 @@ pub struct StartWclUploadResponse {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct StartWclLiveUploadResponse {
+    pub report_url: Option<String>,
+    pub report_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLiveUploadState {
+    pub is_running: bool,
+    pub report_url: Option<String>,
+    pub report_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct WclUploadProgressEvent {
     step: String,
     message: String,
@@ -107,12 +140,28 @@ struct WclUploadCompleteEvent {
     report_code: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WclLiveUploadCompleteEvent {
+    report_url: Option<String>,
+    report_code: Option<String>,
+}
+
 struct ActiveUpload {
     cancel_flag: Arc<AtomicBool>,
 }
 
+struct ActiveLiveUpload {
+    cancel_flag: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    is_running: bool,
+    report_url: Option<String>,
+    report_code: Option<String>,
+}
+
 lazy_static::lazy_static! {
     static ref ACTIVE_UPLOAD: Mutex<Option<ActiveUpload>> = Mutex::new(None);
+    static ref ACTIVE_LIVE_UPLOAD: Mutex<Option<ActiveLiveUpload>> = Mutex::new(None);
 }
 
 #[derive(Debug)]
@@ -255,11 +304,28 @@ struct ParseLinesResponse {
     error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ParserFight {
     event_count: u64,
     events_string: String,
+    #[allow(dead_code)]
+    start_time: Option<i64>,
+    #[allow(dead_code)]
+    end_time: Option<i64>,
+    boss_percentage: Option<f64>,
+    #[allow(dead_code)]
+    is_trash: Option<bool>,
+    #[allow(dead_code)]
+    enemy_npcid: Option<i64>,
+    #[allow(dead_code)]
+    enemy_id: Option<i64>,
+    encounter_id: Option<i64>,
+    #[allow(dead_code)]
+    difficulty: Option<i64>,
+    #[allow(dead_code)]
+    zone_id: Option<i64>,
+    encounter_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -309,9 +375,35 @@ struct CreateReportRequest {
     parser_version: u32,
     start_time: i64,
     end_time: i64,
+    description: String,
     region: u8,
     visibility: u8,
     guild_id: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+struct UploadSessionParams {
+    region: u8,
+    visibility: u8,
+    guild_id: Option<u32>,
+    description: String,
+}
+
+struct LiveUploadRuntime {
+    session: WclSession,
+    parser: ParserBridge,
+    parser_version: u32,
+    report_code: Option<String>,
+    segment_id: u64,
+    last_master_ids: Option<MasterIds>,
+    upload_params: UploadSessionParams,
+    wow_folder: String,
+    file_name: String,
+    log_path: PathBuf,
+    file_offset: u64,
+    buffered_lines: Vec<String>,
+    last_flush_at: Instant,
+    total_uploaded_lines: u64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -625,7 +717,7 @@ impl WclSession {
                     "serverOrRegion": request.region,
                     "visibility": request.visibility,
                     "reportTagId": serde_json::Value::Null,
-                    "description": "",
+                    "description": request.description,
                 }))
         })?;
 
@@ -687,6 +779,7 @@ impl WclSession {
         start_time: i64,
         end_time: i64,
         mythic: i64,
+        is_live_log: bool,
         zip_bytes: Vec<u8>,
     ) -> Result<u64, UploadError> {
         let endpoint = format!("{BASE_URL}/desktop-client/add-report-segment/{report_code}");
@@ -694,7 +787,7 @@ impl WclSession {
             "startTime": start_time,
             "endTime": end_time,
             "mythic": mythic,
-            "isLiveLog": false,
+            "isLiveLog": is_live_log,
             "isRealTime": false,
             "inProgressEventCount": 0,
             "segmentId": segment_id,
@@ -886,10 +979,13 @@ impl ParserBridge {
         }
     }
 
-    fn collect_fights(&mut self) -> Result<CollectFightsResponse, UploadError> {
+    fn collect_fights(
+        &mut self,
+        push_fight_if_needed: bool,
+    ) -> Result<CollectFightsResponse, UploadError> {
         let payload = self.send_action(json!({
             "action": "collect-fights",
-            "pushFightIfNeeded": true,
+            "pushFightIfNeeded": push_fight_if_needed,
             "scanningOnly": false,
         }))?;
         let parsed = serde_json::from_value::<CollectFightsResponse>(payload)?;
@@ -1154,12 +1250,247 @@ pub fn fetch_wcl_guilds(
     })
 }
 
+#[tauri::command]
+pub fn get_wcl_live_upload_state() -> Result<WclLiveUploadState, String> {
+    let state = ACTIVE_LIVE_UPLOAD
+        .lock()
+        .map_err(|error| format!("Failed to lock live upload state: {error}"))?;
+    if let Some(active) = state.as_ref() {
+        return Ok(WclLiveUploadState {
+            is_running: active.is_running,
+            report_url: active.report_url.clone(),
+            report_code: active.report_code.clone(),
+        });
+    }
+
+    Ok(WclLiveUploadState {
+        is_running: false,
+        report_url: None,
+        report_code: None,
+    })
+}
+
+#[tauri::command]
+pub fn start_wcl_live_upload(
+    app_handle: AppHandle,
+    request: StartWclLiveUploadRequest,
+) -> Result<StartWclLiveUploadResponse, String> {
+    validate_live_request(&request)?;
+
+    let mut state = ACTIVE_LIVE_UPLOAD
+        .lock()
+        .map_err(|error| format!("Failed to lock live upload state: {error}"))?;
+    if state.is_some() {
+        return Err("WarcraftLogs live upload is already running".to_string());
+    }
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    let cancel_for_worker = Arc::clone(&cancel_flag);
+    let app_handle_for_worker = app_handle.clone();
+
+    let handle = std::thread::spawn(move || {
+        let worker_handle_clone = app_handle_for_worker.clone();
+        let live_result = run_live_upload(app_handle_for_worker, request, cancel_for_worker);
+        if let Err(error) = live_result {
+            if let Ok(mut state) = ACTIVE_LIVE_UPLOAD.lock() {
+                if let Some(active) = state.as_mut() {
+                    active.is_running = false;
+                }
+            }
+            emit_live_upload_error(&worker_handle_clone, &error.to_string());
+            set_live_report_info(None, None, false);
+        }
+
+        if let Ok(mut state) = ACTIVE_LIVE_UPLOAD.lock() {
+            *state = None;
+        }
+    });
+
+    *state = Some(ActiveLiveUpload {
+        cancel_flag,
+        handle: Some(handle),
+        is_running: true,
+        report_url: None,
+        report_code: None,
+    });
+
+    Ok(StartWclLiveUploadResponse {
+        report_url: None,
+        report_code: None,
+    })
+}
+
+#[tauri::command]
+pub fn stop_wcl_live_upload() -> Result<(), String> {
+    let handle_to_join = {
+        let mut state = ACTIVE_LIVE_UPLOAD
+            .lock()
+            .map_err(|error| format!("Failed to lock live upload state: {error}"))?;
+        let Some(active) = state.as_mut() else {
+            return Err("No WarcraftLogs live upload is currently running".to_string());
+        };
+
+        active.cancel_flag.store(true, Ordering::SeqCst);
+        active.is_running = false;
+        active.handle.take()
+    };
+
+    if let Some(handle) = handle_to_join {
+        let _ = handle.join();
+    }
+
+    let mut state = ACTIVE_LIVE_UPLOAD
+        .lock()
+        .map_err(|error| format!("Failed to lock live upload state: {error}"))?;
+    *state = None;
+    Ok(())
+}
+
+fn run_live_upload(
+    app_handle: AppHandle,
+    request: StartWclLiveUploadRequest,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<(), UploadError> {
+    set_live_report_info(None, None, true);
+    let normalized_description = normalize_report_description(request.description.as_deref());
+
+    let remember_login = request.remember_login.unwrap_or(false);
+    let resolved_login = resolve_login_credentials(
+        &app_handle,
+        request.email.trim(),
+        request.password.clone(),
+        request.use_saved_login.unwrap_or(false),
+        remember_login,
+    )?;
+
+    let wow_folder = request.wow_folder.trim();
+    if wow_folder.is_empty() {
+        return Err(UploadError::Message("WoW folder is required".to_string()));
+    }
+
+    let log_path = find_latest_combat_log_path(wow_folder)
+        .map_err(UploadError::Message)?
+        .ok_or_else(|| UploadError::Message("No WoWCombatLog*.txt file found".to_string()))?;
+
+    let file_name = log_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| UploadError::Message("Invalid combat log filename".to_string()))?
+        .to_string();
+
+    emit_live_upload_progress(&app_handle, "live", "Starting live upload session...", 2);
+    check_cancelled(&cancel_flag)?;
+
+    let node_binary_path = resolve_node_binary_path(&app_handle)?;
+    check_node_runtime(&node_binary_path)?;
+
+    let client_version = resolve_client_version();
+    let session = WclSession::new(client_version)?;
+    emit_live_upload_progress(&app_handle, "auth", "Logging in to WarcraftLogs...", 4);
+    let login_username = session.login(&resolved_login.email, &resolved_login.password)?;
+    if remember_login {
+        save_login_credentials(&app_handle, &resolved_login.email, &resolved_login.password)?;
+    }
+    if let Some(user_name) = login_username {
+        emit_live_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 6);
+    }
+
+    emit_live_upload_progress(
+        &app_handle,
+        "parser",
+        "Fetching latest WarcraftLogs parser...",
+        8,
+    );
+    let parser_assets = session.fetch_parser_assets()?;
+    let parser_harness_path = resolve_parser_harness_path(&app_handle)?;
+    let mut parser = ParserBridge::new(
+        &node_binary_path,
+        &parser_harness_path,
+        &parser_assets.gamedata_code,
+        &parser_assets.parser_code,
+    )?;
+    parser.clear_state()?;
+    if let Some(start_date) = parse_start_date_from_filename(&file_name) {
+        parser.set_start_date(&start_date)?;
+    }
+
+    let initial_offset = std::fs::metadata(&log_path)?.len();
+    let mut runtime = LiveUploadRuntime {
+        session,
+        parser,
+        parser_version: parser_assets.parser_version,
+        report_code: None,
+        segment_id: 1,
+        last_master_ids: None,
+        upload_params: UploadSessionParams {
+            region: request.region,
+            visibility: request.visibility,
+            guild_id: request.guild_id,
+            description: normalized_description,
+        },
+        wow_folder: wow_folder.to_string(),
+        file_name,
+        log_path,
+        file_offset: initial_offset,
+        buffered_lines: Vec::new(),
+        last_flush_at: Instant::now(),
+        total_uploaded_lines: 0,
+    };
+
+    emit_live_upload_progress(
+        &app_handle,
+        "live",
+        "Live upload is active. Waiting for new combat log lines...",
+        10,
+    );
+
+    loop {
+        if cancel_flag.load(Ordering::SeqCst) {
+            break;
+        }
+
+        read_live_log_lines(&mut runtime)?;
+
+        let should_flush = runtime.buffered_lines.len() >= BATCH_SIZE
+            || (!runtime.buffered_lines.is_empty()
+                && runtime.last_flush_at.elapsed()
+                    >= Duration::from_millis(LIVE_FLUSH_INTERVAL_MS));
+
+        if should_flush {
+            flush_live_buffer(&app_handle, &mut runtime, false)?;
+        }
+
+        std::thread::sleep(Duration::from_millis(LIVE_POLL_INTERVAL_MS));
+    }
+
+    if !runtime.buffered_lines.is_empty() {
+        flush_live_buffer(&app_handle, &mut runtime, true)?;
+    }
+
+    if let Some(report_code) = runtime.report_code.clone() {
+        runtime.session.terminate_report(&report_code)?;
+        let report_url = format!("https://www.warcraftlogs.com/reports/{report_code}");
+        emit_live_upload_complete(
+            &app_handle,
+            Some(report_url.clone()),
+            Some(report_code.clone()),
+        );
+        set_live_report_info(Some(report_url), Some(report_code), false);
+    } else {
+        emit_live_upload_complete(&app_handle, None, None);
+        set_live_report_info(None, None, false);
+    }
+
+    Ok(())
+}
+
 fn run_upload(
     app_handle: AppHandle,
     request: StartWclUploadRequest,
     cancel_flag: Arc<AtomicBool>,
 ) -> Result<StartWclUploadResponse, UploadError> {
     let remember_login = request.remember_login.unwrap_or(false);
+    let normalized_description = normalize_report_description(request.description.as_deref());
     let resolved_login = resolve_login_credentials(
         &app_handle,
         request.email.trim(),
@@ -1303,6 +1634,7 @@ fn run_upload(
                     &session,
                     &mut parser,
                     &request,
+                    &normalized_description,
                     resolved_guild_id,
                     &file_name,
                     &batch_lines,
@@ -1328,6 +1660,7 @@ fn run_upload(
                 &session,
                 &mut parser,
                 &request,
+                &normalized_description,
                 resolved_guild_id,
                 &file_name,
                 &batch_lines,
@@ -1387,6 +1720,7 @@ fn process_batch(
     session: &WclSession,
     parser: &mut ParserBridge,
     request: &StartWclUploadRequest,
+    description: &str,
     resolved_guild_id: Option<u32>,
     file_name: &str,
     lines: &[String],
@@ -1401,7 +1735,7 @@ fn process_batch(
     check_cancelled(cancel_flag)?;
 
     parser.parse_lines(lines, request.region)?;
-    let fights_data = parser.collect_fights()?;
+    let fights_data = parser.collect_fights(true)?;
 
     if fights_data.fights.is_empty() {
         emit_upload_progress(
@@ -1422,6 +1756,7 @@ fn process_batch(
             parser_version,
             start_time: fights_data.start_time,
             end_time: fights_data.end_time,
+            description: description.to_string(),
             region: request.region,
             visibility: request.visibility,
             guild_id: resolved_guild_id,
@@ -1493,6 +1828,7 @@ fn process_batch(
         fights_data.start_time,
         fights_data.end_time,
         fights_data.mythic,
+        false,
         fights_zip,
     )?;
 
@@ -1504,6 +1840,189 @@ fn process_batch(
         &format!("Batch {batch_number}/{total_batches}: uploaded {total_events} events"),
         24,
     );
+
+    Ok(())
+}
+
+fn flush_live_buffer(
+    app_handle: &AppHandle,
+    runtime: &mut LiveUploadRuntime,
+    push_fight_if_needed: bool,
+) -> Result<(), UploadError> {
+    if runtime.buffered_lines.is_empty() {
+        return Ok(());
+    }
+
+    runtime
+        .parser
+        .parse_lines(&runtime.buffered_lines, runtime.upload_params.region)?;
+    let mut fights_data = runtime.parser.collect_fights(push_fight_if_needed)?;
+    let original_fights = fights_data.fights.clone();
+
+    let original_count = fights_data.fights.len();
+    fights_data.fights.retain(is_encounter_fight_candidate);
+    let filtered_count = fights_data.fights.len();
+    if filtered_count != original_count {
+        emit_live_upload_progress(
+            app_handle,
+            "live",
+            &format!("Encounter filter kept {filtered_count}/{original_count} fights"),
+            34,
+        );
+    }
+
+    if fights_data.fights.is_empty() && !original_fights.is_empty() {
+        let non_challenge_fights = original_fights
+            .iter()
+            .filter(|fight| !fight.events_string.contains("CHALLENGE_MODE_START"))
+            .cloned()
+            .collect::<Vec<ParserFight>>();
+
+        fights_data.fights = if non_challenge_fights.is_empty() {
+            original_fights
+        } else {
+            non_challenge_fights
+        };
+
+        emit_live_upload_progress(
+            app_handle,
+            "live",
+            "Encounter markers missing in this flush. Applying safe fallback to keep upload moving.",
+            34,
+        );
+    }
+
+    if fights_data.fights.is_empty() {
+        runtime.parser.clear_fights()?;
+        runtime.buffered_lines.clear();
+        runtime.last_flush_at = Instant::now();
+        return Ok(());
+    }
+
+    emit_live_upload_progress(
+        app_handle,
+        "live",
+        &format!(
+            "Live flush encounter fights: {} (pushFightIfNeeded={})",
+            fights_data.fights.len(),
+            push_fight_if_needed
+        ),
+        33,
+    );
+
+    if runtime.report_code.is_none() {
+        let created_code = runtime.session.create_report(&CreateReportRequest {
+            file_name: runtime.file_name.clone(),
+            parser_version: runtime.parser_version,
+            start_time: fights_data.start_time,
+            end_time: fights_data.end_time,
+            description: runtime.upload_params.description.clone(),
+            region: runtime.upload_params.region,
+            visibility: runtime.upload_params.visibility,
+            guild_id: runtime.upload_params.guild_id,
+        })?;
+        runtime.report_code = Some(created_code.clone());
+        let report_url = format!("https://www.warcraftlogs.com/reports/{created_code}");
+        emit_live_upload_progress(
+            app_handle,
+            "live",
+            &format!("Live report created: {report_url}"),
+            35,
+        );
+        set_live_report_info(Some(report_url), Some(created_code), true);
+    }
+
+    let code = runtime
+        .report_code
+        .as_ref()
+        .ok_or_else(|| UploadError::Message("Live upload missing report code".to_string()))?;
+
+    let master_info = runtime.parser.collect_master_info()?;
+    let current_master_ids = MasterIds {
+        actor_id: master_info.last_assigned_actor_id,
+        ability_id: master_info.last_assigned_ability_id,
+        tuple_id: master_info.last_assigned_tuple_id,
+        pet_id: master_info.last_assigned_pet_id,
+    };
+
+    if Some(current_master_ids) != runtime.last_master_ids {
+        let master_payload = build_master_table_string(
+            &master_info,
+            fights_data.log_version,
+            fights_data.game_version,
+        );
+        let master_zip = make_zip_payload(&master_payload)?;
+        runtime
+            .session
+            .set_master_table(code, runtime.segment_id, master_zip)?;
+        runtime.last_master_ids = Some(current_master_ids);
+    }
+
+    let fights_payload = build_fights_string(&fights_data);
+    let fights_zip = make_zip_payload(&fights_payload)?;
+    runtime.segment_id = runtime.session.add_segment(
+        code,
+        runtime.segment_id,
+        fights_data.start_time,
+        fights_data.end_time,
+        fights_data.mythic,
+        false,
+        fights_zip,
+    )?;
+
+    runtime.total_uploaded_lines += runtime.buffered_lines.len() as u64;
+    runtime.buffered_lines.clear();
+    runtime.last_flush_at = Instant::now();
+    runtime.parser.clear_fights()?;
+
+    emit_live_upload_progress(
+        app_handle,
+        "live",
+        &format!(
+            "Uploaded live segment. Total lines sent: {}",
+            runtime.total_uploaded_lines
+        ),
+        60,
+    );
+
+    Ok(())
+}
+
+fn read_live_log_lines(runtime: &mut LiveUploadRuntime) -> Result<(), UploadError> {
+    if let Some(latest_path) =
+        find_latest_combat_log_path(&runtime.wow_folder).map_err(UploadError::Message)?
+    {
+        if latest_path != runtime.log_path {
+            runtime.log_path = latest_path;
+            runtime.file_offset = 0;
+        }
+    }
+
+    let mut file = File::open(&runtime.log_path)?;
+    let file_length = file.metadata()?.len();
+    if file_length < runtime.file_offset {
+        runtime.file_offset = 0;
+    }
+    file.seek(SeekFrom::Start(runtime.file_offset))?;
+
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut read_count = 0usize;
+    loop {
+        if read_count >= LIVE_MAX_READ_LINES_PER_POLL {
+            break;
+        }
+        line.clear();
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 {
+            break;
+        }
+        runtime.file_offset = runtime.file_offset.saturating_add(bytes_read as u64);
+        runtime
+            .buffered_lines
+            .push(line.trim_end_matches(['\r', '\n']).to_string());
+        read_count += 1;
+    }
 
     Ok(())
 }
@@ -1573,6 +2092,32 @@ fn build_fights_string(fights_data: &CollectFightsResponse) -> String {
     )
 }
 
+fn is_encounter_fight_candidate(fight: &ParserFight) -> bool {
+    if fight.events_string.contains("ENCOUNTER_START") {
+        return true;
+    }
+
+    if fight.encounter_id.unwrap_or(0) > 0 {
+        return true;
+    }
+
+    let has_named_encounter = fight
+        .encounter_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .is_some_and(|name| !name.eq_ignore_ascii_case("Unknown"));
+    if has_named_encounter {
+        return true;
+    }
+
+    if fight.boss_percentage.is_some() {
+        return true;
+    }
+
+    false
+}
+
 fn count_file_lines(path: &Path, cancel_flag: &Arc<AtomicBool>) -> Result<u64, UploadError> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -1601,6 +2146,14 @@ fn parse_start_date_from_filename(file_name: &str) -> Option<String> {
     let year = 2000 + year_suffix;
 
     Some(format!("{month}/{day}/{year}"))
+}
+
+fn normalize_report_description(description: Option<&str>) -> String {
+    description
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn resolve_client_version() -> String {
@@ -2034,9 +2587,77 @@ fn emit_upload_error(app_handle: &AppHandle, message: &str) {
     let _ = app_handle.emit("wcl-upload-error", payload);
 }
 
+fn emit_live_upload_error(app_handle: &AppHandle, message: &str) {
+    let payload = WclUploadErrorEvent {
+        message: message.to_string(),
+    };
+    let _ = app_handle.emit("wcl-live-upload-error", payload);
+}
+
+fn emit_live_upload_progress(app_handle: &AppHandle, step: &str, message: &str, percent: u8) {
+    let payload = WclUploadProgressEvent {
+        step: step.to_string(),
+        message: message.to_string(),
+        percent,
+    };
+    let _ = app_handle.emit("wcl-live-upload-progress", payload);
+}
+
+fn emit_live_upload_complete(
+    app_handle: &AppHandle,
+    report_url: Option<String>,
+    report_code: Option<String>,
+) {
+    let payload = WclLiveUploadCompleteEvent {
+        report_url,
+        report_code,
+    };
+    let _ = app_handle.emit("wcl-live-upload-complete", payload);
+}
+
+fn set_live_report_info(report_url: Option<String>, report_code: Option<String>, is_running: bool) {
+    if let Ok(mut state) = ACTIVE_LIVE_UPLOAD.lock() {
+        if let Some(active) = state.as_mut() {
+            active.report_url = report_url;
+            active.report_code = report_code;
+            active.is_running = is_running;
+        }
+    }
+}
+
 fn validate_request(request: &StartWclUploadRequest) -> Result<(), String> {
     if request.log_file_path.trim().is_empty() {
         return Err("Please choose a combat log file".to_string());
+    }
+
+    if request.email.trim().is_empty() {
+        return Err("WarcraftLogs email is required".to_string());
+    }
+
+    if request.password.is_none() && !request.use_saved_login.unwrap_or(false) {
+        return Err("WarcraftLogs password is required".to_string());
+    }
+
+    if let Some(password) = request.password.as_ref() {
+        if password.trim().is_empty() {
+            return Err("WarcraftLogs password is required".to_string());
+        }
+    }
+
+    if !(1..=5).contains(&request.region) {
+        return Err("Region must be one of: 1 (US), 2 (EU), 3 (KR), 4 (TW), 5 (CN)".to_string());
+    }
+
+    if request.visibility > 2 {
+        return Err("Visibility must be one of: 0 (Public), 1 (Private), 2 (Unlisted)".to_string());
+    }
+
+    Ok(())
+}
+
+fn validate_live_request(request: &StartWclLiveUploadRequest) -> Result<(), String> {
+    if request.wow_folder.trim().is_empty() {
+        return Err("WoW folder is required for live upload".to_string());
     }
 
     if request.email.trim().is_empty() {

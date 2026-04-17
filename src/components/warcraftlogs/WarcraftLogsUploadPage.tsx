@@ -36,6 +36,19 @@ interface StartWclUploadResponse {
   reportUrl: string;
 }
 
+interface StartWclLiveUploadResponse {
+  reportUrl: string | null;
+}
+
+interface WclLiveUploadState {
+  isRunning: boolean;
+  reportUrl: string | null;
+}
+
+interface WclLiveUploadCompletePayload {
+  reportUrl: string | null;
+}
+
 interface WclGuild {
   id: number;
   name: string;
@@ -73,6 +86,7 @@ const GUILD_NONE_OPTION: SettingsSelectOption = {
 const FIELD_IDS = {
   email: "wcl-email",
   password: "wcl-password",
+  description: "wcl-description",
   region: "wcl-region",
   visibility: "wcl-visibility",
   guildSelection: "wcl-guild-selection",
@@ -90,12 +104,14 @@ export function WarcraftLogsUploadPage() {
   const [useSavedLogin, setUseSavedLogin] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(true);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [description, setDescription] = useState("");
   const [region, setRegion] = useState("2");
-  const [visibility, setVisibility] = useState("2");
+  const [visibility, setVisibility] = useState("0");
   const [guildOptions, setGuildOptions] = useState<WclGuild[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("none");
   const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLiveUploading, setIsLiveUploading] = useState(false);
   const [isResolvingLatestLog, setIsResolvingLatestLog] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressStatus, setProgressStatus] = useState<string | null>(null);
@@ -126,6 +142,22 @@ export function WarcraftLogsUploadPage() {
     };
 
     void loadLoginState();
+
+    const loadLiveState = async () => {
+      try {
+        const liveState = await invoke<WclLiveUploadState>("get_wcl_live_upload_state");
+        if (!mounted) {
+          return;
+        }
+        setIsLiveUploading(liveState.isRunning);
+        if (liveState.reportUrl) {
+          setReportUrl(liveState.reportUrl);
+        }
+      } catch (_error) {
+        // ignore
+      }
+    };
+    void loadLiveState();
 
     return () => {
       mounted = false;
@@ -187,10 +219,55 @@ export function WarcraftLogsUploadPage() {
         appendProgressLine(`Error: ${event.payload.message}`);
       });
 
+      const unlistenLiveProgress = await listen<WclUploadProgressPayload>(
+        "wcl-live-upload-progress",
+        (event) => {
+          if (!isMounted) {
+            return;
+          }
+
+          const payload = event.payload;
+          setProgressPercent((previous) => Math.max(previous, payload.percent));
+          setProgressStatus(payload.message);
+          appendProgressLine(payload.message);
+        },
+      );
+
+      const unlistenLiveComplete = await listen<WclLiveUploadCompletePayload>(
+        "wcl-live-upload-complete",
+        (event) => {
+          if (!isMounted) {
+            return;
+          }
+          setIsLiveUploading(false);
+          if (event.payload.reportUrl) {
+            setReportUrl(event.payload.reportUrl);
+          }
+          setProgressStatus("Live upload stopped");
+          setProgressPercent(100);
+        },
+      );
+
+      const unlistenLiveError = await listen<WclUploadErrorPayload>(
+        "wcl-live-upload-error",
+        (event) => {
+          if (!isMounted) {
+            return;
+          }
+          setIsLiveUploading(false);
+          setErrorMessage(event.payload.message);
+          setProgressStatus("Live upload failed");
+          appendProgressLine(`Live upload error: ${event.payload.message}`);
+        },
+      );
+
       return () => {
         unlistenProgress();
         unlistenComplete();
         unlistenError();
+        unlistenLiveProgress();
+        unlistenLiveComplete();
+        unlistenLiveError();
       };
     };
 
@@ -210,20 +287,38 @@ export function WarcraftLogsUploadPage() {
   const canStartUpload = useMemo(() => {
     return (
       !isUploading &&
+      !isLiveUploading &&
       logFilePath.trim().length > 0 &&
       email.trim().length > 0 &&
       (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
     );
-  }, [email, hasSavedCredentials, isUploading, logFilePath, password, useSavedLogin]);
+  }, [
+    email,
+    hasSavedCredentials,
+    isLiveUploading,
+    isUploading,
+    logFilePath,
+    password,
+    useSavedLogin,
+  ]);
 
   const canLoadGuilds = useMemo(() => {
     return (
       !isUploading &&
+      !isLiveUploading &&
       !isLoadingGuilds &&
       email.trim().length > 0 &&
       (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials))
     );
-  }, [email, hasSavedCredentials, isLoadingGuilds, isUploading, password, useSavedLogin]);
+  }, [
+    email,
+    hasSavedCredentials,
+    isLiveUploading,
+    isLoadingGuilds,
+    isUploading,
+    password,
+    useSavedLogin,
+  ]);
 
   const handleLoadGuilds = async () => {
     if (!canLoadGuilds) {
@@ -354,6 +449,7 @@ export function WarcraftLogsUploadPage() {
           password: password.trim() ? password : null,
           useSavedLogin,
           rememberLogin,
+          description,
           region: Number(region),
           visibility: Number(visibility),
           guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
@@ -373,6 +469,57 @@ export function WarcraftLogsUploadPage() {
   const handleCancelUpload = async () => {
     try {
       await invoke("cancel_wcl_upload");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleStartLiveUpload = async () => {
+    if (isUploading || isLiveUploading) {
+      return;
+    }
+
+    const wowFolder = settings.wowFolder.trim();
+    if (!wowFolder) {
+      setErrorMessage("Set your WoW folder in Settings before starting live upload.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setProgressPercent(0);
+    setProgressStatus("Starting live upload...");
+    setProgressLines([]);
+
+    try {
+      const result = await invoke<StartWclLiveUploadResponse>("start_wcl_live_upload", {
+        request: {
+          wowFolder,
+          email: email.trim(),
+          password: password.trim() ? password : null,
+          useSavedLogin,
+          rememberLogin,
+          description,
+          region: Number(region),
+          visibility: Number(visibility),
+          guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
+        },
+      });
+      setIsLiveUploading(true);
+      if (result.reportUrl) {
+        setReportUrl(result.reportUrl);
+      }
+      appendProgressLine("Live upload started.");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      setIsLiveUploading(false);
+    }
+  };
+
+  const handleStopLiveUpload = async () => {
+    try {
+      await invoke("stop_wcl_live_upload");
+      setIsLiveUploading(false);
+      appendProgressLine("Stopping live upload...");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -416,7 +563,7 @@ export function WarcraftLogsUploadPage() {
                   type="email"
                   placeholder="you@example.com"
                   value={email}
-                  disabled={isUploading}
+                  disabled={isUploading || isLiveUploading}
                   onChange={(event) => setEmail(event.target.value)}
                 />
               </FormField>
@@ -430,7 +577,7 @@ export function WarcraftLogsUploadPage() {
                   id={FIELD_IDS.password}
                   type="password"
                   value={password}
-                  disabled={isUploading}
+                  disabled={isUploading || isLiveUploading}
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </FormField>
@@ -443,7 +590,7 @@ export function WarcraftLogsUploadPage() {
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
                   checked={rememberLogin}
-                  disabled={isUploading}
+                  disabled={isUploading || isLiveUploading}
                   onChange={(event) => setRememberLogin(event.target.checked)}
                 />
                 Remember login in secure OS keychain
@@ -456,7 +603,7 @@ export function WarcraftLogsUploadPage() {
                       type="checkbox"
                       className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
                       checked={useSavedLogin}
-                      disabled={isUploading}
+                      disabled={isUploading || isLiveUploading}
                       onChange={(event) => setUseSavedLogin(event.target.checked)}
                     />
                     Use saved login
@@ -465,13 +612,14 @@ export function WarcraftLogsUploadPage() {
                     variant="secondary"
                     size="sm"
                     onClick={handleClearSavedLogin}
-                    disabled={isUploading}
+                    disabled={isUploading || isLiveUploading}
                   >
                     Forget saved login
                   </Button>
                 </div>
               )}
             </div>
+
           </SettingsSection>
 
           <SettingsSection title="Upload Options" icon={<FileText className="h-4 w-4" />}>
@@ -484,7 +632,7 @@ export function WarcraftLogsUploadPage() {
                   id={FIELD_IDS.region}
                   value={region}
                   options={REGION_OPTIONS}
-                  disabled={isUploading}
+                  disabled={isUploading || isLiveUploading}
                   onChange={setRegion}
                 />
               </div>
@@ -500,10 +648,26 @@ export function WarcraftLogsUploadPage() {
                   id={FIELD_IDS.visibility}
                   value={visibility}
                   options={VISIBILITY_OPTIONS}
-                  disabled={isUploading}
+                  disabled={isUploading || isLiveUploading}
                   onChange={setVisibility}
                 />
               </div>
+
+              <FormField
+                id={FIELD_IDS.description}
+                label="Description"
+                description="Optional report description shown on WarcraftLogs."
+                className="md:col-span-3"
+              >
+                <Input
+                  id={FIELD_IDS.description}
+                  type="text"
+                  value={description}
+                  disabled={isUploading || isLiveUploading}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Optional description"
+                />
+              </FormField>
 
               <div className="md:col-span-3">
                 <label
@@ -523,7 +687,7 @@ export function WarcraftLogsUploadPage() {
                         label: guild.name,
                       })),
                     ]}
-                    disabled={isUploading || isLoadingGuilds}
+                    disabled={isUploading || isLiveUploading || isLoadingGuilds}
                     onChange={setSelectedGuildId}
                   />
                   <Button
@@ -549,19 +713,23 @@ export function WarcraftLogsUploadPage() {
                   id={FIELD_IDS.logFilePath}
                   type="text"
                   value={logFilePath}
-                  disabled
+                  disabled={isUploading || isLiveUploading}
                   placeholder="No file selected"
                 />
               </FormField>
 
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" onClick={handleBrowseLogFile} disabled={isUploading}>
+                <Button
+                  variant="secondary"
+                  onClick={handleBrowseLogFile}
+                  disabled={isUploading || isLiveUploading}
+                >
                   Browse File
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={handleResolveLatestLog}
-                  disabled={isUploading || isResolvingLatestLog}
+                  disabled={isUploading || isLiveUploading || isResolvingLatestLog}
                 >
                   {isResolvingLatestLog ? "Finding latest log..." : "Use Latest WoW Log"}
                 </Button>
@@ -634,6 +802,21 @@ export function WarcraftLogsUploadPage() {
                 </Button>
                 <Button variant="danger" onClick={handleCancelUpload} disabled={!isUploading}>
                   Cancel Upload
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleStartLiveUpload}
+                  disabled={
+                    isUploading ||
+                    isLiveUploading ||
+                    email.trim().length === 0 ||
+                    (password.trim().length === 0 && !(useSavedLogin && hasSavedCredentials))
+                  }
+                >
+                  {isLiveUploading ? "Live Upload Active" : "Start Live Upload"}
+                </Button>
+                <Button variant="danger" onClick={handleStopLiveUpload} disabled={!isLiveUploading}>
+                  Stop Live Upload
                 </Button>
               </div>
             </div>
