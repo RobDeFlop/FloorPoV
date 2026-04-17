@@ -9,6 +9,8 @@ import { GameEvent, RecordingEncounterMetadata } from "../../types/events";
 import { formatTime } from "../../utils/format";
 import { AnimatedTooltip } from "../ui/AnimatedTooltip";
 
+const EVENT_SEEK_OFFSET_SECONDS = 5;
+
 interface EncounterTooltipProps {
   encounter: RecordingEncounterMetadata;
   x: number;
@@ -46,7 +48,8 @@ export function GameEvents() {
   const [tooltipX, setTooltipX] = useState(0);
 
   const handleEventClick = (timestamp: number) => {
-    seek(timestamp);
+    const seekTime = Math.max(0, timestamp - EVENT_SEEK_OFFSET_SECONDS);
+    seek(seekTime);
   };
 
   const handleEventHover = (event: GameEvent, e: React.MouseEvent) => {
