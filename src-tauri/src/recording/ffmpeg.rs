@@ -48,7 +48,7 @@ pub(crate) fn resolve_ffmpeg_binary_path(app_handle: &AppHandle) -> Result<PathB
     ))
 }
 
-pub(crate) fn select_video_encoder(ffmpeg_binary_path: &Path) -> (String, Option<String>) {
+fn load_ffmpeg_encoders_output(ffmpeg_binary_path: &Path) -> String {
     let mut command = Command::new(ffmpeg_binary_path);
     #[cfg(target_os = "windows")]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -59,26 +59,99 @@ pub(crate) fn select_video_encoder(ffmpeg_binary_path: &Path) -> (String, Option
         .stderr(Stdio::null())
         .output();
 
-    let encoders_output = match output {
+    match output {
         Ok(result) => String::from_utf8(result.stdout)
             .unwrap_or_default()
             .to_lowercase(),
         Err(_) => String::new(),
-    };
+    }
+}
+
+pub(crate) fn list_available_video_encoders(ffmpeg_binary_path: &Path) -> Vec<String> {
+    let encoders_output = load_ffmpeg_encoders_output(ffmpeg_binary_path);
+    let mut available_encoders: Vec<String> = Vec::new();
 
     if encoders_output.contains(" h264_nvenc") {
-        return ("h264_nvenc".to_string(), Some("p3".to_string()));
+        available_encoders.push("h264_nvenc".to_string());
     }
 
     if encoders_output.contains(" h264_qsv") {
-        return ("h264_qsv".to_string(), None);
+        available_encoders.push("h264_qsv".to_string());
     }
 
     if encoders_output.contains(" h264_amf") {
+        available_encoders.push("h264_amf".to_string());
+    }
+
+    if encoders_output.contains(" libx264") || available_encoders.is_empty() {
+        available_encoders.push("libx264".to_string());
+    }
+
+    available_encoders
+}
+
+pub(crate) fn video_encoder_label(encoder: &str) -> &'static str {
+    match encoder {
+        "h264_nvenc" => "NVIDIA NVENC",
+        "h264_qsv" => "Intel Quick Sync",
+        "h264_amf" => "AMD AMF",
+        "libx264" => "CPU (libx264)",
+        _ => "Unknown encoder",
+    }
+}
+
+pub(crate) fn select_video_encoder(
+    ffmpeg_binary_path: &Path,
+    video_quality: &str,
+    video_encoder_preference: &str,
+) -> (String, Option<String>) {
+    let available_encoders = list_available_video_encoders(ffmpeg_binary_path);
+
+    let resolved_encoder = if video_encoder_preference != "auto"
+        && available_encoders
+            .iter()
+            .any(|encoder| encoder == video_encoder_preference)
+    {
+        video_encoder_preference.to_string()
+    } else if available_encoders
+        .iter()
+        .any(|encoder| encoder == "h264_nvenc")
+    {
+        "h264_nvenc".to_string()
+    } else if available_encoders
+        .iter()
+        .any(|encoder| encoder == "h264_qsv")
+    {
+        "h264_qsv".to_string()
+    } else if available_encoders
+        .iter()
+        .any(|encoder| encoder == "h264_amf")
+    {
+        "h264_amf".to_string()
+    } else {
+        "libx264".to_string()
+    };
+
+    if resolved_encoder == "h264_nvenc" {
+        let preset = if video_quality == "ultra" { "p5" } else { "p3" };
+        return ("h264_nvenc".to_string(), Some(preset.to_string()));
+    }
+
+    if resolved_encoder == "h264_qsv" {
+        return ("h264_qsv".to_string(), None);
+    }
+
+    if resolved_encoder == "h264_amf" {
         return ("h264_amf".to_string(), None);
     }
 
-    ("libx264".to_string(), Some("superfast".to_string()))
+    let preset = if video_quality == "ultra" {
+        "faster"
+    } else {
+        "superfast"
+    };
+
+    ("libx264".to_string(), Some(preset.to_string()))
 }
 
 pub(crate) fn parse_ffmpeg_speed(line: &str) -> Option<f64> {

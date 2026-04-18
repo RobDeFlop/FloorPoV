@@ -1,10 +1,12 @@
 export type VideoQuality = 'low' | 'medium' | 'high' | 'ultra';
+export type VideoEncoderPreference = 'auto' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'libx264';
 export type FrameRate = 30 | 60;
 export type MarkerHotkey = 'F9' | 'F10' | 'F11' | 'F12' | 'none';
 export type CaptureSource = 'monitor' | 'window';
 
 export interface RecordingSettings {
   videoQuality: VideoQuality;
+  videoEncoderPreference: VideoEncoderPreference;
   frameRate: FrameRate;
   captureSource: CaptureSource;
   captureWindowHwnd: string;
@@ -20,6 +22,7 @@ export interface RecordingSettings {
 
 export const DEFAULT_SETTINGS: RecordingSettings = {
   videoQuality: 'high',
+  videoEncoderPreference: 'auto',
   frameRate: 30,
   captureSource: 'monitor',
   captureWindowHwnd: '',
@@ -34,10 +37,10 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
 };
 
 export const QUALITY_SETTINGS = {
-  low: { bitrate: 2_000_000, label: 'Low' },
-  medium: { bitrate: 5_000_000, label: 'Medium' },
-  high: { bitrate: 8_000_000, label: 'High' },
-  ultra: { bitrate: 15_000_000, label: 'Ultra' },
+  low: { bitrate: 2_000_000, label: 'Low (2 Mbps)' },
+  medium: { bitrate: 5_000_000, label: 'Medium (5 Mbps)' },
+  high: { bitrate: 12_000_000, label: 'High (12 Mbps)' },
+  ultra: { bitrate: 20_000_000, label: 'Ultra (20 Mbps)' },
 } as const;
 
 export const MIN_STORAGE_GB = 5;

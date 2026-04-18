@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { Store } from "@tauri-apps/plugin-store";
 import {
   CheckCircle2,
   ChevronDown,
@@ -60,6 +61,9 @@ const GUILD_NONE_OPTION: SettingsSelectOption = {
   label: "No guild (personal upload)",
 };
 
+const WCL_UI_STORE_FILE = "settings.json";
+const WCL_REMEMBER_LOGIN_KEY = "wcl-remember-login-preference";
+
 const FIELD_IDS = {
   email: "wcl-email",
   password: "wcl-password",
@@ -103,10 +107,84 @@ export function WarcraftLogsUploadPage() {
   const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
   const [isResolvingLatestLog, setIsResolvingLatestLog] = useState(false);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
+  const [preferencesStore, setPreferencesStore] = useState<Store | null>(null);
+  const [isRememberLoginPreferenceLoaded, setIsRememberLoginPreferenceLoaded] = useState(false);
 
   const hasCredentialInput =
     email.trim().length > 0 &&
     (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials));
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPreferencesStore = async () => {
+      try {
+        const store = await Store.load(WCL_UI_STORE_FILE);
+        if (!mounted) {
+          return;
+        }
+
+        setPreferencesStore(store);
+      } catch (error) {
+        if (mounted) {
+          setIsRememberLoginPreferenceLoaded(true);
+        }
+        console.error("Failed to load WarcraftLogs UI preferences store:", error);
+      }
+    };
+
+    void loadPreferencesStore();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesStore) {
+      return;
+    }
+
+    let mounted = true;
+
+    const loadRememberLoginPreference = async () => {
+      try {
+        const savedPreference = await preferencesStore.get<boolean>(WCL_REMEMBER_LOGIN_KEY);
+        if (mounted && typeof savedPreference === "boolean") {
+          setRememberLogin(savedPreference);
+        }
+      } catch (error) {
+        console.error("Failed to load WarcraftLogs remember-login preference:", error);
+      } finally {
+        if (mounted) {
+          setIsRememberLoginPreferenceLoaded(true);
+        }
+      }
+    };
+
+    void loadRememberLoginPreference();
+
+    return () => {
+      mounted = false;
+    };
+  }, [preferencesStore]);
+
+  useEffect(() => {
+    if (!preferencesStore || !isRememberLoginPreferenceLoaded) {
+      return;
+    }
+
+    const persistRememberLoginPreference = async () => {
+      try {
+        await preferencesStore.set(WCL_REMEMBER_LOGIN_KEY, rememberLogin);
+        await preferencesStore.save();
+      } catch (error) {
+        console.error("Failed to persist WarcraftLogs remember-login preference:", error);
+      }
+    };
+
+    void persistRememberLoginPreference();
+  }, [isRememberLoginPreferenceLoaded, preferencesStore, rememberLogin]);
 
   useEffect(() => {
     let mounted = true;

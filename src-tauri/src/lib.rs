@@ -84,6 +84,7 @@ pub fn run() {
             recording::start_recording,
             recording::stop_recording,
             recording::list_capture_windows,
+            recording::get_available_video_encoders,
             settings::get_default_output_folder,
             settings::get_folder_size,
             settings::get_recordings_list,

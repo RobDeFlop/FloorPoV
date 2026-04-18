@@ -22,6 +22,12 @@ pub struct CaptureWindowInfo {
     pub(crate) process_name: Option<String>,
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct AvailableVideoEncoder {
+    pub(crate) value: String,
+    pub(crate) label: String,
+}
+
 #[derive(Clone)]
 pub(crate) enum CaptureInput {
     Monitor,
@@ -148,6 +154,8 @@ pub type SharedRecordingState = Arc<RwLock<RecordingState>>;
 pub(crate) struct RecordingSessionConfig {
     pub(crate) output_path: String,
     pub(crate) ffmpeg_binary_path: PathBuf,
+    pub(crate) video_quality: String,
+    pub(crate) video_encoder_preference: String,
     pub(crate) requested_frame_rate: u32,
     pub(crate) output_frame_rate: u32,
     pub(crate) bitrate: u32,
@@ -160,6 +168,7 @@ pub(crate) struct SegmentConfig<'a> {
     pub(crate) ffmpeg_binary_path: &'a std::path::Path,
     pub(crate) runtime_capture_mode: RuntimeCaptureMode,
     pub(crate) output_path: &'a std::path::Path,
+    pub(crate) video_quality: &'a str,
     pub(crate) requested_frame_rate: u32,
     pub(crate) output_frame_rate: u32,
     pub(crate) bitrate: u32,

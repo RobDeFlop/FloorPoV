@@ -7,11 +7,17 @@ fn default_capture_source() -> String {
     "monitor".to_string()
 }
 
+fn default_video_encoder_preference() -> String {
+    "auto".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecordingSettings {
     pub video_quality: String,
     pub frame_rate: u32,
     pub bitrate: u32,
+    #[serde(default = "default_video_encoder_preference")]
+    pub video_encoder_preference: String,
     #[serde(default = "default_capture_source")]
     pub capture_source: String,
     #[serde(default)]
@@ -31,8 +37,8 @@ impl RecordingSettings {
         match quality {
             "low" => (2_000_000, 8_000_000),
             "medium" => (4_000_000, 14_000_000),
-            "high" => (6_000_000, 22_000_000),
-            "ultra" => (10_000_000, 35_000_000),
+            "high" => (8_000_000, 28_000_000),
+            "ultra" => (14_000_000, 50_000_000),
             _ => (6_000_000, 22_000_000),
         }
     }

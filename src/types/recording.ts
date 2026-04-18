@@ -11,6 +11,11 @@ export interface CaptureWindowInfo {
   process_name: string | null;
 }
 
+export interface AvailableVideoEncoder {
+  value: string;
+  label: string;
+}
+
 export interface CleanupResult {
   deleted_count: number;
   freed_bytes: number;
@@ -33,6 +38,7 @@ export interface RecordingCommandSettings {
   video_quality: string;
   frame_rate: number;
   bitrate: number;
+  video_encoder_preference: string;
   capture_source: string;
   capture_window_hwnd: string;
   capture_window_title: string;
@@ -42,4 +48,3 @@ export interface RecordingCommandSettings {
 
 export type RecordingOrigin = "manual" | "auto";
 export type AutoTriggerMode = "mythicPlus" | "raid" | "pvp";
-

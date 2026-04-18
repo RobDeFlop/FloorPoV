@@ -28,6 +28,7 @@ import {
   MIN_STORAGE_GB,
   QUALITY_SETTINGS,
   RecordingSettings,
+  VideoEncoderPreference,
   VideoQuality,
 } from "../../types/settings";
 import { ReadOnlyPathField } from "./ReadOnlyPathField";
@@ -36,7 +37,7 @@ import { SettingsSelect, type SettingsSelectOption } from "./SettingsSelect";
 import { SettingsToggleField } from "./SettingsToggleField";
 import { shallowEqual } from "../../utils/comparison";
 import { formatBytes } from "../../utils/format";
-import { CaptureWindowInfo } from "../../types/recording";
+import { AvailableVideoEncoder, CaptureWindowInfo } from "../../types/recording";
 
 const VIDEO_QUALITY_OPTIONS: SettingsSelectOption[] = Object.entries(QUALITY_SETTINGS).map(
   ([key, { label }]) => ({ value: key, label }),
@@ -57,8 +58,17 @@ const CAPTURE_SOURCE_OPTIONS: SettingsSelectOption[] = [
   { value: "window", label: "Specific Window" },
 ];
 
+const VIDEO_ENCODER_PREFERENCE_VALUES: VideoEncoderPreference[] = [
+  "auto",
+  "h264_nvenc",
+  "h264_qsv",
+  "h264_amf",
+  "libx264",
+];
+
 const FIELD_IDS = {
   videoQuality: "settings-video-quality",
+  videoEncoderPreference: "settings-video-encoder-preference",
   frameRate: "settings-frame-rate",
   captureSource: "settings-capture-source",
   captureWindow: "settings-capture-window",
@@ -89,6 +99,10 @@ function isFrameRate(value: number): value is FrameRate {
   return value === 30 || value === 60;
 }
 
+function isVideoEncoderPreference(value: string): value is VideoEncoderPreference {
+  return VIDEO_ENCODER_PREFERENCE_VALUES.includes(value as VideoEncoderPreference);
+}
+
 function isMarkerHotkey(value: string): value is MarkerHotkey {
   return HOTKEY_OPTIONS.some((option) => option.value === value);
 }
@@ -103,6 +117,11 @@ export function Settings() {
   const [captureWindows, setCaptureWindows] = useState<CaptureWindowInfo[]>([]);
   const [isLoadingCaptureWindows, setIsLoadingCaptureWindows] = useState(false);
   const [captureWindowsError, setCaptureWindowsError] = useState<string | null>(null);
+  const [videoEncoderOptions, setVideoEncoderOptions] = useState<SettingsSelectOption[]>([
+    { value: "auto", label: "Auto (Recommended)" },
+  ]);
+  const [isLoadingVideoEncoders, setIsLoadingVideoEncoders] = useState(false);
+  const [videoEncodersError, setVideoEncodersError] = useState<string | null>(null);
 
   useEffect(() => {
     setFormData(settings);
@@ -194,6 +213,41 @@ export function Settings() {
       loadCaptureWindows();
     }
   }, [formData.captureSource, loadCaptureWindows]);
+
+  const loadAvailableVideoEncoders = useCallback(async () => {
+    setIsLoadingVideoEncoders(true);
+    setVideoEncodersError(null);
+
+    try {
+      const encoders = await invoke<AvailableVideoEncoder[]>("get_available_video_encoders");
+      if (encoders.length === 0) {
+        setVideoEncoderOptions([{ value: "auto", label: "Auto (Recommended)" }]);
+        return;
+      }
+
+      setVideoEncoderOptions(
+        encoders.map((encoder) => ({
+          value: encoder.value,
+          label: encoder.label,
+        })),
+      );
+
+      setFormData((prev) => {
+        const currentIsAvailable = encoders.some((encoder) => encoder.value === prev.videoEncoderPreference);
+        return currentIsAvailable ? prev : { ...prev, videoEncoderPreference: "auto" };
+      });
+    } catch (error) {
+      console.error("Failed to list available video encoders:", error);
+      setVideoEncodersError("Could not detect video encoders. Auto fallback will still work.");
+      setVideoEncoderOptions([{ value: "auto", label: "Auto (Recommended)" }]);
+    } finally {
+      setIsLoadingVideoEncoders(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAvailableVideoEncoders();
+  }, [loadAvailableVideoEncoders]);
 
   const loadFolderSize = async () => {
     try {
@@ -379,6 +433,36 @@ export function Settings() {
                 <p className="mt-1 text-xs text-neutral-400">
                   This is your target capture rate.
                 </p>
+              </div>
+
+              <div>
+                <label htmlFor={FIELD_IDS.videoEncoderPreference} className="mb-2 block text-sm text-neutral-300">
+                  Video Encoder
+                </label>
+                <SettingsSelect
+                  id={FIELD_IDS.videoEncoderPreference}
+                  value={formData.videoEncoderPreference}
+                  options={videoEncoderOptions}
+                  disabled={isLoadingVideoEncoders}
+                  onChange={(nextValue) => {
+                    if (isVideoEncoderPreference(nextValue)) {
+                      setFormData({ ...formData, videoEncoderPreference: nextValue });
+                    }
+                  }}
+                  ariaDescribedBy="settings-video-encoder-help"
+                />
+                <p id="settings-video-encoder-help" className="mt-1 text-xs text-neutral-400">
+                  Auto picks the best encoder available on your PC. Hardware encoders usually reduce game stutter.
+                </p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Quality Preset controls bitrate and file size. Encoder choice controls performance impact.
+                </p>
+                {videoEncodersError && (
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-amber-200">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {videoEncodersError}
+                  </p>
+                )}
               </div>
 
             </div>

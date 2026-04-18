@@ -569,6 +569,7 @@ pub(super) fn run_ffmpeg_recording_segment(
         ffmpeg_path = %config.ffmpeg_binary_path.display(),
         runtime_capture_mode = runtime_capture_label(config.runtime_capture_mode),
         output_path = %config.output_path.display(),
+        video_quality = %config.video_quality,
         requested_frame_rate = config.requested_frame_rate,
         output_frame_rate = config.output_frame_rate,
         bitrate = config.bitrate,

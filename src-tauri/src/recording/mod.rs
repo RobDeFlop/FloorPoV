@@ -39,6 +39,29 @@ pub fn list_capture_windows() -> Result<Vec<model::CaptureWindowInfo>, String> {
 }
 
 #[tauri::command]
+pub fn get_available_video_encoders(
+    app_handle: AppHandle,
+) -> Result<Vec<model::AvailableVideoEncoder>, String> {
+    let ffmpeg_binary_path = ffmpeg::resolve_ffmpeg_binary_path(&app_handle)?;
+    let mut options = vec![model::AvailableVideoEncoder {
+        value: "auto".to_string(),
+        label: "Auto (Recommended)".to_string(),
+    }];
+
+    let available_encoders = ffmpeg::list_available_video_encoders(&ffmpeg_binary_path);
+    options.extend(
+        available_encoders
+            .into_iter()
+            .map(|encoder| model::AvailableVideoEncoder {
+                label: ffmpeg::video_encoder_label(&encoder).to_string(),
+                value: encoder,
+            }),
+    );
+
+    Ok(options)
+}
+
+#[tauri::command]
 pub async fn start_recording(
     app_handle: AppHandle,
     state: tauri::State<'_, model::SharedRecordingState>,
@@ -98,9 +121,6 @@ pub async fn start_recording(
     let output_path_str = output_path.to_string_lossy().to_string();
 
     recording_settings.bitrate = effective_bitrate;
-    if recording_settings.enable_system_audio {
-        recording_settings.bitrate = recording_settings.bitrate.min(16_000_000);
-    }
     let output_frame_rate = recording_settings.frame_rate.max(1);
     let ffmpeg_binary_path = ffmpeg::resolve_ffmpeg_binary_path(&app_handle)?;
     let resolved_capture_target = capture_input.target_label();
@@ -112,6 +132,7 @@ pub async fn start_recording(
     tracing::info!(
         backend = "ffmpeg",
         video_quality = %recording_settings.video_quality,
+        video_encoder_preference = %recording_settings.video_encoder_preference,
         requested_frame_rate = recording_settings.frame_rate,
         output_frame_rate,
         capture_source = %recording_settings.capture_source,
@@ -142,6 +163,8 @@ pub async fn start_recording(
         RecordingSessionConfig {
             output_path: output_path_str.clone(),
             ffmpeg_binary_path,
+            video_quality: recording_settings.video_quality.clone(),
+            video_encoder_preference: recording_settings.video_encoder_preference.clone(),
             requested_frame_rate: recording_settings.frame_rate,
             output_frame_rate,
             bitrate: recording_settings.bitrate,

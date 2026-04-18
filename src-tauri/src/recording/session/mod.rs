@@ -38,8 +38,11 @@ pub(crate) fn spawn_ffmpeg_recording_task(
 ) {
     thread::spawn(move || {
         let mut capture_input = session_config.capture_input;
-        let (video_encoder, encoder_preset) =
-            select_video_encoder(&session_config.ffmpeg_binary_path);
+        let (video_encoder, encoder_preset) = select_video_encoder(
+            &session_config.ffmpeg_binary_path,
+            &session_config.video_quality,
+            &session_config.video_encoder_preference,
+        );
         let mut runtime_capture_mode = to_runtime_capture_mode(&capture_input);
         let capture_target = capture_input.target_label();
         let (capture_width, capture_height) = resolve_capture_dimensions(&capture_input);
@@ -82,6 +85,8 @@ pub(crate) fn spawn_ffmpeg_recording_task(
 
         tracing::info!(
             ffmpeg_path = %session_config.ffmpeg_binary_path.display(),
+            video_quality = %session_config.video_quality,
+            video_encoder_preference = %session_config.video_encoder_preference,
             requested_frame_rate = session_config.requested_frame_rate,
             output_frame_rate = session_config.output_frame_rate,
             bitrate = session_config.bitrate,
@@ -109,6 +114,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
                 ffmpeg_binary_path: &session_config.ffmpeg_binary_path,
                 runtime_capture_mode,
                 output_path: &segment_output_path,
+                video_quality: &session_config.video_quality,
                 requested_frame_rate: session_config.requested_frame_rate,
                 output_frame_rate: session_config.output_frame_rate,
                 bitrate: session_config.bitrate,
