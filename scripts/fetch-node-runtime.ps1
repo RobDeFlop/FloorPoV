@@ -6,9 +6,43 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if ($PSVersionTable -and $PSVersionTable.PSVersion) {
+  Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+}
+
 function Get-Sha256Hex([string]$Path) {
-  $hash = Get-FileHash -Path $Path -Algorithm SHA256
-  return $hash.Hash.ToLowerInvariant()
+  $getFileHashCommand = Get-Command -Name "Get-FileHash" -ErrorAction SilentlyContinue
+  if ($null -ne $getFileHashCommand) {
+    $hash = Get-FileHash -Path $Path -Algorithm SHA256
+    return $hash.Hash.ToLowerInvariant()
+  }
+
+  $sha256 = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+      $hashBytes = $sha256.ComputeHash($stream)
+    }
+    finally {
+      $stream.Dispose()
+    }
+  }
+  finally {
+    $sha256.Dispose()
+  }
+
+  return ([System.BitConverter]::ToString($hashBytes) -replace "-", "").ToLowerInvariant()
+}
+
+function Expand-ZipArchive([string]$ArchivePath, [string]$DestinationPath) {
+  $expandArchiveCommand = Get-Command -Name "Expand-Archive" -ErrorAction SilentlyContinue
+  if ($null -ne $expandArchiveCommand) {
+    Expand-Archive -Path $ArchivePath -DestinationPath $DestinationPath -Force
+    return
+  }
+
+  Add-Type -AssemblyName "System.IO.Compression.FileSystem"
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $DestinationPath)
 }
 
 if (!(Test-Path -Path $ConfigPath -PathType Leaf)) {
@@ -54,7 +88,7 @@ if (Test-Path -Path $extractRoot) {
   Remove-Item -Recurse -Force $extractRoot
 }
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
-Expand-Archive -Path $archivePath -DestinationPath $extractRoot -Force
+Expand-ZipArchive -ArchivePath $archivePath -DestinationPath $extractRoot
 
 $entryDir = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
 if ($null -eq $entryDir) {
