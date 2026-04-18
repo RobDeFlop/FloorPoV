@@ -533,7 +533,7 @@ export function WarcraftLogsUploadPage() {
           </SettingsSection>
 
           <SettingsSection title="Upload Control" icon={<LoaderCircle className="h-4 w-4" />}>
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+            <div className="space-y-4">
               <div className="space-y-3">
                 <p className="text-xs text-neutral-400">
                   One-shot upload sends the selected file once. Live upload tails your active combat

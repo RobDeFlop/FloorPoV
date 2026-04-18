@@ -236,13 +236,16 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
             {isLiveUploading && (
               <button
                 type="button"
-                className="inline-flex items-center justify-between rounded-sm border border-amber-300/35 bg-amber-500/12 px-3 py-2 text-xs text-amber-100 transition-colors hover:bg-amber-500/20"
+                className="inline-flex items-center justify-between rounded-sm border border-emerald-300/35 bg-emerald-500/12 px-3 py-2 text-xs text-emerald-100 transition-colors hover:bg-emerald-500/20"
                 onClick={() => {
                   void stopLiveUpload();
                 }}
               >
-                <span>Live upload active</span>
-                <span className="font-medium">Stop</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                  Live upload active
+                </span>
+                <span className="font-medium text-emerald-50">Stop</span>
               </button>
             )}
           </div>

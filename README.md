@@ -95,6 +95,10 @@ cargo fmt --check
 cargo test
 ```
 
+### Release Process
+
+See `docs/release-checklist.md` for the step-by-step installer release flow.
+
 ## Use Cases
 
 - **Mythic+ Analysis**: Review deaths and interrupts to improve dungeon runs
