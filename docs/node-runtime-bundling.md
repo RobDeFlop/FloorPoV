@@ -53,3 +53,7 @@ The Tauri bundle already includes `src-tauri/bin` resources (`tauri.conf.json`),
 2. Update `build/node-runtime.json` with new URLs + checksums.
 3. Re-run `bun run prepare:node-runtime`.
 4. Validate upload flow and app build.
+
+## Current pinned version
+
+- `24.15.0` (`win-x64`)

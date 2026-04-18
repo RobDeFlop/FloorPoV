@@ -1,0 +1,11 @@
+{
+  "version": "8.1",
+  "platforms": {
+    "win-x64": {
+      "archive": "https://github.com/GyanD/codexffmpeg/releases/download/8.1/ffmpeg-8.1-essentials_build.zip",
+      "archiveSha256": "8748283d821613d930b0e7be685aaa9df4ca6f0ad4d0c42fd02622b3623463c6",
+      "binaryPathSuffix": "bin/ffmpeg.exe",
+      "binarySha256": "1a65d5b0b10d8d9a81d2824a3538046a40ed3607c906b335a166add87613f705"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-Place `ffmpeg.exe` in this directory for FloorPoV recording.
+Bundled binaries used by FloorPoV are placed in this directory during build.
 
 The WarcraftLogs upload flow also uses:
 
@@ -17,3 +17,9 @@ Notes:
 - The current FFmpeg backend is used for Primary Monitor recording when system audio is disabled.
 - `parser-harness.cjs` is bundled via the same resources path and executed by bundled Node runtime.
 - `node.exe` is fetched during build and intentionally not committed to git.
+- `ffmpeg.exe` is fetched during build and intentionally not committed to git.
+
+Prepare commands (repo root):
+
+- `bun run prepare:node-runtime`
+- `bun run prepare:ffmpeg`

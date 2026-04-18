@@ -1,9 +1,10 @@
 {
   "name": "floorpov",
   "private": true,
-  "version": "0.1.0-beta",
+  "version": "0.1.1-beta",
   "type": "module",
   "scripts": {
+    "prepare:ffmpeg": "powershell -ExecutionPolicy Bypass -File ./scripts/fetch-ffmpeg.ps1",
     "prepare:node-runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/fetch-node-runtime.ps1",
     "dev": "vite",
     "build": "tsc && vite build",

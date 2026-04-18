@@ -28,7 +28,17 @@ FloorPoV is a desktop application that records your World of Warcraft gameplay w
 ### Prerequisites
 
 - Windows 10/11
-- [FFmpeg](https://ffmpeg.org/download.html) (place `ffmpeg.exe` in `src-tauri/bin/`)
+
+### Prepare bundled runtimes
+
+From repo root, run:
+
+```bash
+bun run prepare:node-runtime
+bun run prepare:ffmpeg
+```
+
+This downloads pinned Windows binaries into `src-tauri/bin/` for local and CI builds.
 
 ### Installation
 
@@ -48,6 +58,8 @@ bun install
 1. Run the application
 
 ```bash
+bun run prepare:node-runtime
+bun run prepare:ffmpeg
 bun run tauri dev
 ```
 
@@ -98,6 +110,11 @@ cargo test
 ### Release Process
 
 See `docs/release-checklist.md` for the step-by-step installer release flow.
+
+Runtime bundling details:
+
+- `docs/node-runtime-bundling.md`
+- `docs/ffmpeg.md`
 
 ## Use Cases
 
