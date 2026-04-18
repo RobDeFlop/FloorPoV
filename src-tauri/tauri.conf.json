@@ -11,7 +11,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyMzFEQjQ2NDg4OEExNkIKUldScm9ZaElSdHN4d296UFlXQVYwVEVZTmg0Vkg1Q21VOHlrRW1CQUpHZlUvdUVscjNVczJyM2UK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU1QUI1NkQwMkQ0NDEzNzkKUldSNUUwUXQwRmFyVmFYTHhKVGFyZk1tTm5RUitqWS9OOHFmT1lmN3JXNUQxUDZXS29WQ3dNWmkK",
       "endpoints": [
         "https://github.com/RobDeFlop/Floorpov/releases/latest/download/latest.json"
       ]
