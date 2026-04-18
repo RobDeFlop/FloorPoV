@@ -5,11 +5,7 @@ pub(crate) enum UploadError {
     Io(std::io::Error),
     Json(serde_json::Error),
     Http(reqwest::Error),
-    HttpStatus {
-        request_label: String,
-        status: u16,
-        body: String,
-    },
+    HttpStatus { request_label: String, status: u16 },
     Zip(zip::result::ZipError),
 }
 
@@ -24,19 +20,11 @@ impl std::fmt::Display for UploadError {
             Self::HttpStatus {
                 request_label,
                 status,
-                body,
             } => {
-                if body.trim().is_empty() {
-                    write!(
-                        formatter,
-                        "WarcraftLogs request '{request_label}' failed with status {status}"
-                    )
-                } else {
-                    write!(
-                        formatter,
-                        "WarcraftLogs request '{request_label}' failed with status {status}: {body}"
-                    )
-                }
+                write!(
+                    formatter,
+                    "WarcraftLogs request '{request_label}' failed with status {status}"
+                )
             }
             Self::Zip(error) => write!(formatter, "{error}"),
         }

@@ -93,7 +93,7 @@ export function WarcraftLogsUploadPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [useSavedLogin, setUseSavedLogin] = useState(false);
-  const [rememberLogin, setRememberLogin] = useState(true);
+  const [rememberLogin, setRememberLogin] = useState(false);
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [description, setDescription] = useState("");
   const [region, setRegion] = useState("2");
@@ -177,6 +177,7 @@ export function WarcraftLogsUploadPage() {
     } catch (error) {
       setWclError(getErrorMessage(error));
     } finally {
+      setPassword("");
       setIsLoadingGuilds(false);
     }
   };
@@ -267,6 +268,8 @@ export function WarcraftLogsUploadPage() {
       await startUpload(payload);
     } catch {
       // error already handled in context
+    } finally {
+      setPassword("");
     }
   };
 
@@ -305,6 +308,8 @@ export function WarcraftLogsUploadPage() {
       await startLiveUpload(payload);
     } catch {
       // error already handled in context
+    } finally {
+      setPassword("");
     }
   };
 

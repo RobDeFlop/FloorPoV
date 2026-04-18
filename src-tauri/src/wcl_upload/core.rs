@@ -165,11 +165,9 @@ impl WclSession {
                         continue;
                     }
 
-                    let body = response.text().unwrap_or_default();
                     return Err(UploadError::HttpStatus {
                         request_label: request_label.to_string(),
                         status: status.as_u16(),
-                        body: sanitize_http_error_body(&body),
                     });
                 }
                 Err(error) => {
@@ -451,15 +449,6 @@ impl WclSession {
         })?;
 
         Ok(())
-    }
-}
-
-fn sanitize_http_error_body(body: &str) -> String {
-    let compact = body.split_whitespace().collect::<Vec<&str>>().join(" ");
-    if compact.len() <= 600 {
-        compact
-    } else {
-        format!("{}...", &compact[..600])
     }
 }
 
