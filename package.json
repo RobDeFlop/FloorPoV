@@ -1,7 +1,7 @@
 {
   "name": "floorpov",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-beta",
   "type": "module",
   "scripts": {
     "prepare:node-runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/fetch-node-runtime.ps1",
@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-global-shortcut": "^2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-store": "^2.4.2",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "@tauri-apps/plugin-window-state": "^2.4.1",
     "lucide-react": "^0.575.0",
     "motion": "^12.34.3",

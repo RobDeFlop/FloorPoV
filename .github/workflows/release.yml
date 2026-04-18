@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to publish (example: v0.1.0-beta.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -34,12 +39,21 @@ jobs:
       - name: Prepare bundled Node runtime
         run: bun run prepare:node-runtime
 
-      - name: Build Tauri bundles
-        run: bun run tauri build -- --bundles nsis,msi
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+      - name: Build, sign, and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          files: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+          tagName: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
+          releaseName: FloorPoV ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
+          releaseBody: |
+            Automated beta release for FloorPoV.
+
+            Includes Windows installers, updater signatures, and latest.json metadata.
+          releaseDraft: false
+          prerelease: true
+          args: --bundles nsis
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true

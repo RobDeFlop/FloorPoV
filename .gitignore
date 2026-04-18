@@ -9,6 +9,7 @@ lerna-debug.log*
 
 research/
 .opencode/
+docs/release-checklist.md
 
 node_modules
 dist

@@ -79,6 +79,7 @@ const FIELD_IDS = {
   enableSystemAudio: "settings-enable-system-audio",
   enableRecordingDiagnostics: "settings-enable-recording-diagnostics",
   enableAutoRecording: "settings-enable-auto-recording",
+  enableAutoUpdate: "settings-enable-auto-update",
 };
 
 
@@ -661,6 +662,23 @@ export function Settings() {
                   </p>
                 )}
               </div>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection title="Updates" icon={<RefreshCw className="h-4 w-4" />}>
+            <div className="space-y-4">
+              <SettingsToggleField
+                id={FIELD_IDS.enableAutoUpdate}
+                checked={formData.enableAutoUpdate}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    enableAutoUpdate: checked,
+                  });
+                }}
+                label="Enable Auto Updates"
+                description="Checks for updates on launch and installs available beta updates automatically."
+              />
             </div>
           </SettingsSection>
 

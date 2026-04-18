@@ -17,6 +17,7 @@ export interface RecordingSettings {
   enableSystemAudio: boolean;
   enableRecordingDiagnostics: boolean;
   enableAutoRecording: boolean;
+  enableAutoUpdate: boolean;
   markerHotkey: MarkerHotkey;
 }
 
@@ -33,6 +34,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   enableSystemAudio: false,
   enableRecordingDiagnostics: false,
   enableAutoRecording: false,
+  enableAutoUpdate: true,
   markerHotkey: 'F9',
 };
 
