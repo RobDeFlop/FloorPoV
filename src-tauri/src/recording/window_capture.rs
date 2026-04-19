@@ -9,7 +9,9 @@ use super::model::{
 };
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{CloseHandle, BOOL, HWND, LPARAM, POINT, RECT};
+use windows_sys::core::BOOL;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, POINT, RECT};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Graphics::Gdi::{
     ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR,

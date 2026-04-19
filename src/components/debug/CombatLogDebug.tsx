@@ -322,12 +322,12 @@ export function CombatLogDebug() {
           <Bug className="h-4 w-4 text-amber-400" />
           Combat Log Debug
         </h1>
-        <p className="mt-1 text-xs text-neutral-400">
-          Select a combat log file, parse important happenings, and inspect extracted events.
+        <p className="mt-1 text-xs uppercase tracking-[0.12em] text-neutral-500">
+          Select a combat log file and inspect parsed events
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 [scrollbar-gutter:stable] md:px-6">
         <div className="space-y-4">
           <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
             <div className="flex flex-col gap-2 md:flex-row md:items-center">

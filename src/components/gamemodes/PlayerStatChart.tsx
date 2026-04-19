@@ -104,7 +104,7 @@ export function PlayerStatChart({ title, data, color }: PlayerStatChartProps) {
             }}
             itemStyle={{ color: "#f5f5f5" }}
             labelStyle={{ color: "#a3a3a3" }}
-            formatter={(value: number | undefined) => [value ?? 0, title]}
+            formatter={(value) => [value ?? 0, title]}
           />
           <Bar dataKey="count" fill={color} fillOpacity={0.75} radius={[0, 2, 2, 0]} />
         </BarChart>

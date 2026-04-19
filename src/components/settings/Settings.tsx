@@ -391,126 +391,13 @@ export function Settings() {
               <Settings2 className="h-4 w-4 text-neutral-300" />
               Settings
             </h1>
-            <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">Capture and recording configuration</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">Set up capture, quality, and automation</p>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 md:px-6">
-        <div className="mx-auto w-full max-w-6xl space-y-4">
-          <SettingsSection title="Video" icon={<Video className="h-4 w-4" />}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label htmlFor={FIELD_IDS.videoQuality} className="mb-2 block text-sm text-neutral-300">Quality Preset</label>
-                <SettingsSelect
-                  id={FIELD_IDS.videoQuality}
-                  value={formData.videoQuality}
-                  options={VIDEO_QUALITY_OPTIONS}
-                  onChange={(nextValue) => {
-                    if (isVideoQuality(nextValue)) {
-                      setFormData({ ...formData, videoQuality: nextValue });
-                    }
-                  }}
-                  ariaDescribedBy="settings-video-quality-help"
-                />
-                <p id="settings-video-quality-help" className="mt-1 text-xs text-neutral-400">
-                  Higher presets increase bitrate and disk usage.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor={FIELD_IDS.frameRate} className="mb-2 block text-sm text-neutral-300">Frame Rate</label>
-                <SettingsSelect
-                  id={FIELD_IDS.frameRate}
-                  value={String(formData.frameRate)}
-                  options={FRAME_RATE_OPTIONS}
-                  onChange={(nextValue) => {
-                    const nextFrameRate = Number(nextValue);
-                    if (isFrameRate(nextFrameRate)) {
-                      setFormData({ ...formData, frameRate: nextFrameRate });
-                    }
-                  }}
-                />
-                <p className="mt-1 text-xs text-neutral-400">
-                  This is your target capture rate.
-                </p>
-              </div>
-
-              <div>
-                <label htmlFor={FIELD_IDS.videoEncoderPreference} className="mb-2 block text-sm text-neutral-300">
-                  Video Encoder
-                </label>
-                <SettingsSelect
-                  id={FIELD_IDS.videoEncoderPreference}
-                  value={formData.videoEncoderPreference}
-                  options={videoEncoderOptions}
-                  disabled={isLoadingVideoEncoders}
-                  onChange={(nextValue) => {
-                    if (isVideoEncoderPreference(nextValue)) {
-                      setFormData({ ...formData, videoEncoderPreference: nextValue });
-                    }
-                  }}
-                  ariaDescribedBy="settings-video-encoder-help"
-                />
-                <p id="settings-video-encoder-help" className="mt-1 text-xs text-neutral-400">
-                  Auto picks the best encoder available on your PC. Hardware encoders usually reduce game stutter.
-                </p>
-                <p className="mt-1 text-xs text-neutral-400">
-                  Quality Preset controls bitrate and file size. Encoder choice controls performance impact.
-                </p>
-                {videoEncodersError && (
-                  <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-amber-200">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {videoEncodersError}
-                  </p>
-                )}
-              </div>
-
-            </div>
-          </SettingsSection>
-
-          <SettingsSection title="Output" icon={<HardDrive className="h-4 w-4" />}>
-            <div className="space-y-4">
-              <div>
-                <ReadOnlyPathField
-                  inputId={FIELD_IDS.outputFolder}
-                  label="Output Folder"
-                  value={formData.outputFolder}
-                  onBrowse={handleBrowseFolder}
-                />
-                <div className="mt-3 rounded-sm border border-white/10 bg-black/20 p-3">
-                  <div className="mb-2 flex items-center justify-between text-xs text-neutral-300">
-                    <span>Current usage</span>
-                    <span className="font-mono text-neutral-200">
-                      {formatBytes(folderSize)} / {formData.maxStorageGB} GB ({usagePercentage.toFixed(0)}%)
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
-                    <div
-                      className="h-full rounded-full bg-emerald-400/80"
-                      style={{ width: `${usagePercentage}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <FormField
-                id={FIELD_IDS.maxStorageGB}
-                label="Maximum Storage (GB)"
-                description={`Old recordings will be automatically deleted when this limit is reached (minimum ${MIN_STORAGE_GB} GB)`}
-              >
-                <Input
-                  id={FIELD_IDS.maxStorageGB}
-                  type="number"
-                  min={MIN_STORAGE_GB}
-                  max={MAX_STORAGE_GB}
-                  value={formData.maxStorageGB}
-                  onChange={(e) => setFormData({ ...formData, maxStorageGB: parseInt(e.target.value) || MIN_STORAGE_GB })}
-                />
-              </FormField>
-            </div>
-          </SettingsSection>
-
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 [scrollbar-gutter:stable] md:px-6">
+        <div className="w-full space-y-4">
           <SettingsSection title="Capture" icon={<Monitor className="h-4 w-4" />}>
             <div className="space-y-4">
               <div>
@@ -531,7 +418,7 @@ export function Settings() {
                   ariaDescribedBy="settings-capture-source-help"
                 />
                 <p id="settings-capture-source-help" className="mt-1 text-xs text-neutral-400">
-                  Choose whether FloorPoV captures your primary monitor or one specific window.
+                  Choose your source: primary monitor or one specific window.
                 </p>
               </div>
 
@@ -572,7 +459,7 @@ export function Settings() {
                   </div>
 
                   <p id="settings-capture-window-help" className="text-xs text-neutral-400">
-                    Select a visible top-level window. Minimized windows can produce black frames until restored.
+                    Pick a visible top-level window. Minimized windows can show black frames.
                   </p>
 
                   {isSavedCaptureWindowUnavailable && (
@@ -599,30 +486,140 @@ export function Settings() {
               )}
 
               {formData.captureSource === "monitor" && (
-                <p className="text-sm text-neutral-300">
-                  Capture records your primary monitor using the FFmpeg desktop duplication pipeline.
-                </p>
+                <p className="text-sm text-neutral-300">Records your primary monitor via desktop duplication.</p>
               )}
+            </div>
+          </SettingsSection>
 
-              <div className="rounded-sm border border-white/10 bg-black/10 p-3 mt-4">
-                <p className="mb-2 text-xs uppercase tracking-[0.08em] text-neutral-600">Troubleshooting</p>
-                <SettingsToggleField
-                  id={FIELD_IDS.enableRecordingDiagnostics}
-                  checked={formData.enableRecordingDiagnostics}
-                  onChange={(checked) => {
-                    setFormData({
-                      ...formData,
-                      enableRecordingDiagnostics: checked,
-                    });
+          <SettingsSection title="Video" icon={<Video className="h-4 w-4" />}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label htmlFor={FIELD_IDS.videoQuality} className="mb-2 block text-sm text-neutral-300">Quality Preset</label>
+                <SettingsSelect
+                  id={FIELD_IDS.videoQuality}
+                  value={formData.videoQuality}
+                  options={VIDEO_QUALITY_OPTIONS}
+                  onChange={(nextValue) => {
+                    if (isVideoQuality(nextValue)) {
+                      setFormData({ ...formData, videoQuality: nextValue });
+                    }
                   }}
-                  label="Enable Recording Diagnostics"
-                  description="Writes per-second audio and FFmpeg pacing logs to help debug stutter and crackle."
+                  ariaDescribedBy="settings-video-quality-help"
                 />
+                <p id="settings-video-quality-help" className="mt-1 text-xs text-neutral-400">
+                  Higher presets improve clarity but increase file size.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor={FIELD_IDS.frameRate} className="mb-2 block text-sm text-neutral-300">Frame Rate</label>
+                <SettingsSelect
+                  id={FIELD_IDS.frameRate}
+                  value={String(formData.frameRate)}
+                  options={FRAME_RATE_OPTIONS}
+                  onChange={(nextValue) => {
+                    const nextFrameRate = Number(nextValue);
+                    if (isFrameRate(nextFrameRate)) {
+                      setFormData({ ...formData, frameRate: nextFrameRate });
+                    }
+                  }}
+                />
+                <p className="mt-1 text-xs text-neutral-400">Sets your target capture FPS.</p>
+              </div>
+
+              <div>
+                <label htmlFor={FIELD_IDS.videoEncoderPreference} className="mb-2 block text-sm text-neutral-300">
+                  Video Encoder
+                </label>
+                <SettingsSelect
+                  id={FIELD_IDS.videoEncoderPreference}
+                  value={formData.videoEncoderPreference}
+                  options={videoEncoderOptions}
+                  disabled={isLoadingVideoEncoders}
+                  onChange={(nextValue) => {
+                    if (isVideoEncoderPreference(nextValue)) {
+                      setFormData({ ...formData, videoEncoderPreference: nextValue });
+                    }
+                  }}
+                  ariaDescribedBy="settings-video-encoder-help"
+                />
+                <p id="settings-video-encoder-help" className="mt-1 text-xs text-neutral-400">
+                  Auto picks the best available encoder. Hardware encoders usually reduce in-game stutter.
+                </p>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Quality controls file size; encoder choice controls performance impact.
+                </p>
+                {videoEncodersError && (
+                  <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-amber-200">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    {videoEncodersError}
+                  </p>
+                )}
               </div>
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Combat Log" icon={<CheckCircle2 className="h-4 w-4" />}>
+          <SettingsSection title="Audio" icon={<Volume2 className="h-4 w-4" />}>
+            <div className="space-y-4">
+              <p className="text-sm text-neutral-400">Include game and desktop audio in your recordings.</p>
+
+              <SettingsToggleField
+                id={FIELD_IDS.enableSystemAudio}
+                checked={formData.enableSystemAudio}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    enableSystemAudio: checked,
+                  });
+                }}
+                label="Enable System Audio"
+              />
+            </div>
+          </SettingsSection>
+
+          <SettingsSection title="Output" icon={<HardDrive className="h-4 w-4" />}>
+            <div className="space-y-4">
+              <div>
+                <ReadOnlyPathField
+                  inputId={FIELD_IDS.outputFolder}
+                  label="Output Folder"
+                  value={formData.outputFolder}
+                  onBrowse={handleBrowseFolder}
+                />
+                <div className="mt-3 rounded-sm border border-white/10 bg-black/20 p-3">
+                  <div className="mb-2 flex items-center justify-between text-xs text-neutral-300">
+                    <span>Current usage</span>
+                    <span className="font-mono text-neutral-200">
+                      {formatBytes(folderSize)} / {formData.maxStorageGB} GB ({usagePercentage.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
+                    <div
+                      className="h-full rounded-full bg-emerald-400/80"
+                      style={{ width: `${usagePercentage}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <FormField
+                id={FIELD_IDS.maxStorageGB}
+                label="Maximum Storage (GB)"
+                description={`Oldest recordings are removed when this limit is reached (minimum ${MIN_STORAGE_GB} GB)`}
+              >
+                <Input
+                  id={FIELD_IDS.maxStorageGB}
+                  type="number"
+                  min={MIN_STORAGE_GB}
+                  max={MAX_STORAGE_GB}
+                  value={formData.maxStorageGB}
+                  onChange={(e) => setFormData({ ...formData, maxStorageGB: parseInt(e.target.value) || MIN_STORAGE_GB })}
+                />
+              </FormField>
+            </div>
+          </SettingsSection>
+
+          <SettingsSection title="Automation & Combat Log" icon={<CheckCircle2 className="h-4 w-4" />}>
             <div className="space-y-4">
               <SettingsToggleField
                 id={FIELD_IDS.enableAutoRecording}
@@ -634,7 +631,7 @@ export function Settings() {
                   });
                 }}
                 label="Enable Auto Recording"
-                description="Arms combat-log triggers and starts recordings on M+, raid, or PvP start events."
+                description="Start recordings automatically when M+, raid, or PvP combat begins."
               />
 
               <div>
@@ -645,7 +642,7 @@ export function Settings() {
                   onBrowse={handleBrowseWowFolder}
                 />
                 <p className="mt-2 text-xs text-neutral-400">
-                  Select your WoW client folder. FloorPoV looks for{" "}
+                  Select your WoW client folder. FloorPoV reads{" "}
                   <span className="font-mono">Logs\WoWCombatLog*.txt</span> (for example{" "}
                   <span className="font-mono">WoWCombatLog-021726_124240.txt</span>).
                 </p>
@@ -658,27 +655,10 @@ export function Settings() {
                 {formData.wowFolder && !isWowFolderValid && (
                   <p className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-rose-300/30 bg-rose-500/12 px-2 py-1 text-xs text-rose-200">
                     <XCircle className="h-3.5 w-3.5 text-rose-300" />
-                    Could not find any logs this folder.
+                    Could not find any logs in this folder.
                   </p>
                 )}
               </div>
-            </div>
-          </SettingsSection>
-
-          <SettingsSection title="Updates" icon={<RefreshCw className="h-4 w-4" />}>
-            <div className="space-y-4">
-              <SettingsToggleField
-                id={FIELD_IDS.enableAutoUpdate}
-                checked={formData.enableAutoUpdate}
-                onChange={(checked) => {
-                  setFormData({
-                    ...formData,
-                    enableAutoUpdate: checked,
-                  });
-                }}
-                label="Enable Auto Updates"
-                description="Checks for updates on launch and installs available beta updates automatically."
-              />
             </div>
           </SettingsSection>
 
@@ -698,52 +678,66 @@ export function Settings() {
                   ariaDescribedBy="settings-marker-hotkey-help"
                 />
                 <p id="settings-marker-hotkey-help" className="mt-1 text-xs text-neutral-400">
-                  Press this key during recording to add a manual marker. If the key is already in use by another application, try a different one.
+                  Press this key during recording to add a marker. If it conflicts, choose another key.
                 </p>
               </div>
             </div>
           </SettingsSection>
 
-          <SettingsSection
-            title="Audio"
-            icon={<Volume2 className="h-4 w-4" />}
-          >
+          <SettingsSection title="Updates" icon={<RefreshCw className="h-4 w-4" />}>
             <div className="space-y-4">
-              <p className="text-sm text-neutral-400">
-                System audio recording is available in the FFmpeg recorder pipeline.
-              </p>
-
               <SettingsToggleField
-                id={FIELD_IDS.enableSystemAudio}
-                checked={formData.enableSystemAudio}
+                id={FIELD_IDS.enableAutoUpdate}
+                checked={formData.enableAutoUpdate}
                 onChange={(checked) => {
                   setFormData({
                     ...formData,
-                    enableSystemAudio: checked,
+                    enableAutoUpdate: checked,
                   });
                 }}
-                label="Enable System Audio"
+                label="Enable Auto Updates"
+                description="Check for beta updates on launch and install them automatically."
               />
             </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title="Advanced & Troubleshooting"
+            icon={<AlertTriangle className="h-4 w-4" />}
+          >
+            <SettingsToggleField
+              id={FIELD_IDS.enableRecordingDiagnostics}
+              checked={formData.enableRecordingDiagnostics}
+              onChange={(checked) => {
+                setFormData({
+                  ...formData,
+                  enableRecordingDiagnostics: checked,
+                });
+              }}
+              label="Enable Recording Diagnostics"
+              description="Write per-second audio and FFmpeg pacing logs for stutter or crackle debugging."
+            />
           </SettingsSection>
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
-        <Button
-          variant="secondary"
-          onClick={handleCancel}
-          disabled={!hasChanges}
-        >
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          disabled={!hasChanges}
-        >
-          Save Changes
-        </Button>
+      <div className="shrink-0 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
+        <div className="flex flex-wrap justify-end gap-3 pr-2">
+          <Button
+            variant="secondary"
+            onClick={handleCancel}
+            disabled={!hasChanges}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={!hasChanges}
+          >
+            Save Changes
+          </Button>
+        </div>
       </div>
     </div>
   );

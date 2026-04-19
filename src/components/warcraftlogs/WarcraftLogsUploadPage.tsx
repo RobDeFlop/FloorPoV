@@ -432,13 +432,13 @@ export function WarcraftLogsUploadPage() {
             WarcraftLogs Upload
           </h1>
           <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
-            Upload logs and manage live logging from FloorPoV
+            Set up credentials, upload logs, and run live logging
           </p>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 md:px-6">
-        <div className="mx-auto w-full max-w-5xl space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 [scrollbar-gutter:stable] md:px-6">
+        <div className="w-full space-y-4">
           <SettingsSection title="Account" icon={<ShieldCheck className="h-4 w-4" />}>
             <div className="grid gap-4 lg:grid-cols-2">
               <FormField id={FIELD_IDS.email} label="WarcraftLogs Email">

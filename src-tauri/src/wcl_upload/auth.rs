@@ -198,7 +198,7 @@ fn clear_saved_email_entry() -> Result<(), UploadError> {
             UploadError::Message(format!("Failed to open secure credential store: {error}"))
         })?;
 
-    match entry.delete_password() {
+    match entry.delete_credential() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(UploadError::Message(format!(
             "Failed to clear saved WarcraftLogs login email: {error}"
@@ -212,7 +212,7 @@ fn clear_saved_email_index_entry() -> Result<(), UploadError> {
             UploadError::Message(format!("Failed to open secure credential store: {error}"))
         })?;
 
-    match entry.delete_password() {
+    match entry.delete_credential() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(error) => Err(UploadError::Message(format!(
             "Failed to clear saved WarcraftLogs login index: {error}"
@@ -283,7 +283,7 @@ pub(crate) fn clear_saved_login(app_handle: &AppHandle) -> Result<(), UploadErro
             UploadError::Message(format!("Failed to open secure credential store: {error}"))
         })?;
 
-        match entry.delete_password() {
+        match entry.delete_credential() {
             Ok(_) | Err(keyring::Error::NoEntry) => {}
             Err(error) => {
                 return Err(UploadError::Message(format!(

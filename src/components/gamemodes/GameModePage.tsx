@@ -61,19 +61,19 @@ const gameModeConfig: Record<GameMode, GameModeConfigItem> = {
   "mythic-plus": {
     overviewTitle: "Mythic+ Sessions",
     analysisTitle: "Mythic+ Analysis",
-    description: "Browse sessions and open one to inspect pulls, events, and pace.",
+    description: "Browse sessions and inspect pulls, events, and pace.",
     icon: Sword,
   },
   raid: {
     overviewTitle: "Raid Sessions",
     analysisTitle: "Raid Analysis",
-    description: "Browse sessions and open one for timeline and event review.",
+    description: "Browse sessions and review timelines and key events.",
     icon: Shield,
   },
   pvp: {
     overviewTitle: "PvP Sessions",
     analysisTitle: "PvP Analysis",
-    description: "Browse sessions and drill into footage or combat metadata.",
+    description: "Browse sessions and analyze footage and combat metadata.",
     icon: Trophy,
   },
 };
@@ -239,7 +239,9 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
                   {config.overviewTitle}
                 </h1>
-                <p className="text-xs text-neutral-400">{config.description}</p>
+                <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
+                  {config.description}
+                </p>
               </div>
             </div>
           </header>
@@ -288,7 +290,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 id={`${ANALYSIS_TABS_ID_BASE}-metadata-panel`}
                 role="tabpanel"
                 aria-labelledby={`${ANALYSIS_TABS_ID_BASE}-metadata-tab`}
-                className="h-full overflow-y-auto px-4 py-3"
+                className="h-full overflow-y-auto px-4 py-3 [scrollbar-gutter:stable]"
               >
                 <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                   <h2 className="text-sm font-semibold text-neutral-100">Recording Summary</h2>
@@ -334,7 +336,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 id={`${ANALYSIS_TABS_ID_BASE}-log-analysis-panel`}
                 role="tabpanel"
                 aria-labelledby={`${ANALYSIS_TABS_ID_BASE}-log-analysis-tab`}
-                className="h-full overflow-y-auto px-4 py-3"
+                className="h-full overflow-y-auto px-4 py-3 [scrollbar-gutter:stable]"
               >
                 {isMetadataLoading ? (
                   <div className="mt-3 inline-flex items-center gap-2 rounded-sm border border-white/10 bg-(--surface-1)/70 px-3 py-2 text-xs text-neutral-300">
