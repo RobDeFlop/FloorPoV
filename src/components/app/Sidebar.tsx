@@ -1,3 +1,4 @@
+import { getVersion } from "@tauri-apps/api/app";
 import {
   Bug,
   Circle,
@@ -11,13 +12,12 @@ import {
   Trophy,
   UploadCloud,
 } from "lucide-react";
-import { getVersion } from "@tauri-apps/api/app";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useWclUpload } from "../../contexts/WclUploadContext";
-import { formatTime } from "../../utils/format";
 import { type AppView } from "../../types/ui";
+import { formatTime } from "../../utils/format";
 import { SidebarDividerBlock } from "./sidebar/SidebarDividerBlock";
 import { SidebarNavButton } from "./sidebar/SidebarNavButton";
 import { SidebarSectionLabel } from "./sidebar/SidebarSectionLabel";
@@ -243,7 +243,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               >
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  Live upload active
+                  Live Log active
                 </span>
                 <span className="font-medium text-emerald-50">Stop</span>
               </button>
