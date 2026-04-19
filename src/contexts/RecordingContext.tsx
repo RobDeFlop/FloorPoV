@@ -448,6 +448,25 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
       operationInFlightRef.current = true;
       setLastError(null);
+
+      const recordingPathSnapshot = recordingPath;
+      const recordingStartTimeSnapshot = recordingStartTime;
+      const recordingOriginSnapshot = recordingOriginRef.current;
+      const activeAutoTriggerModeSnapshot = activeAutoTriggerMode;
+
+      let shouldDiscardAutoRaidRecording = false;
+      if (
+        !isManualStop &&
+        recordingPathSnapshot &&
+        typeof recordingStartTimeSnapshot === "number" &&
+        recordingOriginSnapshot === "auto" &&
+        activeAutoTriggerModeSnapshot === "raid" &&
+        settings.minAutoRaidRecordingSeconds > 0
+      ) {
+        const autoRecordingDurationSeconds = (Date.now() - recordingStartTimeSnapshot) / 1000;
+        shouldDiscardAutoRaidRecording = autoRecordingDurationSeconds < settings.minAutoRaidRecordingSeconds;
+      }
+
       try {
         const waitForFinalize = waitForEvent("recording-finalized", RECORDING_EVENT_TIMEOUT_MS);
         const waitForStopped = waitForEvent("recording-stopped", RECORDING_EVENT_TIMEOUT_MS);
@@ -455,10 +474,20 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         await detachCombatWatchRecordingOutput();
         await invoke("stop_recording");
 
-        const [finalizedReceived, stoppedReceived] = await Promise.all([
-          waitForFinalize,
-          waitForStopped,
-        ]);
+        const finalizedReceived = await waitForFinalize;
+        if (shouldDiscardAutoRaidRecording && recordingPathSnapshot && finalizedReceived) {
+          try {
+            await invoke("delete_recording", { filePath: recordingPathSnapshot });
+            console.info("Deleted short auto raid recording as likely reset pull", {
+              filePath: recordingPathSnapshot,
+              minAutoRaidRecordingSeconds: settings.minAutoRaidRecordingSeconds,
+            });
+          } catch (error) {
+            console.warn("Failed to delete short auto raid recording:", error);
+          }
+        }
+
+        const stoppedReceived = await waitForStopped;
 
         if (!finalizedReceived) {
           console.warn("Timed out waiting for recording-finalized event");
@@ -486,7 +515,16 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         operationInFlightRef.current = false;
       }
     },
-    [clearPendingAutoStop, detachCombatWatchRecordingOutput, isCombatWatchRunning, settings.enableAutoRecording],
+    [
+      activeAutoTriggerMode,
+      clearPendingAutoStop,
+      detachCombatWatchRecordingOutput,
+      isCombatWatchRunning,
+      recordingPath,
+      recordingStartTime,
+      settings.enableAutoRecording,
+      settings.minAutoRaidRecordingSeconds,
+    ],
   );
 
   const startRecording = useCallback(async () => {

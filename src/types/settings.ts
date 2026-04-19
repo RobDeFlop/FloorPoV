@@ -17,6 +17,7 @@ export interface RecordingSettings {
   enableSystemAudio: boolean;
   enableRecordingDiagnostics: boolean;
   enableAutoRecording: boolean;
+  minAutoRaidRecordingSeconds: number;
   enableAutoUpdate: boolean;
   markerHotkey: MarkerHotkey;
 }
@@ -34,6 +35,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   enableSystemAudio: false,
   enableRecordingDiagnostics: false,
   enableAutoRecording: false,
+  minAutoRaidRecordingSeconds: 25,
   enableAutoUpdate: true,
   markerHotkey: 'F9',
 };
@@ -47,6 +49,8 @@ export const QUALITY_SETTINGS = {
 
 export const MIN_STORAGE_GB = 5;
 export const MAX_STORAGE_GB = 1000;
+export const MIN_AUTO_RAID_RECORDING_SECONDS = 0;
+export const MAX_AUTO_RAID_RECORDING_SECONDS = 300;
 
 export const HOTKEY_OPTIONS = [
   { value: "F9", label: "F9" },

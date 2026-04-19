@@ -23,8 +23,10 @@ import {
   CaptureSource,
   FrameRate,
   HOTKEY_OPTIONS,
+  MAX_AUTO_RAID_RECORDING_SECONDS,
   MAX_STORAGE_GB,
   MarkerHotkey,
+  MIN_AUTO_RAID_RECORDING_SECONDS,
   MIN_STORAGE_GB,
   QUALITY_SETTINGS,
   RecordingSettings,
@@ -79,6 +81,7 @@ const FIELD_IDS = {
   enableSystemAudio: "settings-enable-system-audio",
   enableRecordingDiagnostics: "settings-enable-recording-diagnostics",
   enableAutoRecording: "settings-enable-auto-recording",
+  minAutoRaidRecordingSeconds: "settings-min-auto-raid-recording-seconds",
   enableAutoUpdate: "settings-enable-auto-update",
 };
 
@@ -633,6 +636,33 @@ export function Settings() {
                 label="Enable Auto Recording"
                 description="Start recordings automatically when M+, raid, or PvP combat begins."
               />
+
+              <FormField
+                id={FIELD_IDS.minAutoRaidRecordingSeconds}
+                label="Minimum Auto Raid Recording Length (seconds)"
+                description="Auto raid recordings shorter than this are treated as likely resets and deleted. Set 0 to disable this filter."
+              >
+                <Input
+                  id={FIELD_IDS.minAutoRaidRecordingSeconds}
+                  type="number"
+                  min={MIN_AUTO_RAID_RECORDING_SECONDS}
+                  max={MAX_AUTO_RAID_RECORDING_SECONDS}
+                  value={formData.minAutoRaidRecordingSeconds}
+                  onChange={(e) => {
+                    const parsed = Number.parseInt(e.target.value, 10);
+                    const normalized = Number.isFinite(parsed)
+                      ? Math.min(
+                          MAX_AUTO_RAID_RECORDING_SECONDS,
+                          Math.max(MIN_AUTO_RAID_RECORDING_SECONDS, parsed),
+                        )
+                      : MIN_AUTO_RAID_RECORDING_SECONDS;
+                    setFormData({
+                      ...formData,
+                      minAutoRaidRecordingSeconds: normalized,
+                    });
+                  }}
+                />
+              </FormField>
 
               <div>
                 <ReadOnlyPathField
