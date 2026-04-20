@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Clapperboard,
-  FolderOpen,
   LoaderCircle,
   Maximize,
   Pause,
@@ -31,7 +30,6 @@ export function VideoPlayer() {
     togglePlay,
     setVolume,
     setPlaybackRate,
-    loadVideo,
     seek,
     updateTime,
     updateDuration,
@@ -41,18 +39,34 @@ export function VideoPlayer() {
 
   const { isRecording, recordingWarning } = useRecording();
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const inlineSurfaceHostRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
+  const volumeRef = useRef<HTMLDivElement>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const immersiveSurfaceRef = useRef<HTMLDivElement>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+  const [inlineSurfaceRect, setInlineSurfaceRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [videoNativeSize, setVideoNativeSize] = useState({ width: 0, height: 0 });
   const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1);
   const [immersiveViewportSize, setImmersiveViewportSize] = useState({ width: 0, height: 0 });
 
   const showVideo = Boolean(videoSrc) && !isRecording;
+  const toggleImmersiveMode = () => {
+    setIsImmersiveMode((currentValue) => !currentValue);
+  };
+
+  const inlineSurfaceStyle: CSSProperties | undefined = isImmersiveMode
+    ? undefined
+    : inlineSurfaceRect.width > 0 && inlineSurfaceRect.height > 0
+      ? {
+          left: `${inlineSurfaceRect.left}px`,
+          top: `${inlineSurfaceRect.top}px`,
+          width: `${inlineSurfaceRect.width}px`,
+          height: `${inlineSurfaceRect.height}px`,
+        }
+      : { visibility: "hidden" };
 
   const handleVolumeToggle = () => {
     if (volume === 0) {
@@ -63,17 +77,8 @@ export function VideoPlayer() {
     }
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      loadVideo(url);
-    }
-
-    e.target.value = "";
-  };
-
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const volumeProgress = Math.max(0, Math.min(volume * 100, 100));
   const immersiveVideoStyle =
     isImmersiveMode &&
     videoNativeSize.width > 0 &&
@@ -98,6 +103,9 @@ export function VideoPlayer() {
     isImmersiveMode && immersiveVideoStyle?.width
       ? { width: immersiveVideoStyle.width }
       : undefined;
+  const playerSurfaceClassName = isImmersiveMode
+    ? "fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-neutral-950"
+    : "fixed z-40 overflow-hidden bg-neutral-950/90";
 
   useEffect(() => {
     if (!showSpeedMenu) {
@@ -173,6 +181,63 @@ export function VideoPlayer() {
   }, [videoSrc]);
 
   useEffect(() => {
+    const updateInlineSurfaceRect = () => {
+      const hostRect = inlineSurfaceHostRef.current?.getBoundingClientRect();
+      if (!hostRect) {
+        setInlineSurfaceRect({ left: 0, top: 0, width: 0, height: 0 });
+        return;
+      }
+
+      const nextRect = {
+        left: Math.round(hostRect.left),
+        top: Math.round(hostRect.top),
+        width: Math.max(0, Math.round(hostRect.width)),
+        height: Math.max(0, Math.round(hostRect.height)),
+      };
+
+      setInlineSurfaceRect((currentRect) => {
+        if (
+          currentRect.left === nextRect.left &&
+          currentRect.top === nextRect.top &&
+          currentRect.width === nextRect.width &&
+          currentRect.height === nextRect.height
+        ) {
+          return currentRect;
+        }
+
+        return nextRect;
+      });
+    };
+
+    updateInlineSurfaceRect();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateInlineSurfaceRect);
+      window.addEventListener("scroll", updateInlineSurfaceRect, true);
+      return () => {
+        window.removeEventListener("resize", updateInlineSurfaceRect);
+        window.removeEventListener("scroll", updateInlineSurfaceRect, true);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateInlineSurfaceRect();
+    });
+
+    if (inlineSurfaceHostRef.current) {
+      resizeObserver.observe(inlineSurfaceHostRef.current);
+    }
+
+    window.addEventListener("resize", updateInlineSurfaceRect);
+    window.addEventListener("scroll", updateInlineSurfaceRect, true);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateInlineSurfaceRect);
+      window.removeEventListener("scroll", updateInlineSurfaceRect, true);
+    };
+  }, []);
+
+  useEffect(() => {
     const handleResize = () => {
       setDevicePixelRatio(window.devicePixelRatio || 1);
     };
@@ -236,14 +301,22 @@ export function VideoPlayer() {
     seek(clickPosition * duration);
   };
 
+  const handleVolumeClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!volumeRef.current) {
+      return;
+    }
+
+    const rect = volumeRef.current.getBoundingClientRect();
+    const clickPosition = (e.clientX - rect.left) / rect.width;
+    const nextVolume = Math.max(0, Math.min(clickPosition, 1));
+    setVolume(nextVolume);
+  };
+
   const playerSurface = (
     <div
-      ref={isImmersiveMode ? immersiveSurfaceRef : undefined}
-      className={
-        isImmersiveMode
-          ? "fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-neutral-950"
-          : "relative h-full w-full overflow-hidden bg-neutral-950/90"
-      }
+      ref={immersiveSurfaceRef}
+      className={playerSurfaceClassName}
+      style={inlineSurfaceStyle}
       aria-busy={isVideoLoading}
     >
       {showVideo && (
@@ -295,7 +368,9 @@ export function VideoPlayer() {
             }}
             onPlay={() => syncIsPlaying(true)}
             onPause={() => syncIsPlaying(false)}
-            onEnded={() => syncIsPlaying(false)}
+            onEnded={() => {
+              syncIsPlaying(false);
+            }}
           />
         </div>
       )}
@@ -359,29 +434,51 @@ export function VideoPlayer() {
               </ControlIconButton>
 
               <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={volume}
-                  onChange={(e) => setVolume(parseFloat(e.target.value))}
+                <div
+                  ref={volumeRef}
+                  className="group relative h-2 w-20 cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
+                  onClick={handleVolumeClick}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+                      event.preventDefault();
+                      setVolume(Math.max(0, volume - 0.05));
+                      return;
+                    }
+
+                    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setVolume(Math.min(1, volume + 0.05));
+                      return;
+                    }
+
+                    if (event.key === "Home") {
+                      event.preventDefault();
+                      setVolume(0);
+                      return;
+                    }
+
+                    if (event.key === "End") {
+                      event.preventDefault();
+                      setVolume(1);
+                    }
+                  }}
+                  role="slider"
                   aria-label="Volume"
-                  className="h-3 w-20 appearance-none cursor-pointer bg-transparent
-                            [&::-webkit-slider-thumb]:mt-[-4px]
-                            [&::-webkit-slider-thumb]:h-3
-                            [&::-webkit-slider-thumb]:w-3
-                            [&::-webkit-slider-thumb]:cursor-pointer
-                            [&::-webkit-slider-thumb]:appearance-none
-                            [&::-webkit-slider-thumb]:rounded-full
-                            [&::-webkit-slider-thumb]:bg-white
-                            [&::-webkit-slider-runnable-track]:h-1
-                            [&::-webkit-slider-runnable-track]:rounded-full
-                            [&::-webkit-slider-runnable-track]:bg-neutral-600"
-                />
-                <span className="w-8 text-right font-mono text-xs text-neutral-200">
-                  {Math.round(volume * 100)}%
-                </span>
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(volumeProgress)}
+                  aria-valuetext={`${Math.round(volumeProgress)}%`}
+                  tabIndex={0}
+                >
+                  <div
+                    className="h-full rounded-full bg-emerald-400/85 transition-colors"
+                    style={{ width: `${volumeProgress}%` }}
+                  />
+                  <div
+                    className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-emerald-100"
+                    style={{ left: `calc(${volumeProgress}% - 6px)` }}
+                  />
+                </div>
               </div>
 
               <span className="text-xs font-mono text-white">
@@ -481,16 +578,9 @@ export function VideoPlayer() {
 
               <ControlIconButton
                 label={isImmersiveMode ? "Exit fullscreen" : "Toggle fullscreen"}
-                onClick={() => setIsImmersiveMode((currentValue) => !currentValue)}
+                onClick={toggleImmersiveMode}
               >
                 <Maximize className="w-5 h-5" />
-              </ControlIconButton>
-
-              <ControlIconButton
-                label="Open video file"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <FolderOpen className="w-5 h-5" />
               </ControlIconButton>
             </div>
           </div>
@@ -499,21 +589,9 @@ export function VideoPlayer() {
     </div>
   );
 
-  const playerContent = isImmersiveMode
-    ? createPortal(playerSurface, document.body)
-    : playerSurface;
-
   return (
-    <div className="h-full w-full">
-      {playerContent}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/*"
-        onChange={handleFileChange}
-        className="hidden"
-      />
+    <div ref={inlineSurfaceHostRef} className="relative h-full w-full">
+      {createPortal(playerSurface, document.body)}
     </div>
   );
 }

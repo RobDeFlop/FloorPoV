@@ -1,6 +1,6 @@
 [package]
 name = "FloorPoV"
-version = "0.1.4-beta"
+version = "0.1.5-beta"
 description = "A World of Warcraft Gameplay recording and analyzing tool"
 authors = ["RobDeFlop"]
 edition = "2021"
