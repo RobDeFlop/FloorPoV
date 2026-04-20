@@ -44,9 +44,13 @@ export function VideoPlayer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
+  const immersiveSurfaceRef = useRef<HTMLDivElement>(null);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+  const [videoNativeSize, setVideoNativeSize] = useState({ width: 0, height: 0 });
+  const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1);
+  const [immersiveViewportSize, setImmersiveViewportSize] = useState({ width: 0, height: 0 });
 
   const showVideo = Boolean(videoSrc) && !isRecording;
 
@@ -70,6 +74,30 @@ export function VideoPlayer() {
   };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const immersiveVideoStyle =
+    isImmersiveMode &&
+    videoNativeSize.width > 0 &&
+    videoNativeSize.height > 0 &&
+    immersiveViewportSize.width > 0 &&
+    immersiveViewportSize.height > 0
+      ? (() => {
+          const safeDevicePixelRatio = Math.max(1, devicePixelRatio);
+          const nativeCssWidth = Math.max(1, Math.floor(videoNativeSize.width / safeDevicePixelRatio));
+          const nativeCssHeight = Math.max(1, Math.floor(videoNativeSize.height / safeDevicePixelRatio));
+          const widthScale = immersiveViewportSize.width / nativeCssWidth;
+          const heightScale = immersiveViewportSize.height / nativeCssHeight;
+          const scale = Math.min(widthScale, heightScale, 1);
+
+          return {
+            width: `${Math.max(1, Math.floor(nativeCssWidth * scale))}px`,
+            height: `${Math.max(1, Math.floor(nativeCssHeight * scale))}px`,
+          };
+        })()
+      : undefined;
+  const immersiveControlsStyle =
+    isImmersiveMode && immersiveVideoStyle?.width
+      ? { width: immersiveVideoStyle.width }
+      : undefined;
 
   useEffect(() => {
     if (!showSpeedMenu) {
@@ -113,6 +141,94 @@ export function VideoPlayer() {
     };
   }, [isImmersiveMode]);
 
+  useEffect(() => {
+    if (!showVideo) {
+      syncIsPlaying(false);
+      return;
+    }
+
+    const syncPlaybackState = () => {
+      const videoElement = videoRef.current;
+      if (!videoElement) {
+        return;
+      }
+
+      syncIsPlaying(!videoElement.paused && !videoElement.ended);
+    };
+
+    syncPlaybackState();
+    const syncTimeout = window.setTimeout(syncPlaybackState, 0);
+    const syncFrame = window.requestAnimationFrame(syncPlaybackState);
+
+    return () => {
+      window.clearTimeout(syncTimeout);
+      window.cancelAnimationFrame(syncFrame);
+    };
+  }, [isImmersiveMode, showVideo, syncIsPlaying, videoRef]);
+
+  useEffect(() => {
+    if (!videoSrc) {
+      setVideoNativeSize({ width: 0, height: 0 });
+    }
+  }, [videoSrc]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setDevicePixelRatio(window.devicePixelRatio || 1);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isImmersiveMode || !showVideo) {
+      setImmersiveViewportSize({ width: 0, height: 0 });
+      return;
+    }
+
+    const updateViewportSize = () => {
+      const surfaceRect = immersiveSurfaceRef.current?.getBoundingClientRect();
+      if (!surfaceRect) {
+        return;
+      }
+
+      const nextWidth = Math.max(0, Math.floor(surfaceRect.width));
+      const nextHeight = Math.max(0, Math.floor(surfaceRect.height));
+
+      setImmersiveViewportSize((currentSize) =>
+        currentSize.width === nextWidth && currentSize.height === nextHeight
+          ? currentSize
+          : { width: nextWidth, height: nextHeight }
+      );
+    };
+
+    updateViewportSize();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateViewportSize);
+      return () => {
+        window.removeEventListener("resize", updateViewportSize);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateViewportSize();
+    });
+
+    if (immersiveSurfaceRef.current) {
+      resizeObserver.observe(immersiveSurfaceRef.current);
+    }
+
+    window.addEventListener("resize", updateViewportSize);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateViewportSize);
+    };
+  }, [isImmersiveMode, showVideo]);
+
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || duration === 0) return;
     const rect = progressRef.current.getBoundingClientRect();
@@ -122,52 +238,66 @@ export function VideoPlayer() {
 
   const playerSurface = (
     <div
+      ref={isImmersiveMode ? immersiveSurfaceRef : undefined}
       className={
         isImmersiveMode
-          ? "fixed inset-0 z-[200] flex h-screen w-screen items-center justify-center overflow-hidden bg-neutral-950"
+          ? "fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-neutral-950"
           : "relative h-full w-full overflow-hidden bg-neutral-950/90"
       }
       aria-busy={isVideoLoading}
     >
       {showVideo && (
-        <video
-          ref={videoRef}
-          src={videoSrc || undefined}
+        <div
           className={
             isImmersiveMode
-              ? "block h-auto w-auto max-h-full max-w-full object-contain"
-              : "h-full w-full object-contain"
+              ? "flex h-full w-full items-center justify-center overflow-hidden"
+              : "h-full w-full"
           }
-          controls={false}
-          playsInline
-          disablePictureInPicture
-          preload="metadata"
-          onLoadStart={() => {
-            setVideoLoading(true);
-          }}
-          onCanPlay={() => {
-            setVideoLoading(false);
-          }}
-          onError={(event) => {
-            setVideoLoading(false);
-            const mediaError = event.currentTarget.error;
-            console.error("[VideoPlayer] Video load error", {
-              code: mediaError?.code,
-              message: mediaError?.message,
-              networkState: event.currentTarget.networkState,
-              readyState: event.currentTarget.readyState,
-              src: videoSrc,
-            });
-          }}
-          onTimeUpdate={(e) => updateTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => {
-            setVideoLoading(false);
-            updateDuration(e.currentTarget.duration);
-          }}
-          onPlay={() => syncIsPlaying(true)}
-          onPause={() => syncIsPlaying(false)}
-          onEnded={() => syncIsPlaying(false)}
-        />
+        >
+          <video
+            ref={videoRef}
+            src={videoSrc || undefined}
+            className={
+              isImmersiveMode
+                ? "block h-auto w-auto max-h-full max-w-full object-contain"
+                : "h-full w-full object-contain"
+            }
+            style={immersiveVideoStyle}
+            controls={false}
+            playsInline
+            disablePictureInPicture
+            preload="metadata"
+            onLoadStart={() => {
+              setVideoLoading(true);
+            }}
+            onCanPlay={() => {
+              setVideoLoading(false);
+            }}
+            onError={(event) => {
+              setVideoLoading(false);
+              const mediaError = event.currentTarget.error;
+              console.error("[VideoPlayer] Video load error", {
+                code: mediaError?.code,
+                message: mediaError?.message,
+                networkState: event.currentTarget.networkState,
+                readyState: event.currentTarget.readyState,
+                src: videoSrc,
+              });
+            }}
+            onTimeUpdate={(e) => updateTime(e.currentTarget.currentTime)}
+            onLoadedMetadata={(e) => {
+              setVideoLoading(false);
+              updateDuration(e.currentTarget.duration);
+              setVideoNativeSize({
+                width: e.currentTarget.videoWidth,
+                height: e.currentTarget.videoHeight,
+              });
+            }}
+            onPlay={() => syncIsPlaying(true)}
+            onPause={() => syncIsPlaying(false)}
+            onEnded={() => syncIsPlaying(false)}
+          />
+        </div>
       )}
 
       {showVideo && isVideoLoading && (
@@ -204,7 +334,14 @@ export function VideoPlayer() {
       )}
 
       {showVideo && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-neutral-950/95 via-neutral-950/70 to-transparent p-3 sm:p-4">
+        <div
+          className={
+            isImmersiveMode
+              ? "absolute bottom-0 left-1/2 w-full -translate-x-1/2 bg-gradient-to-t from-neutral-950/95 via-neutral-950/70 to-transparent p-3 sm:p-4"
+              : "absolute bottom-0 left-0 right-0 bg-gradient-to-t from-neutral-950/95 via-neutral-950/70 to-transparent p-3 sm:p-4"
+          }
+          style={immersiveControlsStyle}
+        >
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-3">
             <div className="flex items-center gap-2 sm:gap-3 md:shrink-0">
               <ControlIconButton
