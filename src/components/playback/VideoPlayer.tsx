@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   Clapperboard,
@@ -46,6 +47,8 @@ export function VideoPlayer() {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
   const [isImmersiveMode, setIsImmersiveMode] = useState(false);
+  const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1);
+  const [videoNativeSize, setVideoNativeSize] = useState({ width: 0, height: 0 });
 
   const showVideo = Boolean(videoSrc) && !isRecording;
 
@@ -69,6 +72,13 @@ export function VideoPlayer() {
   };
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const immersiveVideoStyle =
+    isImmersiveMode && videoNativeSize.width > 0 && videoNativeSize.height > 0
+      ? {
+          maxWidth: `${Math.max(1, Math.floor(videoNativeSize.width / devicePixelRatio))}px`,
+          maxHeight: `${Math.max(1, Math.floor(videoNativeSize.height / devicePixelRatio))}px`,
+        }
+      : undefined;
 
   useEffect(() => {
     if (!showSpeedMenu) {
@@ -112,6 +122,23 @@ export function VideoPlayer() {
     };
   }, [isImmersiveMode]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setDevicePixelRatio(window.devicePixelRatio || 1);
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!videoSrc) {
+      setVideoNativeSize({ width: 0, height: 0 });
+    }
+  }, [videoSrc]);
+
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || duration === 0) return;
     const rect = progressRef.current.getBoundingClientRect();
@@ -119,21 +146,25 @@ export function VideoPlayer() {
     seek(clickPosition * duration);
   };
 
-  return (
-    <div className="h-full w-full">
-      <div
-        className={
-          isImmersiveMode
-            ? "fixed inset-0 z-[200] h-screen w-screen overflow-hidden bg-neutral-950"
-            : "relative h-full w-full overflow-hidden bg-neutral-950/90"
-        }
-        aria-busy={isVideoLoading}
-      >
+  const playerSurface = (
+    <div
+      className={
+        isImmersiveMode
+          ? "fixed inset-0 z-[200] flex h-screen w-screen items-center justify-center overflow-hidden bg-neutral-950"
+          : "relative h-full w-full overflow-hidden bg-neutral-950/90"
+      }
+      aria-busy={isVideoLoading}
+    >
         {showVideo && (
           <video
             ref={videoRef}
             src={videoSrc || undefined}
-            className="h-full w-full object-contain"
+            className={
+              isImmersiveMode
+                ? "block h-auto w-auto max-h-full max-w-full object-contain"
+                : "h-full w-full object-contain"
+            }
+            style={immersiveVideoStyle}
             controls={false}
             playsInline
             disablePictureInPicture
@@ -159,6 +190,10 @@ export function VideoPlayer() {
             onLoadedMetadata={(e) => {
               setVideoLoading(false);
               updateDuration(e.currentTarget.duration);
+              setVideoNativeSize({
+                width: e.currentTarget.videoWidth,
+                height: e.currentTarget.videoHeight,
+              });
             }}
             onPlay={() => syncIsPlaying(true)}
             onPause={() => syncIsPlaying(false)}
@@ -351,7 +386,14 @@ export function VideoPlayer() {
             </div>
           </div>
         )}
-      </div>
+    </div>
+  );
+
+  const playerContent = isImmersiveMode ? createPortal(playerSurface, document.body) : playerSurface;
+
+  return (
+    <div className="h-full w-full">
+      {playerContent}
 
       <input
         ref={fileInputRef}
