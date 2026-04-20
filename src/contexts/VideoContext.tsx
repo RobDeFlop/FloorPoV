@@ -17,7 +17,6 @@ interface VideoContextType {
   setVolume: (volume: number) => void;
   setPlaybackRate: (rate: number) => void;
   loadVideo: (src: string) => void;
-  toggleFullscreen: () => void;
   updateTime: (time: number) => void;
   updateDuration: (duration: number) => void;
   syncIsPlaying: (playing: boolean) => void;
@@ -155,22 +154,6 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const toggleFullscreen = useCallback(() => {
-    void (async () => {
-      try {
-        if (document.fullscreenElement) {
-          await document.exitFullscreen();
-          return;
-        }
-
-        const targetElement = videoRef.current?.parentElement ?? videoRef.current;
-        await targetElement?.requestFullscreen();
-      } catch (error) {
-        console.error("Failed to toggle fullscreen:", error);
-      }
-    })();
-  }, []);
-
   return (
     <VideoContext.Provider
       value={{
@@ -189,7 +172,6 @@ export function VideoProvider({ children }: { children: ReactNode }) {
         setVolume,
         setPlaybackRate,
         loadVideo,
-        toggleFullscreen,
         updateTime,
         updateDuration,
         syncIsPlaying,
