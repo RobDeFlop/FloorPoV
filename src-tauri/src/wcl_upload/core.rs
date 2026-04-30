@@ -19,8 +19,8 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
 use crate::wcl_upload::auth::{
-    clear_saved_login, read_saved_login_email, resolve_login_credentials,
-    resolve_saved_login_for_email, save_login_credentials,
+    clear_saved_login, has_any_saved_login_credentials, read_saved_login_email,
+    resolve_login_credentials, resolve_saved_login_for_email, save_login_credentials,
 };
 use crate::wcl_upload::constants::{
     BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK, CREATE_NO_WINDOW,
@@ -45,8 +45,9 @@ use crate::wcl_upload::types::{
     CreateReportRequest, CreateReportResponse, FetchWclGuildsRequest, FetchWclGuildsResponse,
     LiveUploadRuntime, LoginResponse, MasterIds, ParseLinesResponse, ParserAssets, ParserFight,
     SidebarGuildsResponse, StartWclLiveUploadRequest, StartWclLiveUploadResponse,
-    StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclGuild,
-    WclLiveUploadState, WclLoginState,
+    StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclAuthStatus,
+    WclAuthStatusRequest, WclGuild, WclLiveUploadState, WclLoginRequest, WclLoginResponse,
+    WclLoginState,
 };
 use crate::wcl_upload::validation::{validate_live_request, validate_request};
 
@@ -799,6 +800,76 @@ pub fn get_wcl_login_state(app_handle: AppHandle) -> Result<WclLoginState, Strin
         }),
         Err(error) => Err(error.to_string()),
     }
+}
+
+pub fn get_wcl_auth_status(
+    app_handle: AppHandle,
+    request: Option<WclAuthStatusRequest>,
+) -> Result<WclAuthStatus, String> {
+    let saved_email = read_saved_login_email(&app_handle).map_err(|error| error.to_string())?;
+    let has_any_saved_credentials =
+        has_any_saved_login_credentials(&app_handle).map_err(|error| error.to_string())?;
+
+    let email_to_check = request
+        .and_then(|payload| payload.email)
+        .unwrap_or_else(|| saved_email.clone().unwrap_or_default());
+
+    let has_saved_credentials_for_email = if email_to_check.trim().is_empty() {
+        false
+    } else {
+        resolve_saved_login_for_email(&app_handle, email_to_check.trim())
+            .map(|value| value.is_some())
+            .map_err(|error| error.to_string())?
+    };
+
+    Ok(WclAuthStatus {
+        saved_email,
+        has_any_saved_credentials,
+        has_saved_credentials_for_email,
+    })
+}
+
+pub fn login_wcl(
+    app_handle: AppHandle,
+    request: WclLoginRequest,
+) -> Result<WclLoginResponse, String> {
+    if request.email.trim().is_empty() {
+        return Err("WarcraftLogs email is required".to_string());
+    }
+
+    let remember_login = request.remember_login.unwrap_or(false);
+    let resolved = resolve_login_credentials(
+        &app_handle,
+        request.email.trim(),
+        request.password,
+        request.use_saved_login.unwrap_or(false),
+        remember_login,
+    )
+    .map_err(|error| error.to_string())?;
+
+    let client_version = resolve_client_version();
+    let session = WclSession::new(client_version).map_err(|error| error.to_string())?;
+    session
+        .login(&resolved.email, &resolved.password)
+        .map_err(|error| error.to_string())?;
+
+    if remember_login {
+        save_login_credentials(&app_handle, &resolved.email, &resolved.password)
+            .map_err(|error| error.to_string())?;
+    }
+
+    let has_saved_credentials_for_email =
+        resolve_saved_login_for_email(&app_handle, &resolved.email)
+            .map(|value| value.is_some())
+            .map_err(|error| error.to_string())?;
+    let has_any_saved_credentials =
+        has_any_saved_login_credentials(&app_handle).map_err(|error| error.to_string())?;
+
+    Ok(WclLoginResponse {
+        email: resolved.email,
+        has_saved_credentials_for_email,
+        has_any_saved_credentials,
+    })
 }
 
 pub fn clear_wcl_saved_login(app_handle: AppHandle) -> Result<(), String> {

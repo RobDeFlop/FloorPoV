@@ -783,6 +783,10 @@ fn parse_important_combat_event(
         return None;
     }
 
+    if should_ignore_unconscious_death(&parsed_line) {
+        return None;
+    }
+
     Some(ImportantCombatEvent {
         raw_event_type: parsed_line.raw_event_type,
         log_timestamp: Some(parsed_line.log_timestamp),
@@ -1374,6 +1378,42 @@ fn normalize_important_event_type(event_type: &str) -> Option<&'static str> {
         "CHALLENGE_MODE_START" | "CHALLENGE_MODE_END" => Some("CHALLENGE_CONTEXT"),
         "ARENA_MATCH_START" | "ARENA_MATCH_END" | "PVP_MATCH_START" | "PVP_MATCH_COMPLETE"
         | "BATTLEGROUND_START" | "BATTLEGROUND_END" => Some("PVP_CONTEXT"),
+        _ => None,
+    }
+}
+
+fn should_ignore_unconscious_death(parsed_line: &ParsedLogLine) -> bool {
+    if parsed_line.normalized_event_type != "UNIT_DIED" {
+        return false;
+    }
+
+    matches!(extract_unconscious_on_death(&parsed_line.fields), Some(true))
+}
+
+fn extract_unconscious_on_death(fields: &[String]) -> Option<bool> {
+    if fields.len() <= 8 {
+        return None;
+    }
+
+    let extra_count = fields.len().saturating_sub(8);
+    let candidate = match extra_count {
+        1 => fields.get(8),
+        2 => fields.get(9),
+        _ => None,
+    }?;
+
+    parse_unconscious_flag(candidate)
+}
+
+fn parse_unconscious_flag(value: &str) -> Option<bool> {
+    let trimmed = value.trim().trim_matches('"');
+    if trimmed.is_empty() || trimmed == "nil" {
+        return None;
+    }
+
+    match trimmed.to_ascii_lowercase().as_str() {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
         _ => None,
     }
 }
@@ -2907,5 +2947,70 @@ mod tests {
             "Encounter should end at ~96.1s, got {:?}",
             snapshot.encounters[0].ended_at_seconds
         );
+    }
+
+    #[test]
+    fn ignores_unconscious_death_events() {
+        let mut accumulator = RecordingMetadataAccumulator::default();
+        accumulator.begin_recording_session(0.0);
+
+        let unconscious_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "0000000000000000",
+                "nil",
+                "0x80000000",
+                "0x80000000",
+                "Player-3682-0B561573",
+                "\"Aliandria-Ragnaros-EU\"",
+                "0x512",
+                "0x80000000",
+                "1",
+            ],
+            "4/21/2026 04:04:59.4742",
+        );
+        accumulator.consume_combat_log_line(&unconscious_death, 5.0);
+
+        let normal_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "0000000000000000",
+                "nil",
+                "0x80000000",
+                "0x80000000",
+                "Player-3682-0B561573",
+                "\"Aliandria-Ragnaros-EU\"",
+                "0x512",
+                "0x80000000",
+                "0",
+            ],
+            "4/21/2026 04:05:10.0000",
+        );
+        accumulator.consume_combat_log_line(&normal_death, 10.0);
+
+        let no_flag_death = build_line_at(
+            "UNIT_DIED",
+            &[
+                "0000000000000000",
+                "nil",
+                "0x80000000",
+                "0x80000000",
+                "Player-3682-0B561573",
+                "\"Aliandria-Ragnaros-EU\"",
+                "0x512",
+                "0x80000000",
+            ],
+            "4/21/2026 04:05:20.0000",
+        );
+        accumulator.consume_combat_log_line(&no_flag_death, 15.0);
+
+        let snapshot = accumulator.snapshot();
+        let death_events: Vec<_> = snapshot
+            .important_events
+            .iter()
+            .filter(|event| event.event_type == "UNIT_DIED")
+            .collect();
+
+        assert_eq!(death_events.len(), 2, "Unconscious deaths should be ignored");
     }
 }

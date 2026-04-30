@@ -192,6 +192,22 @@ fn save_email_to_index(email: &str) -> Result<(), UploadError> {
     Ok(())
 }
 
+fn push_unique_email_case_insensitive(emails: &mut Vec<String>, email: &str) {
+    let trimmed = email.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    if emails
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(trimmed))
+    {
+        return;
+    }
+
+    emails.push(trimmed.to_string());
+}
+
 fn clear_saved_email_entry() -> Result<(), UploadError> {
     let entry =
         keyring::Entry::new(WCL_LOGIN_SERVICE, WCL_LOGIN_SAVED_EMAIL_ACCOUNT).map_err(|error| {
@@ -261,21 +277,11 @@ pub(crate) fn clear_saved_login(app_handle: &AppHandle) -> Result<(), UploadErro
     let mut emails_to_clear = read_saved_email_index()?;
 
     if let Some(saved_email) = read_saved_login_email(app_handle)? {
-        if !emails_to_clear
-            .iter()
-            .any(|existing| existing.eq_ignore_ascii_case(&saved_email))
-        {
-            emails_to_clear.push(saved_email);
-        }
+        push_unique_email_case_insensitive(&mut emails_to_clear, &saved_email);
     }
 
     if let Some(legacy_email) = read_legacy_saved_login_email(app_handle)? {
-        if !emails_to_clear
-            .iter()
-            .any(|existing| existing.eq_ignore_ascii_case(&legacy_email))
-        {
-            emails_to_clear.push(legacy_email);
-        }
+        push_unique_email_case_insensitive(&mut emails_to_clear, &legacy_email);
     }
 
     for email in emails_to_clear {
@@ -307,11 +313,62 @@ pub(crate) fn resolve_saved_login_for_email(
     app_handle: &AppHandle,
     email: &str,
 ) -> Result<Option<String>, UploadError> {
-    let metadata_email = read_saved_login_email(app_handle)?;
-    match metadata_email {
-        Some(saved_email) if saved_email.eq_ignore_ascii_case(email) => {
-            read_saved_password(&saved_email)
-        }
-        _ => Ok(None),
+    let trimmed_email = email.trim();
+    if trimmed_email.is_empty() {
+        return Ok(None);
     }
+
+    if let Some(password) = read_saved_password(trimmed_email)? {
+        return Ok(Some(password));
+    }
+
+    let normalized_email = normalize_email_for_match(trimmed_email);
+
+    if let Some(saved_email) = read_saved_login_email(app_handle)? {
+        if normalize_email_for_match(&saved_email) == normalized_email {
+            if let Some(password) = read_saved_password(&saved_email)? {
+                return Ok(Some(password));
+            }
+        }
+    }
+
+    for indexed_email in read_saved_email_index()? {
+        if normalize_email_for_match(&indexed_email) != normalized_email {
+            continue;
+        }
+
+        if let Some(password) = read_saved_password(&indexed_email)? {
+            return Ok(Some(password));
+        }
+    }
+
+    if let Some(legacy_email) = read_legacy_saved_login_email(app_handle)? {
+        if normalize_email_for_match(&legacy_email) == normalized_email {
+            if let Some(password) = read_saved_password(&legacy_email)? {
+                return Ok(Some(password));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+pub(crate) fn has_any_saved_login_credentials(app_handle: &AppHandle) -> Result<bool, UploadError> {
+    let mut candidate_emails = read_saved_email_index()?;
+
+    if let Some(saved_email) = read_saved_login_email(app_handle)? {
+        push_unique_email_case_insensitive(&mut candidate_emails, &saved_email);
+    }
+
+    if let Some(legacy_email) = read_legacy_saved_login_email(app_handle)? {
+        push_unique_email_case_insensitive(&mut candidate_emails, &legacy_email);
+    }
+
+    for candidate in candidate_emails {
+        if read_saved_password(&candidate)?.is_some() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }

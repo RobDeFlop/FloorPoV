@@ -63,6 +63,37 @@ pub struct WclLoginState {
     pub has_saved_credentials: bool,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclAuthStatusRequest {
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclAuthStatus {
+    pub saved_email: Option<String>,
+    pub has_any_saved_credentials: bool,
+    pub has_saved_credentials_for_email: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLoginRequest {
+    pub email: String,
+    pub password: Option<String>,
+    pub use_saved_login: Option<bool>,
+    pub remember_login: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLoginResponse {
+    pub email: String,
+    pub has_saved_credentials_for_email: bool,
+    pub has_any_saved_credentials: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartWclUploadResponse {

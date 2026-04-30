@@ -13,7 +13,7 @@ import {
   UploadCloud,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   StartWclLiveUploadPayload,
   StartWclUploadPayload,
@@ -37,9 +37,21 @@ interface FetchWclGuildsResponse {
   guilds: WclGuild[];
 }
 
-interface WclLoginState {
+interface WclAuthStatus {
   savedEmail: string | null;
-  hasSavedCredentials: boolean;
+  hasAnySavedCredentials: boolean;
+  hasSavedCredentialsForEmail: boolean;
+}
+
+interface WclLoginResponse {
+  email: string;
+  hasAnySavedCredentials: boolean;
+  hasSavedCredentialsForEmail: boolean;
+}
+
+interface LoginFeedback {
+  tone: "success" | "error";
+  message: string;
 }
 
 const REGION_OPTIONS: SettingsSelectOption[] = [
@@ -98,21 +110,31 @@ export function WarcraftLogsUploadPage() {
   const [password, setPassword] = useState("");
   const [useSavedLogin, setUseSavedLogin] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
-  const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
+  const [savedLoginEmail, setSavedLoginEmail] = useState<string | null>(null);
+  const [hasAnySavedCredentials, setHasAnySavedCredentials] = useState(false);
+  const [hasSavedCredentialsForCurrentEmail, setHasSavedCredentialsForCurrentEmail] =
+    useState(false);
   const [description, setDescription] = useState("");
   const [region, setRegion] = useState("2");
   const [visibility, setVisibility] = useState("0");
   const [guildOptions, setGuildOptions] = useState<WclGuild[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("none");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isLoadingGuilds, setIsLoadingGuilds] = useState(false);
+  const [hasAutoLoadedGuilds, setHasAutoLoadedGuilds] = useState(false);
+  const [isAuthStatusLoaded, setIsAuthStatusLoaded] = useState(false);
+  const [loginFeedback, setLoginFeedback] = useState<LoginFeedback | null>(null);
   const [isResolvingLatestLog, setIsResolvingLatestLog] = useState(false);
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [preferencesStore, setPreferencesStore] = useState<Store | null>(null);
   const [isRememberLoginPreferenceLoaded, setIsRememberLoginPreferenceLoaded] = useState(false);
+  const lastAuthStatusEmailRef = useRef("");
+
+  const isAuthBusy = isLoggingIn || isLoadingGuilds;
 
   const hasCredentialInput =
     email.trim().length > 0 &&
-    (password.trim().length > 0 || (useSavedLogin && hasSavedCredentials));
+    (password.trim().length > 0 || (useSavedLogin && hasSavedCredentialsForCurrentEmail));
 
   useEffect(() => {
     let mounted = true;
@@ -186,79 +208,309 @@ export function WarcraftLogsUploadPage() {
     void persistRememberLoginPreference();
   }, [isRememberLoginPreferenceLoaded, preferencesStore, rememberLogin]);
 
+  const refreshAuthStatus = useCallback(
+    async (emailToCheck?: string): Promise<WclAuthStatus> => {
+      const trimmedEmail = (emailToCheck ?? email).trim();
+
+      if (!trimmedEmail) {
+        return invoke<WclAuthStatus>("get_wcl_auth_status");
+      }
+
+      return invoke<WclAuthStatus>("get_wcl_auth_status", {
+        request: { email: trimmedEmail },
+      });
+    },
+    [email],
+  );
+
+  const applyAuthStatus = useCallback((status: WclAuthStatus) => {
+    setSavedLoginEmail(status.savedEmail);
+    setHasAnySavedCredentials(status.hasAnySavedCredentials);
+    setHasSavedCredentialsForCurrentEmail(status.hasSavedCredentialsForEmail);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
-    const loadLoginState = async () => {
+    const loadAuthState = async () => {
       try {
-        const loginState = await invoke<WclLoginState>("get_wcl_login_state");
+        const authStatus = await invoke<WclAuthStatus>("get_wcl_auth_status");
         if (!mounted) {
           return;
         }
-        setHasSavedCredentials(loginState.hasSavedCredentials);
-        if (loginState.savedEmail) {
-          setEmail(loginState.savedEmail);
-          setUseSavedLogin(loginState.hasSavedCredentials);
+
+        applyAuthStatus(authStatus);
+        if (authStatus.savedEmail) {
+          lastAuthStatusEmailRef.current = authStatus.savedEmail;
+          setEmail((current) => (current.trim().length > 0 ? current : authStatus.savedEmail ?? ""));
+          setUseSavedLogin(authStatus.hasSavedCredentialsForEmail);
+        } else {
+          setUseSavedLogin(false);
         }
       } catch (error) {
-        if (!mounted) {
-          return;
+        if (mounted) {
+          setWclError(getErrorMessage(error));
         }
-        setWclError(getErrorMessage(error));
+      } finally {
+        if (mounted) {
+          setIsAuthStatusLoaded(true);
+        }
       }
     };
 
-    void loadLoginState();
+    void loadAuthState();
 
     return () => {
       mounted = false;
     };
-  }, [setWclError]);
+  }, [applyAuthStatus, setWclError]);
+
+  useEffect(() => {
+    if (!isAuthStatusLoaded) {
+      return;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setHasSavedCredentialsForCurrentEmail(false);
+      if (useSavedLogin) {
+        setUseSavedLogin(false);
+      }
+      return;
+    }
+
+    if (lastAuthStatusEmailRef.current === trimmedEmail) {
+      return;
+    }
+
+    let mounted = true;
+    const syncAuthStatus = async () => {
+      try {
+        const status = await refreshAuthStatus(trimmedEmail);
+        if (!mounted) {
+          return;
+        }
+
+        lastAuthStatusEmailRef.current = trimmedEmail;
+        applyAuthStatus(status);
+        if (useSavedLogin && !status.hasSavedCredentialsForEmail) {
+          setUseSavedLogin(false);
+        }
+      } catch {
+        // keep current auth status on refresh failure
+      }
+    };
+
+    void syncAuthStatus();
+
+    return () => {
+      mounted = false;
+    };
+  }, [applyAuthStatus, email, isAuthStatusLoaded, refreshAuthStatus, useSavedLogin]);
 
   const canStartUpload = useMemo(() => {
-    return !isUploading && !isLiveUploading && logFilePath.trim().length > 0 && hasCredentialInput;
-  }, [hasCredentialInput, isLiveUploading, isUploading, logFilePath]);
+    return (
+      !isUploading &&
+      !isLiveUploading &&
+      !isAuthBusy &&
+      logFilePath.trim().length > 0 &&
+      hasCredentialInput
+    );
+  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading, logFilePath]);
+
+  const canLogin = useMemo(() => {
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
+  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
 
   const canLoadGuilds = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isLoadingGuilds && hasCredentialInput;
-  }, [hasCredentialInput, isLiveUploading, isLoadingGuilds, isUploading]);
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
+  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
 
   const canStartLiveUpload = useMemo(() => {
-    return !isUploading && !isLiveUploading && hasCredentialInput;
-  }, [hasCredentialInput, isLiveUploading, isUploading]);
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
+  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
 
   const progressBarTheme = errorMessage ? "bg-rose-400/90" : "bg-emerald-400/85";
 
-  const handleLoadGuilds = async () => {
+  const resolveGuildRequest = useCallback(() => {
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+    return {
+      email: trimmedEmail,
+      password: trimmedPassword ? trimmedPassword : null,
+      useSavedLogin,
+      rememberLogin,
+    };
+  }, [email, password, rememberLogin, useSavedLogin]);
+
+  const ensureSavedLoginAvailable = useCallback(
+    async (emailToCheck: string) => {
+      const status = await refreshAuthStatus(emailToCheck);
+      lastAuthStatusEmailRef.current = emailToCheck;
+      applyAuthStatus(status);
+      if (status.hasSavedCredentialsForEmail) {
+        return { canUseSavedLogin: true as const, message: null };
+      }
+
+      setUseSavedLogin(false);
+      let message: string;
+      if (status.savedEmail) {
+        message = `Saved login is available for ${status.savedEmail}. Enter your password for ${emailToCheck}.`;
+      } else {
+        message = "No saved WarcraftLogs login is available. Enter your password to continue.";
+      }
+
+      setWclError(message);
+
+      return { canUseSavedLogin: false as const, message };
+    },
+    [applyAuthStatus, refreshAuthStatus, setWclError],
+  );
+
+  const loadGuilds = useCallback(
+    async (request: {
+      email: string;
+      password: string | null;
+      useSavedLogin: boolean;
+      rememberLogin: boolean;
+    }) => {
+      const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds", { request });
+      setEmail(response.email);
+      setGuildOptions(response.guilds);
+
+      const authStatus = await refreshAuthStatus(response.email);
+      lastAuthStatusEmailRef.current = response.email;
+      applyAuthStatus(authStatus);
+
+      if ((request.rememberLogin || request.useSavedLogin) && authStatus.hasSavedCredentialsForEmail) {
+        setUseSavedLogin(true);
+      }
+
+      return response.guilds.length;
+    },
+    [applyAuthStatus, refreshAuthStatus],
+  );
+
+  const handleRefreshGuilds = useCallback(async () => {
     if (!canLoadGuilds) {
       return;
     }
 
-    setIsLoadingGuilds(true);
+    const request = resolveGuildRequest();
     setWclError(null);
 
     try {
-      const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds", {
-        request: {
-          email: email.trim(),
-          password: password.trim() ? password : null,
-          useSavedLogin,
-          rememberLogin,
-        },
-      });
-
-      setEmail(response.email);
-      setGuildOptions(response.guilds);
-      if (rememberLogin) {
-        setHasSavedCredentials(true);
+      if (!request.password && request.useSavedLogin) {
+        const { canUseSavedLogin } = await ensureSavedLoginAvailable(request.email);
+        if (!canUseSavedLogin) {
+          return;
+        }
       }
+
+      setIsLoadingGuilds(true);
+      await loadGuilds(request);
+      setHasAutoLoadedGuilds(true);
     } catch (error) {
       setWclError(getErrorMessage(error));
     } finally {
-      setPassword("");
       setIsLoadingGuilds(false);
     }
-  };
+  }, [canLoadGuilds, ensureSavedLoginAvailable, loadGuilds, resolveGuildRequest, setWclError]);
+
+  const handleLogin = useCallback(async () => {
+    if (!canLogin) {
+      return;
+    }
+
+    const request = resolveGuildRequest();
+    setWclError(null);
+    setLoginFeedback(null);
+    setIsLoggingIn(true);
+    let didLoginSucceed = false;
+
+    try {
+      if (!request.password && request.useSavedLogin) {
+        const { canUseSavedLogin, message } = await ensureSavedLoginAvailable(request.email);
+        if (!canUseSavedLogin) {
+          if (message) {
+            setLoginFeedback({ tone: "error", message });
+          }
+          return;
+        }
+      }
+
+      const loginResponse = await invoke<WclLoginResponse>("login_wcl", { request });
+      didLoginSucceed = true;
+      setEmail(loginResponse.email);
+      setHasAnySavedCredentials(loginResponse.hasAnySavedCredentials);
+      setHasSavedCredentialsForCurrentEmail(loginResponse.hasSavedCredentialsForEmail);
+
+      const authStatus = await refreshAuthStatus(loginResponse.email);
+      lastAuthStatusEmailRef.current = loginResponse.email;
+      applyAuthStatus(authStatus);
+      if (authStatus.hasSavedCredentialsForEmail && (request.useSavedLogin || request.rememberLogin)) {
+        setUseSavedLogin(true);
+      }
+
+      setIsLoadingGuilds(true);
+      const guildCount = await loadGuilds({ ...request, email: loginResponse.email });
+      setHasAutoLoadedGuilds(true);
+      setLoginFeedback({
+        tone: "success",
+        message:
+          guildCount > 0
+            ? `Login successful. Loaded ${guildCount} guild${guildCount === 1 ? "" : "s"}.`
+            : "Login successful. No guilds found for this account.",
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setWclError(message);
+      setLoginFeedback({
+        tone: "error",
+        message: didLoginSucceed
+          ? `Login succeeded, but loading guilds failed: ${message}`
+          : `Login failed: ${message}`,
+      });
+    } finally {
+      setIsLoadingGuilds(false);
+      setIsLoggingIn(false);
+    }
+  }, [
+    applyAuthStatus,
+    canLogin,
+    ensureSavedLoginAvailable,
+    loadGuilds,
+    refreshAuthStatus,
+    resolveGuildRequest,
+    setWclError,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthStatusLoaded || hasAutoLoadedGuilds) {
+      return;
+    }
+
+    if (!hasSavedCredentialsForCurrentEmail || !useSavedLogin || email.trim().length === 0) {
+      return;
+    }
+
+    if (isUploading || isLiveUploading || isAuthBusy) {
+      return;
+    }
+
+    setHasAutoLoadedGuilds(true);
+    void handleRefreshGuilds();
+  }, [
+    email,
+    hasAutoLoadedGuilds,
+    hasSavedCredentialsForCurrentEmail,
+    handleRefreshGuilds,
+    isAuthBusy,
+    isAuthStatusLoaded,
+    isLiveUploading,
+    isUploading,
+    useSavedLogin,
+  ]);
 
   useEffect(() => {
     if (selectedGuildId === "none") {
@@ -275,7 +527,13 @@ export function WarcraftLogsUploadPage() {
     try {
       await invoke("clear_wcl_saved_login");
       setUseSavedLogin(false);
-      setHasSavedCredentials(false);
+      setSavedLoginEmail(null);
+      setHasAnySavedCredentials(false);
+      setHasSavedCredentialsForCurrentEmail(false);
+      setGuildOptions([]);
+      setHasAutoLoadedGuilds(false);
+      setLoginFeedback(null);
+      lastAuthStatusEmailRef.current = "";
       setPassword("");
     } catch (error) {
       setWclError(getErrorMessage(error));
@@ -440,14 +698,14 @@ export function WarcraftLogsUploadPage() {
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-6 pb-10 [scrollbar-gutter:stable] md:px-6">
         <div className="w-full space-y-4">
           <SettingsSection title="Account" icon={<ShieldCheck className="h-4 w-4" />}>
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
               <FormField id={FIELD_IDS.email} label="WarcraftLogs Email">
                 <Input
                   id={FIELD_IDS.email}
                   type="email"
                   placeholder="you@example.com"
                   value={email}
-                  disabled={isUploading || isLiveUploading}
+                  disabled={isUploading || isLiveUploading || isAuthBusy}
                   onChange={(event) => setEmail(event.target.value)}
                 />
               </FormField>
@@ -455,17 +713,46 @@ export function WarcraftLogsUploadPage() {
               <FormField
                 id={FIELD_IDS.password}
                 label="WarcraftLogs Password"
-                description="Used only for login and upload steps."
               >
                 <Input
                   id={FIELD_IDS.password}
                   type="password"
                   value={password}
-                  disabled={isUploading || isLiveUploading}
+                  disabled={isUploading || isLiveUploading || isAuthBusy}
                   onChange={(event) => setPassword(event.target.value)}
                 />
               </FormField>
+
+              <div className="flex lg:justify-end">
+                <Button
+                  variant="primary"
+                  onClick={handleLogin}
+                  disabled={!canLogin}
+                  className="w-full lg:w-auto"
+                >
+                  {isLoggingIn ? "Logging in..." : "Login"}
+                </Button>
+              </div>
             </div>
+
+            <p className="mt-2 text-xs text-neutral-400">Used only for login and upload steps.</p>
+
+            {loginFeedback && (
+              <p
+                className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs ${
+                  loginFeedback.tone === "success"
+                    ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
+                    : "border-rose-300/30 bg-rose-500/12 text-rose-100"
+                }`}
+              >
+                {loginFeedback.tone === "success" ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                ) : (
+                  <XCircle className="h-3.5 w-3.5 text-rose-300" />
+                )}
+                {loginFeedback.message}
+              </p>
+            )}
 
             <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
               <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
@@ -474,20 +761,25 @@ export function WarcraftLogsUploadPage() {
                   type="checkbox"
                   className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
                   checked={rememberLogin}
-                  disabled={isUploading || isLiveUploading}
+                  disabled={isUploading || isLiveUploading || isAuthBusy}
                   onChange={(event) => setRememberLogin(event.target.checked)}
                 />
                 Remember login in secure OS keychain
               </label>
 
-              {hasSavedCredentials && (
+              {hasAnySavedCredentials && (savedLoginEmail || hasSavedCredentialsForCurrentEmail) && (
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   <label className="inline-flex items-center gap-2 text-xs text-neutral-300">
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5 rounded border-white/20 bg-black/20"
                       checked={useSavedLogin}
-                      disabled={isUploading || isLiveUploading}
+                      disabled={
+                        isUploading ||
+                        isLiveUploading ||
+                        isAuthBusy ||
+                        !hasSavedCredentialsForCurrentEmail
+                      }
                       onChange={(event) => setUseSavedLogin(event.target.checked)}
                     />
                     Use saved login
@@ -496,13 +788,23 @@ export function WarcraftLogsUploadPage() {
                     variant="secondary"
                     size="sm"
                     onClick={handleClearSavedLogin}
-                    disabled={isUploading || isLiveUploading}
+                    disabled={isUploading || isLiveUploading || isAuthBusy}
                   >
                     Forget saved login
                   </Button>
                 </div>
               )}
             </div>
+
+            {hasAnySavedCredentials &&
+              savedLoginEmail &&
+              email.trim().length > 0 &&
+              !hasSavedCredentialsForCurrentEmail && (
+                <p className="mt-2 text-xs text-neutral-500">
+                  Saved login is for {savedLoginEmail}. Enter password for this account or switch
+                  back to use saved login.
+                </p>
+              )}
           </SettingsSection>
 
           <SettingsSection title="Upload Setup" icon={<FileText className="h-4 w-4" />}>
@@ -564,16 +866,16 @@ export function WarcraftLogsUploadPage() {
                         label: guild.name,
                       })),
                     ]}
-                    disabled={isUploading || isLiveUploading || isLoadingGuilds}
+                    disabled={isUploading || isLiveUploading || isAuthBusy}
                     onChange={setSelectedGuildId}
                   />
-                  <Button variant="secondary" onClick={handleLoadGuilds} disabled={!canLoadGuilds}>
-                    {isLoadingGuilds ? "Loading guilds..." : "Load Guilds"}
+                  <Button variant="secondary" onClick={handleRefreshGuilds} disabled={!canLoadGuilds}>
+                    {isLoadingGuilds ? "Loading guilds..." : "Refresh Guilds"}
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-neutral-500">
-                  Load guilds after entering credentials. You can keep "No guild" for personal
-                  uploads.
+                  Guilds load automatically when saved login matches the current email. Use refresh
+                  after changing credentials. You can keep "No guild" for personal uploads.
                 </p>
               </div>
             </div>

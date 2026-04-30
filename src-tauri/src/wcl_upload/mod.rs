@@ -32,6 +32,22 @@ pub fn get_wcl_login_state(app_handle: tauri::AppHandle) -> Result<types::WclLog
 }
 
 #[tauri::command]
+pub fn get_wcl_auth_status(
+    app_handle: tauri::AppHandle,
+    request: Option<types::WclAuthStatusRequest>,
+) -> Result<types::WclAuthStatus, String> {
+    core::get_wcl_auth_status(app_handle, request)
+}
+
+#[tauri::command]
+pub fn login_wcl(
+    app_handle: tauri::AppHandle,
+    request: types::WclLoginRequest,
+) -> Result<types::WclLoginResponse, String> {
+    core::login_wcl(app_handle, request)
+}
+
+#[tauri::command]
 pub fn clear_wcl_saved_login(app_handle: tauri::AppHandle) -> Result<(), String> {
     core::clear_wcl_saved_login(app_handle)
 }
