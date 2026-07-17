@@ -9,6 +9,18 @@ pub(crate) enum UploadError {
     Zip(zip::result::ZipError),
 }
 
+impl UploadError {
+    pub(crate) fn is_authentication_failure(&self) -> bool {
+        matches!(
+            self,
+            Self::HttpStatus {
+                status: 401 | 403,
+                ..
+            }
+        )
+    }
+}
+
 impl std::fmt::Display for UploadError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -14,7 +14,6 @@ pub(crate) fn resolve_login_credentials(
     email: &str,
     password: Option<String>,
     use_saved_login: bool,
-    _remember_login: bool,
 ) -> Result<ResolvedLoginCredentials, UploadError> {
     let trimmed_email = email.trim();
     if trimmed_email.is_empty() {
@@ -34,7 +33,6 @@ pub(crate) fn resolve_login_credentials(
         return Ok(ResolvedLoginCredentials {
             email: trimmed_email.to_string(),
             password: trimmed_password.to_string(),
-            used_saved_password: false,
         });
     }
 
@@ -54,7 +52,6 @@ pub(crate) fn resolve_login_credentials(
     Ok(ResolvedLoginCredentials {
         email: trimmed_email.to_string(),
         password: saved_password,
-        used_saved_password: true,
     })
 }
 

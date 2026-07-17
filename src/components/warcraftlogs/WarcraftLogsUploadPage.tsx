@@ -38,13 +38,10 @@ interface FetchWclGuildsResponse {
 }
 
 interface WclAuthStatus {
+  status: "signedOut" | "authenticated";
+  authenticatedEmail: string | null;
+  userName: string | null;
   savedEmail: string | null;
-  hasAnySavedCredentials: boolean;
-  hasSavedCredentialsForEmail: boolean;
-}
-
-interface WclLoginResponse {
-  email: string;
   hasAnySavedCredentials: boolean;
   hasSavedCredentialsForEmail: boolean;
 }
@@ -114,6 +111,8 @@ export function WarcraftLogsUploadPage() {
   const [hasAnySavedCredentials, setHasAnySavedCredentials] = useState(false);
   const [hasSavedCredentialsForCurrentEmail, setHasSavedCredentialsForCurrentEmail] =
     useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authenticatedUserName, setAuthenticatedUserName] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [region, setRegion] = useState("2");
   const [visibility, setVisibility] = useState("0");
@@ -132,9 +131,10 @@ export function WarcraftLogsUploadPage() {
 
   const isAuthBusy = isLoggingIn || isLoadingGuilds;
 
-  const hasCredentialInput =
+  const hasLoginInput =
     email.trim().length > 0 &&
     (password.trim().length > 0 || (useSavedLogin && hasSavedCredentialsForCurrentEmail));
+  const hasAuthenticatedSession = isAuthenticated && email.trim().length > 0;
 
   useEffect(() => {
     let mounted = true;
@@ -224,6 +224,8 @@ export function WarcraftLogsUploadPage() {
   );
 
   const applyAuthStatus = useCallback((status: WclAuthStatus) => {
+    setIsAuthenticated(status.status === "authenticated");
+    setAuthenticatedUserName(status.userName);
     setSavedLoginEmail(status.savedEmail);
     setHasAnySavedCredentials(status.hasAnySavedCredentials);
     setHasSavedCredentialsForCurrentEmail(status.hasSavedCredentialsForEmail);
@@ -234,15 +236,19 @@ export function WarcraftLogsUploadPage() {
 
     const loadAuthState = async () => {
       try {
-        const authStatus = await invoke<WclAuthStatus>("get_wcl_auth_status");
+        let authStatus = await invoke<WclAuthStatus>("get_wcl_auth_status");
+        if (authStatus.status === "signedOut" && authStatus.hasAnySavedCredentials) {
+          authStatus = await invoke<WclAuthStatus>("restore_wcl_session");
+        }
         if (!mounted) {
           return;
         }
 
         applyAuthStatus(authStatus);
-        if (authStatus.savedEmail) {
-          lastAuthStatusEmailRef.current = authStatus.savedEmail;
-          setEmail((current) => (current.trim().length > 0 ? current : authStatus.savedEmail ?? ""));
+        const accountEmail = authStatus.authenticatedEmail ?? authStatus.savedEmail;
+        if (accountEmail) {
+          lastAuthStatusEmailRef.current = accountEmail;
+          setEmail((current) => (current.trim().length > 0 ? current : accountEmail));
           setUseSavedLogin(authStatus.hasSavedCredentialsForEmail);
         } else {
           setUseSavedLogin(false);
@@ -314,21 +320,21 @@ export function WarcraftLogsUploadPage() {
       !isLiveUploading &&
       !isAuthBusy &&
       logFilePath.trim().length > 0 &&
-      hasCredentialInput
+      hasAuthenticatedSession
     );
-  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading, logFilePath]);
+  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading, logFilePath]);
 
   const canLogin = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
-  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasLoginInput;
+  }, [hasLoginInput, isAuthBusy, isLiveUploading, isUploading]);
 
   const canLoadGuilds = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
-  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
+  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading]);
 
   const canStartLiveUpload = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasCredentialInput;
-  }, [hasCredentialInput, isAuthBusy, isLiveUploading, isUploading]);
+    return !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
+  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading]);
 
   const progressBarTheme = errorMessage ? "bg-rose-400/90" : "bg-emerald-400/85";
 
@@ -368,13 +374,8 @@ export function WarcraftLogsUploadPage() {
   );
 
   const loadGuilds = useCallback(
-    async (request: {
-      email: string;
-      password: string | null;
-      useSavedLogin: boolean;
-      rememberLogin: boolean;
-    }) => {
-      const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds", { request });
+    async () => {
+      const response = await invoke<FetchWclGuildsResponse>("fetch_wcl_guilds");
       setEmail(response.email);
       setGuildOptions(response.guilds);
 
@@ -382,7 +383,7 @@ export function WarcraftLogsUploadPage() {
       lastAuthStatusEmailRef.current = response.email;
       applyAuthStatus(authStatus);
 
-      if ((request.rememberLogin || request.useSavedLogin) && authStatus.hasSavedCredentialsForEmail) {
+      if (authStatus.hasSavedCredentialsForEmail) {
         setUseSavedLogin(true);
       }
 
@@ -396,26 +397,18 @@ export function WarcraftLogsUploadPage() {
       return;
     }
 
-    const request = resolveGuildRequest();
     setWclError(null);
 
     try {
-      if (!request.password && request.useSavedLogin) {
-        const { canUseSavedLogin } = await ensureSavedLoginAvailable(request.email);
-        if (!canUseSavedLogin) {
-          return;
-        }
-      }
-
       setIsLoadingGuilds(true);
-      await loadGuilds(request);
+      await loadGuilds();
       setHasAutoLoadedGuilds(true);
     } catch (error) {
       setWclError(getErrorMessage(error));
     } finally {
       setIsLoadingGuilds(false);
     }
-  }, [canLoadGuilds, ensureSavedLoginAvailable, loadGuilds, resolveGuildRequest, setWclError]);
+  }, [canLoadGuilds, loadGuilds, setWclError]);
 
   const handleLogin = useCallback(async () => {
     if (!canLogin) {
@@ -439,21 +432,19 @@ export function WarcraftLogsUploadPage() {
         }
       }
 
-      const loginResponse = await invoke<WclLoginResponse>("login_wcl", { request });
+      const authStatus = await invoke<WclAuthStatus>("login_wcl", { request });
       didLoginSucceed = true;
-      setEmail(loginResponse.email);
-      setHasAnySavedCredentials(loginResponse.hasAnySavedCredentials);
-      setHasSavedCredentialsForCurrentEmail(loginResponse.hasSavedCredentialsForEmail);
-
-      const authStatus = await refreshAuthStatus(loginResponse.email);
-      lastAuthStatusEmailRef.current = loginResponse.email;
+      setPassword("");
       applyAuthStatus(authStatus);
+      const authenticatedEmail = authStatus.authenticatedEmail ?? request.email;
+      setEmail(authenticatedEmail);
+      lastAuthStatusEmailRef.current = authenticatedEmail;
       if (authStatus.hasSavedCredentialsForEmail && (request.useSavedLogin || request.rememberLogin)) {
         setUseSavedLogin(true);
       }
 
       setIsLoadingGuilds(true);
-      const guildCount = await loadGuilds({ ...request, email: loginResponse.email });
+      const guildCount = await loadGuilds();
       setHasAutoLoadedGuilds(true);
       setLoginFeedback({
         tone: "success",
@@ -480,7 +471,6 @@ export function WarcraftLogsUploadPage() {
     canLogin,
     ensureSavedLoginAvailable,
     loadGuilds,
-    refreshAuthStatus,
     resolveGuildRequest,
     setWclError,
   ]);
@@ -490,7 +480,7 @@ export function WarcraftLogsUploadPage() {
       return;
     }
 
-    if (!hasSavedCredentialsForCurrentEmail || !useSavedLogin || email.trim().length === 0) {
+    if (!isAuthenticated || email.trim().length === 0) {
       return;
     }
 
@@ -503,13 +493,12 @@ export function WarcraftLogsUploadPage() {
   }, [
     email,
     hasAutoLoadedGuilds,
-    hasSavedCredentialsForCurrentEmail,
     handleRefreshGuilds,
     isAuthBusy,
     isAuthStatusLoaded,
+    isAuthenticated,
     isLiveUploading,
     isUploading,
-    useSavedLogin,
   ]);
 
   useEffect(() => {
@@ -525,7 +514,8 @@ export function WarcraftLogsUploadPage() {
 
   const handleClearSavedLogin = async () => {
     try {
-      await invoke("clear_wcl_saved_login");
+      const authStatus = await invoke<WclAuthStatus>("clear_wcl_saved_login");
+      applyAuthStatus(authStatus);
       setUseSavedLogin(false);
       setSavedLoginEmail(null);
       setHasAnySavedCredentials(false);
@@ -534,6 +524,20 @@ export function WarcraftLogsUploadPage() {
       setHasAutoLoadedGuilds(false);
       setLoginFeedback(null);
       lastAuthStatusEmailRef.current = "";
+      setPassword("");
+    } catch (error) {
+      setWclError(getErrorMessage(error));
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const authStatus = await invoke<WclAuthStatus>("sign_out_wcl");
+      applyAuthStatus(authStatus);
+      setGuildOptions([]);
+      setSelectedGuildId("none");
+      setHasAutoLoadedGuilds(false);
+      setLoginFeedback(null);
       setPassword("");
     } catch (error) {
       setWclError(getErrorMessage(error));
@@ -590,10 +594,6 @@ export function WarcraftLogsUploadPage() {
 
     const payload: StartWclUploadPayload = {
       logFilePath: logFilePath.trim(),
-      email: email.trim(),
-      password: password.trim() ? password : null,
-      useSavedLogin,
-      rememberLogin,
       description,
       region: Number(region),
       visibility: Number(visibility),
@@ -630,10 +630,6 @@ export function WarcraftLogsUploadPage() {
 
     const payload: StartWclLiveUploadPayload = {
       wowFolder,
-      email: email.trim(),
-      password: password.trim() ? password : null,
-      useSavedLogin,
-      rememberLogin,
       description,
       region: Number(region),
       visibility: Number(visibility),
@@ -735,7 +731,16 @@ export function WarcraftLogsUploadPage() {
               </div>
             </div>
 
-            <p className="mt-2 text-xs text-neutral-400">Used only for login and upload steps.</p>
+            <p className="mt-2 text-xs text-neutral-400">
+              Credentials are used only to create the WarcraftLogs session.
+            </p>
+
+            {isAuthenticated && (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-emerald-300/30 bg-emerald-500/12 px-2 py-1 text-xs text-emerald-100">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                Connected as {authenticatedUserName ?? email}
+              </p>
+            )}
 
             {loginFeedback && (
               <p
@@ -793,6 +798,17 @@ export function WarcraftLogsUploadPage() {
                     Forget saved login
                   </Button>
                 </div>
+              )}
+
+              {isAuthenticated && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleSignOut}
+                  disabled={isUploading || isLiveUploading || isAuthBusy}
+                >
+                  Sign out
+                </Button>
               )}
             </div>
 

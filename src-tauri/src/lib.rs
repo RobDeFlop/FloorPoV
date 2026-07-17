@@ -36,6 +36,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(recording_state)
+        .manage(wcl_upload::WclAuthService::new())
         .setup(|app| {
             let output_folder = match settings::get_default_output_folder() {
                 Ok(path) => path,
@@ -102,9 +103,10 @@ pub fn run() {
             wcl_upload::cancel_wcl_upload,
             wcl_upload::get_latest_combat_log_path,
             wcl_upload::fetch_wcl_guilds,
-            wcl_upload::get_wcl_login_state,
             wcl_upload::get_wcl_auth_status,
+            wcl_upload::restore_wcl_session,
             wcl_upload::login_wcl,
+            wcl_upload::sign_out_wcl,
             wcl_upload::clear_wcl_saved_login,
             wcl_upload::start_wcl_live_upload,
             wcl_upload::stop_wcl_live_upload,

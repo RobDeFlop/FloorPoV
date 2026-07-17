@@ -7,10 +7,9 @@ use std::collections::BTreeMap;
 
 pub use parse::{__cmd__parse_combat_log_file, parse_combat_log_file};
 pub use watch::{
-    __cmd__emit_manual_marker, __cmd__set_combat_watch_recording_output,
-    __cmd__start_combat_watch, __cmd__stop_combat_watch, __cmd__validate_wow_folder,
-    emit_manual_marker, set_combat_watch_recording_output, start_combat_watch, stop_combat_watch,
-    validate_wow_folder,
+    __cmd__emit_manual_marker, __cmd__set_combat_watch_recording_output, __cmd__start_combat_watch,
+    __cmd__stop_combat_watch, __cmd__validate_wow_folder, emit_manual_marker,
+    set_combat_watch_recording_output, start_combat_watch, stop_combat_watch, validate_wow_folder,
 };
 
 const MAX_DEBUG_EVENTS: usize = 2_000;

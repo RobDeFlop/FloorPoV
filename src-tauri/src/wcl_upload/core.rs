@@ -18,10 +18,6 @@ use tauri::AppHandle;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::wcl_upload::auth::{
-    clear_saved_login, has_any_saved_login_credentials, read_saved_login_email,
-    resolve_login_credentials, resolve_saved_login_for_email, save_login_credentials,
-};
 use crate::wcl_upload::constants::{
     BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK, CREATE_NO_WINDOW,
     ELECTRON_VERSION_FALLBACK, LIVE_FLUSH_INTERVAL_MS, LIVE_MAX_READ_LINES_PER_POLL,
@@ -42,12 +38,10 @@ use crate::wcl_upload::state::{
 };
 use crate::wcl_upload::types::{
     ActiveLiveUpload, AddSegmentResponse, CollectFightsResponse, CollectMasterInfoResponse,
-    CreateReportRequest, CreateReportResponse, FetchWclGuildsRequest, FetchWclGuildsResponse,
-    LiveUploadRuntime, LoginResponse, MasterIds, ParseLinesResponse, ParserAssets, ParserFight,
-    SidebarGuildsResponse, StartWclLiveUploadRequest, StartWclLiveUploadResponse,
-    StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclAuthStatus,
-    WclAuthStatusRequest, WclGuild, WclLiveUploadState, WclLoginRequest, WclLoginResponse,
-    WclLoginState,
+    CreateReportRequest, CreateReportResponse, FetchWclGuildsResponse, LiveUploadRuntime,
+    LoginResponse, MasterIds, ParseLinesResponse, ParserAssets, ParserFight, SidebarGuildsResponse,
+    StartWclLiveUploadRequest, StartWclLiveUploadResponse, StartWclUploadRequest,
+    StartWclUploadResponse, UploadSessionParams, WclGuild, WclLiveUploadState,
 };
 use crate::wcl_upload::validation::{validate_live_request, validate_request};
 
@@ -63,6 +57,16 @@ enum MultipartFieldValue {
 struct MultipartBody {
     boundary: String,
     payload: Vec<u8>,
+}
+
+struct AddSegmentRequest {
+    report_code: String,
+    segment_id: u64,
+    start_time: i64,
+    end_time: i64,
+    mythic: i64,
+    is_live_log: bool,
+    zip_bytes: Vec<u8>,
 }
 
 fn build_multipart_body(
@@ -113,6 +117,7 @@ fn random_multipart_boundary() -> String {
     format!("----WebKitFormBoundary{nonce:x}")
 }
 
+#[derive(Clone)]
 pub(crate) struct WclSession {
     client: Client,
     client_version: String,
@@ -120,7 +125,7 @@ pub(crate) struct WclSession {
 }
 
 impl WclSession {
-    fn new(client_version: String) -> Result<Self, UploadError> {
+    pub(crate) fn new(client_version: String) -> Result<Self, UploadError> {
         let client = Client::builder()
             .cookie_store(true)
             .timeout(Duration::from_secs(60))
@@ -186,7 +191,7 @@ impl WclSession {
         ))
     }
 
-    fn login(&self, email: &str, password: &str) -> Result<Option<String>, UploadError> {
+    pub(crate) fn login(&self, email: &str, password: &str) -> Result<Option<String>, UploadError> {
         let response = self.request_with_retry("POST /desktop-client/log-in", || {
             self.client
                 .post(format!("{BASE_URL}/desktop-client/log-in"))
@@ -202,7 +207,7 @@ impl WclSession {
         Ok(parsed.user.map(|user| user.user_name))
     }
 
-    fn fetch_sidebar_guilds(&self) -> Result<Vec<WclGuild>, UploadError> {
+    pub(crate) fn fetch_sidebar_guilds(&self) -> Result<Vec<WclGuild>, UploadError> {
         let response = self.request_with_retry("GET /user-sidebar/v2/", || {
             self.client
                 .get(format!("{BASE_URL}/user-sidebar/v2/"))
@@ -382,25 +387,19 @@ impl WclSession {
         Ok(())
     }
 
-    fn add_segment(
-        &self,
-        report_code: &str,
-        segment_id: u64,
-        start_time: i64,
-        end_time: i64,
-        mythic: i64,
-        is_live_log: bool,
-        zip_bytes: Vec<u8>,
-    ) -> Result<u64, UploadError> {
-        let endpoint = format!("{BASE_URL}/desktop-client/add-report-segment/{report_code}");
+    fn add_segment(&self, request: AddSegmentRequest) -> Result<u64, UploadError> {
+        let endpoint = format!(
+            "{BASE_URL}/desktop-client/add-report-segment/{}",
+            request.report_code
+        );
         let parameters = json!({
-            "startTime": start_time,
-            "endTime": end_time,
-            "mythic": mythic,
-            "isLiveLog": is_live_log,
+            "startTime": request.start_time,
+            "endTime": request.end_time,
+            "mythic": request.mythic,
+            "isLiveLog": request.is_live_log,
             "isRealTime": false,
             "inProgressEventCount": 0,
-            "segmentId": segment_id,
+            "segmentId": request.segment_id,
         })
         .to_string();
 
@@ -415,7 +414,7 @@ impl WclSession {
                     MultipartFieldValue::File {
                         file_name: "blob".to_string(),
                         content_type: "application/zip".to_string(),
-                        bytes: zip_bytes.clone(),
+                        bytes: request.zip_bytes.clone(),
                     },
                 ),
             ],
@@ -437,7 +436,7 @@ impl WclSession {
         )?;
 
         let payload = response.json::<AddSegmentResponse>()?;
-        Ok(payload.next_segment_id.unwrap_or(segment_id + 1))
+        Ok(payload.next_segment_id.unwrap_or(request.segment_id + 1))
     }
 
     fn terminate_report(&self, report_code: &str) -> Result<(), UploadError> {
@@ -726,6 +725,8 @@ impl Drop for ParserBridge {
 pub async fn start_wcl_upload(
     app_handle: AppHandle,
     request: StartWclUploadRequest,
+    session: WclSession,
+    user_name: Option<String>,
 ) -> Result<StartWclUploadResponse, String> {
     validate_request(&request)?;
 
@@ -735,7 +736,13 @@ pub async fn start_wcl_upload(
     let cancel_flag_for_task = cancel_flag.clone();
 
     let upload_result = tokio::task::spawn_blocking(move || {
-        run_upload(app_handle_for_task, request_for_task, cancel_flag_for_task)
+        run_upload(
+            app_handle_for_task,
+            request_for_task,
+            cancel_flag_for_task,
+            session,
+            user_name,
+        )
     })
     .await;
 
@@ -783,136 +790,13 @@ pub fn get_latest_combat_log_path(wow_folder: Option<String>) -> Result<Option<S
         .map(|maybe_path| maybe_path.map(|path| path.to_string_lossy().to_string()))
 }
 
-pub fn get_wcl_login_state(app_handle: AppHandle) -> Result<WclLoginState, String> {
-    match read_saved_login_email(&app_handle) {
-        Ok(Some(saved_email)) => {
-            let has_saved_credentials = resolve_saved_login_for_email(&app_handle, &saved_email)
-                .map(|value| value.is_some())
-                .unwrap_or(false);
-            Ok(WclLoginState {
-                saved_email: Some(saved_email),
-                has_saved_credentials,
-            })
-        }
-        Ok(None) => Ok(WclLoginState {
-            saved_email: None,
-            has_saved_credentials: false,
-        }),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-pub fn get_wcl_auth_status(
-    app_handle: AppHandle,
-    request: Option<WclAuthStatusRequest>,
-) -> Result<WclAuthStatus, String> {
-    let saved_email = read_saved_login_email(&app_handle).map_err(|error| error.to_string())?;
-    let has_any_saved_credentials =
-        has_any_saved_login_credentials(&app_handle).map_err(|error| error.to_string())?;
-
-    let email_to_check = request
-        .and_then(|payload| payload.email)
-        .unwrap_or_else(|| saved_email.clone().unwrap_or_default());
-
-    let has_saved_credentials_for_email = if email_to_check.trim().is_empty() {
-        false
-    } else {
-        resolve_saved_login_for_email(&app_handle, email_to_check.trim())
-            .map(|value| value.is_some())
-            .map_err(|error| error.to_string())?
-    };
-
-    Ok(WclAuthStatus {
-        saved_email,
-        has_any_saved_credentials,
-        has_saved_credentials_for_email,
-    })
-}
-
-pub fn login_wcl(
-    app_handle: AppHandle,
-    request: WclLoginRequest,
-) -> Result<WclLoginResponse, String> {
-    if request.email.trim().is_empty() {
-        return Err("WarcraftLogs email is required".to_string());
-    }
-
-    let remember_login = request.remember_login.unwrap_or(false);
-    let resolved = resolve_login_credentials(
-        &app_handle,
-        request.email.trim(),
-        request.password,
-        request.use_saved_login.unwrap_or(false),
-        remember_login,
-    )
-    .map_err(|error| error.to_string())?;
-
-    let client_version = resolve_client_version();
-    let session = WclSession::new(client_version).map_err(|error| error.to_string())?;
-    session
-        .login(&resolved.email, &resolved.password)
-        .map_err(|error| error.to_string())?;
-
-    if remember_login {
-        save_login_credentials(&app_handle, &resolved.email, &resolved.password)
-            .map_err(|error| error.to_string())?;
-    }
-
-    let has_saved_credentials_for_email =
-        resolve_saved_login_for_email(&app_handle, &resolved.email)
-            .map(|value| value.is_some())
-            .map_err(|error| error.to_string())?;
-    let has_any_saved_credentials =
-        has_any_saved_login_credentials(&app_handle).map_err(|error| error.to_string())?;
-
-    Ok(WclLoginResponse {
-        email: resolved.email,
-        has_saved_credentials_for_email,
-        has_any_saved_credentials,
-    })
-}
-
-pub fn clear_wcl_saved_login(app_handle: AppHandle) -> Result<(), String> {
-    clear_saved_login(&app_handle).map_err(|error| error.to_string())
-}
-
 pub fn fetch_wcl_guilds(
-    app_handle: AppHandle,
-    request: FetchWclGuildsRequest,
-) -> Result<FetchWclGuildsResponse, String> {
-    if request.email.trim().is_empty() {
-        return Err("WarcraftLogs email is required".to_string());
-    }
+    session: &WclSession,
+    email: String,
+) -> Result<FetchWclGuildsResponse, UploadError> {
+    let guilds = session.fetch_sidebar_guilds()?;
 
-    let remember_login = request.remember_login.unwrap_or(false);
-    let resolved = resolve_login_credentials(
-        &app_handle,
-        request.email.trim(),
-        request.password,
-        request.use_saved_login.unwrap_or(false),
-        remember_login,
-    )
-    .map_err(|error| error.to_string())?;
-
-    let client_version = resolve_client_version();
-    let session = WclSession::new(client_version).map_err(|error| error.to_string())?;
-    session
-        .login(&resolved.email, &resolved.password)
-        .map_err(|error| error.to_string())?;
-
-    if remember_login {
-        save_login_credentials(&app_handle, &resolved.email, &resolved.password)
-            .map_err(|error| error.to_string())?;
-    }
-
-    let guilds = session
-        .fetch_sidebar_guilds()
-        .map_err(|error| error.to_string())?;
-
-    Ok(FetchWclGuildsResponse {
-        email: resolved.email,
-        guilds,
-    })
+    Ok(FetchWclGuildsResponse { email, guilds })
 }
 
 pub fn get_wcl_live_upload_state() -> Result<WclLiveUploadState, String> {
@@ -937,6 +821,9 @@ pub fn get_wcl_live_upload_state() -> Result<WclLiveUploadState, String> {
 pub fn start_wcl_live_upload(
     app_handle: AppHandle,
     request: StartWclLiveUploadRequest,
+    session: WclSession,
+    user_name: Option<String>,
+    auth_service: crate::wcl_upload::auth_service::WclAuthService,
 ) -> Result<StartWclLiveUploadResponse, String> {
     validate_live_request(&request)?;
 
@@ -953,8 +840,19 @@ pub fn start_wcl_live_upload(
 
     let handle = std::thread::spawn(move || {
         let worker_handle_clone = app_handle_for_worker.clone();
-        let live_result = run_live_upload(app_handle_for_worker, request, cancel_for_worker);
+        let live_result = run_live_upload(
+            app_handle_for_worker,
+            request,
+            cancel_for_worker,
+            session,
+            user_name,
+        );
         if let Err(error) = live_result {
+            if let Err(invalidation_error) =
+                auth_service.invalidate_if_authentication_failed(&error.to_string())
+            {
+                tracing::warn!("Failed to invalidate WarcraftLogs session: {invalidation_error}");
+            }
             if let Ok(mut state) = ACTIVE_LIVE_UPLOAD.lock() {
                 if let Some(active) = state.as_mut() {
                     active.is_running = false;
@@ -1012,18 +910,11 @@ fn run_live_upload(
     app_handle: AppHandle,
     request: StartWclLiveUploadRequest,
     cancel_flag: Arc<AtomicBool>,
+    session: WclSession,
+    user_name: Option<String>,
 ) -> Result<(), UploadError> {
     set_live_report_info(None, None, true);
     let normalized_description = normalize_report_description(request.description.as_deref());
-
-    let remember_login = request.remember_login.unwrap_or(false);
-    let resolved_login = resolve_login_credentials(
-        &app_handle,
-        request.email.trim(),
-        request.password.clone(),
-        request.use_saved_login.unwrap_or(false),
-        remember_login,
-    )?;
 
     let wow_folder = request.wow_folder.trim();
     if wow_folder.is_empty() {
@@ -1046,15 +937,16 @@ fn run_live_upload(
     let node_binary_path = resolve_node_binary_path(&app_handle)?;
     check_node_runtime(&node_binary_path)?;
 
-    let client_version = resolve_client_version();
-    let session = WclSession::new(client_version)?;
-    emit_live_upload_progress(&app_handle, "auth", "Logging in to WarcraftLogs...", 4);
-    let login_username = session.login(&resolved_login.email, &resolved_login.password)?;
-    if remember_login {
-        save_login_credentials(&app_handle, &resolved_login.email, &resolved_login.password)?;
-    }
-    if let Some(user_name) = login_username {
+    emit_live_upload_progress(
+        &app_handle,
+        "auth",
+        "Authenticating with WarcraftLogs...",
+        4,
+    );
+    if let Some(user_name) = user_name {
         emit_live_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 6);
+    } else {
+        emit_live_upload_progress(&app_handle, "auth", "Authenticated with WarcraftLogs", 6);
     }
 
     emit_live_upload_progress(
@@ -1150,16 +1042,10 @@ fn run_upload(
     app_handle: AppHandle,
     request: StartWclUploadRequest,
     cancel_flag: Arc<AtomicBool>,
+    session: WclSession,
+    user_name: Option<String>,
 ) -> Result<StartWclUploadResponse, UploadError> {
-    let remember_login = request.remember_login.unwrap_or(false);
     let normalized_description = normalize_report_description(request.description.as_deref());
-    let resolved_login = resolve_login_credentials(
-        &app_handle,
-        request.email.trim(),
-        request.password.clone(),
-        request.use_saved_login.unwrap_or(false),
-        remember_login,
-    )?;
 
     let log_path = PathBuf::from(request.log_file_path.trim());
     if !log_path.exists() {
@@ -1201,27 +1087,16 @@ fn run_upload(
     check_node_runtime(&node_binary_path)?;
 
     check_cancelled(&cancel_flag)?;
-    let client_version = resolve_client_version();
-    let session = WclSession::new(client_version)?;
-    emit_upload_progress(&app_handle, "auth", "Logging in to WarcraftLogs...", 6);
-    let login_username = session.login(&resolved_login.email, &resolved_login.password)?;
-    if let Some(user_name) = login_username {
+    emit_upload_progress(
+        &app_handle,
+        "auth",
+        "Authenticating with WarcraftLogs...",
+        6,
+    );
+    if let Some(user_name) = user_name {
         emit_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 8);
     } else {
         emit_upload_progress(&app_handle, "auth", "Authenticated with WarcraftLogs", 8);
-    }
-
-    if remember_login {
-        save_login_credentials(&app_handle, &resolved_login.email, &resolved_login.password)?;
-    }
-
-    if resolved_login.used_saved_password {
-        emit_upload_progress(
-            &app_handle,
-            "auth",
-            "Using saved WarcraftLogs credentials",
-            8,
-        );
     }
 
     check_cancelled(&cancel_flag)?;
@@ -1269,7 +1144,7 @@ fn run_upload(
     let total_batches = if total_lines == 0 {
         0
     } else {
-        ((total_lines as usize) + BATCH_SIZE - 1) / BATCH_SIZE
+        (total_lines as usize).div_ceil(BATCH_SIZE)
     };
 
     let mut line_reader = BufReader::new(File::open(&log_path)?);
@@ -1484,15 +1359,15 @@ fn process_batch(
         .iter()
         .map(|fight| fight.event_count)
         .sum();
-    *segment_id = session.add_segment(
-        code,
-        *segment_id,
-        fights_data.start_time,
-        fights_data.end_time,
-        fights_data.mythic,
-        false,
-        fights_zip,
-    )?;
+    *segment_id = session.add_segment(AddSegmentRequest {
+        report_code: code.to_string(),
+        segment_id: *segment_id,
+        start_time: fights_data.start_time,
+        end_time: fights_data.end_time,
+        mythic: fights_data.mythic,
+        is_live_log: false,
+        zip_bytes: fights_zip,
+    })?;
 
     parser.clear_fights()?;
 
@@ -1623,15 +1498,15 @@ fn flush_live_buffer(
 
     let fights_payload = build_fights_string(&fights_data);
     let fights_zip = make_zip_payload(&fights_payload)?;
-    runtime.segment_id = runtime.session.add_segment(
-        code,
-        runtime.segment_id,
-        fights_data.start_time,
-        fights_data.end_time,
-        fights_data.mythic,
-        false,
-        fights_zip,
-    )?;
+    runtime.segment_id = runtime.session.add_segment(AddSegmentRequest {
+        report_code: code.to_string(),
+        segment_id: runtime.segment_id,
+        start_time: fights_data.start_time,
+        end_time: fights_data.end_time,
+        mythic: fights_data.mythic,
+        is_live_log: false,
+        zip_bytes: fights_zip,
+    })?;
 
     runtime.total_uploaded_lines += runtime.buffered_lines.len() as u64;
     runtime.buffered_lines.clear();
@@ -1819,7 +1694,7 @@ fn normalize_report_description(description: Option<&str>) -> String {
         .to_string()
 }
 
-fn resolve_client_version() -> String {
+pub(crate) fn resolve_client_version() -> String {
     if let Ok(env_value) = std::env::var("WCL_CLIENT_VERSION") {
         let trimmed = env_value.trim();
         if !trimmed.is_empty() {

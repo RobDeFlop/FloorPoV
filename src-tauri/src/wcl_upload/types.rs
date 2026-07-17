@@ -9,10 +9,6 @@ use std::time::Instant;
 #[serde(rename_all = "camelCase")]
 pub struct StartWclUploadRequest {
     pub log_file_path: String,
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
     pub description: Option<String>,
     pub region: u8,
     pub visibility: u8,
@@ -23,23 +19,10 @@ pub struct StartWclUploadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StartWclLiveUploadRequest {
     pub wow_folder: String,
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
     pub description: Option<String>,
     pub region: u8,
     pub visibility: u8,
     pub guild_id: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FetchWclGuildsRequest {
-    pub email: String,
-    pub password: Option<String>,
-    pub use_saved_login: Option<bool>,
-    pub remember_login: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,13 +39,6 @@ pub struct FetchWclGuildsResponse {
     pub guilds: Vec<WclGuild>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WclLoginState {
-    pub saved_email: Option<String>,
-    pub has_saved_credentials: bool,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WclAuthStatusRequest {
@@ -71,7 +47,17 @@ pub struct WclAuthStatusRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum WclAuthState {
+    SignedOut,
+    Authenticated,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WclAuthStatus {
+    pub status: WclAuthState,
+    pub authenticated_email: Option<String>,
+    pub user_name: Option<String>,
     pub saved_email: Option<String>,
     pub has_any_saved_credentials: bool,
     pub has_saved_credentials_for_email: bool,
@@ -84,14 +70,6 @@ pub struct WclLoginRequest {
     pub password: Option<String>,
     pub use_saved_login: Option<bool>,
     pub remember_login: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WclLoginResponse {
-    pub email: String,
-    pub has_saved_credentials_for_email: bool,
-    pub has_any_saved_credentials: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -336,7 +314,6 @@ pub(crate) struct SavedLoginMetadata {
 pub(crate) struct ResolvedLoginCredentials {
     pub email: String,
     pub password: String,
-    pub used_saved_password: bool,
 }
 
 pub(crate) fn deserialize_i64_from_bool_or_int<'de, D>(deserializer: D) -> Result<i64, D::Error>

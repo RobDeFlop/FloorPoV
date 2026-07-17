@@ -40,10 +40,6 @@ interface StartWclLiveUploadResponse {
 
 export interface StartWclUploadPayload {
   logFilePath: string;
-  email: string;
-  password: string | null;
-  useSavedLogin: boolean;
-  rememberLogin: boolean;
   description: string;
   region: number;
   visibility: number;
@@ -52,10 +48,6 @@ export interface StartWclUploadPayload {
 
 export interface StartWclLiveUploadPayload {
   wowFolder: string;
-  email: string;
-  password: string | null;
-  useSavedLogin: boolean;
-  rememberLogin: boolean;
   description: string;
   region: number;
   visibility: number;
