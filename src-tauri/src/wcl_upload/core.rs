@@ -5,21 +5,16 @@ use serde_json::json;
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Cursor, Seek, SeekFrom, Write};
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
 use crate::wcl_upload::constants::{
-    BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK, CREATE_NO_WINDOW,
+    BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK,
     ELECTRON_VERSION_FALLBACK, LIVE_FLUSH_INTERVAL_MS, LIVE_MAX_READ_LINES_PER_POLL,
     LIVE_POLL_INTERVAL_MS, MAX_RETRIES, PARSER_VERSION_FALLBACK, RETRY_BASE_DELAY_MS,
 };
@@ -29,20 +24,25 @@ use crate::wcl_upload::events::{
     emit_live_upload_progress, emit_upload_complete, emit_upload_error, emit_upload_progress,
 };
 use crate::wcl_upload::filesystem::{
-    check_node_runtime, find_latest_combat_log_path, read_child_stderr, resolve_node_binary_path,
+    check_node_runtime, find_latest_combat_log_path, resolve_node_binary_path,
     resolve_parser_harness_path,
+};
+use crate::wcl_upload::parser::ParserBridge;
+use crate::wcl_upload::payload::{
+    is_encounter_fight_candidate, normalize_report_description, parse_start_date_from_filename,
 };
 use crate::wcl_upload::state::{
     begin_upload_session, check_cancelled, end_upload_session, set_live_report_info,
     ACTIVE_LIVE_UPLOAD, ACTIVE_UPLOAD,
 };
 use crate::wcl_upload::types::{
-    ActiveLiveUpload, AddSegmentResponse, CollectFightsResponse, CollectMasterInfoResponse,
-    CreateReportRequest, CreateReportResponse, FetchWclGuildsResponse, LiveUploadRuntime,
-    LoginResponse, MasterIds, ParseLinesResponse, ParserAssets, ParserFight, SidebarGuildsResponse,
-    StartWclLiveUploadRequest, StartWclLiveUploadResponse, StartWclUploadRequest,
-    StartWclUploadResponse, UploadSessionParams, WclGuild, WclLiveUploadState,
+    ActiveLiveUpload, AddSegmentResponse, CreateReportRequest, CreateReportResponse,
+    FetchWclGuildsResponse, LiveUploadRuntime, LoginResponse, MasterIds, ParserAssets, ParserFight,
+    SidebarGuildsResponse, StartWclLiveUploadRequest, StartWclLiveUploadResponse,
+    StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclGuild,
+    WclLiveUploadState,
 };
+use crate::wcl_upload::upload_pipeline::UploadPipeline;
 use crate::wcl_upload::validation::{validate_live_request, validate_request};
 
 enum MultipartFieldValue {
@@ -57,16 +57,6 @@ enum MultipartFieldValue {
 struct MultipartBody {
     boundary: String,
     payload: Vec<u8>,
-}
-
-struct AddSegmentRequest {
-    report_code: String,
-    segment_id: u64,
-    start_time: i64,
-    end_time: i64,
-    mythic: i64,
-    is_live_log: bool,
-    zip_bytes: Vec<u8>,
 }
 
 fn build_multipart_body(
@@ -317,7 +307,10 @@ impl WclSession {
         })
     }
 
-    fn create_report(&self, request: &CreateReportRequest) -> Result<String, UploadError> {
+    pub(crate) fn create_report(
+        &self,
+        request: &CreateReportRequest,
+    ) -> Result<String, UploadError> {
         let response = self.request_with_retry("POST /desktop-client/create-report", || {
             self.client
                 .post(format!("{BASE_URL}/desktop-client/create-report"))
@@ -340,7 +333,7 @@ impl WclSession {
         Ok(payload.code)
     }
 
-    fn set_master_table(
+    pub(crate) fn set_master_table(
         &self,
         report_code: &str,
         segment_id: u64,
@@ -387,7 +380,10 @@ impl WclSession {
         Ok(())
     }
 
-    fn add_segment(&self, request: AddSegmentRequest) -> Result<u64, UploadError> {
+    pub(crate) fn add_segment(
+        &self,
+        request: crate::wcl_upload::types::AddSegmentRequest,
+    ) -> Result<u64, UploadError> {
         let endpoint = format!(
             "{BASE_URL}/desktop-client/add-report-segment/{}",
             request.report_code
@@ -449,276 +445,6 @@ impl WclSession {
         })?;
 
         Ok(())
-    }
-}
-
-pub(crate) struct ParserBridge {
-    child: Child,
-    stdin: BufWriter<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
-    stderr: Option<ChildStderr>,
-}
-
-impl ParserBridge {
-    fn new(
-        node_binary_path: &Path,
-        parser_harness_path: &Path,
-        gamedata_code: &str,
-        parser_code: &str,
-    ) -> Result<Self, UploadError> {
-        if !node_binary_path.is_file() {
-            return Err(UploadError::Message(format!(
-                "Bundled Node runtime was not found at {}",
-                node_binary_path.display()
-            )));
-        }
-
-        if !parser_harness_path.is_file() {
-            return Err(UploadError::Message(format!(
-                "Parser harness path is not a file: {}",
-                parser_harness_path.display()
-            )));
-        }
-
-        let harness_parent = parser_harness_path.parent().ok_or_else(|| {
-            UploadError::Message(format!(
-                "Parser harness has no parent directory: {}",
-                parser_harness_path.display()
-            ))
-        })?;
-        let harness_file_name = parser_harness_path
-            .file_name()
-            .and_then(OsStr::to_str)
-            .ok_or_else(|| {
-                UploadError::Message(format!(
-                    "Parser harness filename could not be resolved: {}",
-                    parser_harness_path.display()
-                ))
-            })?;
-
-        let mut command = Command::new(node_binary_path);
-        command.current_dir(harness_parent);
-        command.arg(harness_file_name);
-        command.stdin(Stdio::piped());
-        command.stdout(Stdio::piped());
-        command.stderr(Stdio::piped());
-        #[cfg(target_os = "windows")]
-        command.creation_flags(CREATE_NO_WINDOW);
-
-        let mut child = command.spawn().map_err(|error| {
-            UploadError::Message(format!(
-                "Could not launch Node.js parser harness '{}'. Ensure bundled Node runtime is available. Details: {error}",
-                parser_harness_path.display(),
-            ))
-        })?;
-
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| UploadError::Message("Failed to open parser stdin".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| UploadError::Message("Failed to open parser stdout".to_string()))?;
-        let stderr = child.stderr.take();
-
-        let mut bridge = Self {
-            child,
-            stdin: BufWriter::new(stdin),
-            stdout: BufReader::new(stdout),
-            stderr,
-        };
-
-        bridge.send_json_line(&json!({
-            "gamedataCode": gamedata_code,
-            "parserCode": parser_code,
-        }))?;
-
-        let ready_payload = bridge.read_json_line()?;
-        let is_ready = ready_payload
-            .get("ready")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-        if !is_ready {
-            return Err(UploadError::Message(
-                "Failed to initialize WarcraftLogs parser harness".to_string(),
-            ));
-        }
-
-        Ok(bridge)
-    }
-
-    fn clear_state(&mut self) -> Result<(), UploadError> {
-        self.send_action_and_expect_ok(json!({ "action": "clear-state" }))
-    }
-
-    fn set_start_date(&mut self, start_date: &str) -> Result<(), UploadError> {
-        self.send_action_and_expect_ok(json!({
-            "action": "set-start-date",
-            "startDate": start_date,
-        }))
-    }
-
-    fn parse_lines(&mut self, lines: &[String], selected_region: u8) -> Result<(), UploadError> {
-        let payload = self.send_action(json!({
-            "action": "parse-lines",
-            "lines": lines,
-            "selectedRegion": selected_region,
-        }))?;
-        let parsed = serde_json::from_value::<ParseLinesResponse>(payload)?;
-
-        if parsed.ok {
-            Ok(())
-        } else {
-            Err(UploadError::Message(format!(
-                "Parser failed to parse lines: {}",
-                parsed
-                    .error
-                    .unwrap_or_else(|| "Unknown parser error".to_string())
-            )))
-        }
-    }
-
-    fn collect_fights(
-        &mut self,
-        push_fight_if_needed: bool,
-    ) -> Result<CollectFightsResponse, UploadError> {
-        let payload = self.send_action(json!({
-            "action": "collect-fights",
-            "pushFightIfNeeded": push_fight_if_needed,
-            "scanningOnly": false,
-        }))?;
-        let parsed = serde_json::from_value::<CollectFightsResponse>(payload)?;
-
-        if parsed.ok {
-            Ok(parsed)
-        } else {
-            Err(UploadError::Message(format!(
-                "Parser failed to collect fights: {}",
-                parsed
-                    .error
-                    .unwrap_or_else(|| "Unknown parser error".to_string())
-            )))
-        }
-    }
-
-    fn collect_master_info(&mut self) -> Result<CollectMasterInfoResponse, UploadError> {
-        let payload = self.send_action(json!({ "action": "collect-master-info" }))?;
-        let parsed = serde_json::from_value::<CollectMasterInfoResponse>(payload)?;
-
-        if parsed.ok {
-            Ok(parsed)
-        } else {
-            Err(UploadError::Message(format!(
-                "Parser failed to collect master info: {}",
-                parsed
-                    .error
-                    .unwrap_or_else(|| "Unknown parser error".to_string())
-            )))
-        }
-    }
-
-    fn clear_fights(&mut self) -> Result<(), UploadError> {
-        self.send_action_and_expect_ok(json!({ "action": "clear-fights" }))
-    }
-
-    fn send_action(
-        &mut self,
-        payload: serde_json::Value,
-    ) -> Result<serde_json::Value, UploadError> {
-        self.send_json_line(&payload)?;
-        self.read_json_line()
-    }
-
-    fn send_action_and_expect_ok(&mut self, payload: serde_json::Value) -> Result<(), UploadError> {
-        let response = self.send_action(payload)?;
-        let is_ok = response
-            .get("ok")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-
-        if is_ok {
-            Ok(())
-        } else {
-            let message = response
-                .get("error")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or("Unknown parser bridge error")
-                .to_string();
-            Err(UploadError::Message(message))
-        }
-    }
-
-    fn send_json_line(&mut self, payload: &serde_json::Value) -> Result<(), UploadError> {
-        let encoded = serde_json::to_string(payload)?;
-        if let Err(error) = self.stdin.write_all(encoded.as_bytes()) {
-            return Err(self.map_stdin_write_error(error));
-        }
-        if let Err(error) = self.stdin.write_all(b"\n") {
-            return Err(self.map_stdin_write_error(error));
-        }
-        if let Err(error) = self.stdin.flush() {
-            return Err(self.map_stdin_write_error(error));
-        }
-        Ok(())
-    }
-
-    fn map_stdin_write_error(&mut self, error: std::io::Error) -> UploadError {
-        if error.kind() != std::io::ErrorKind::BrokenPipe {
-            return UploadError::Io(error);
-        }
-
-        let stderr_output = self
-            .stderr
-            .as_mut()
-            .map(read_child_stderr)
-            .transpose()
-            .unwrap_or(None)
-            .unwrap_or_default();
-
-        if stderr_output.trim().is_empty() {
-            return UploadError::Message(
-                "Parser process exited unexpectedly before initialization. Ensure parser-harness.cjs is present and bundled Node runtime can execute CommonJS scripts."
-                    .to_string(),
-            );
-        }
-
-        UploadError::Message(format!(
-            "Parser process exited unexpectedly before initialization. stderr: {}",
-            stderr_output.trim()
-        ))
-    }
-
-    fn read_json_line(&mut self) -> Result<serde_json::Value, UploadError> {
-        let mut line = String::new();
-        let bytes_read = self.stdout.read_line(&mut line)?;
-        if bytes_read == 0 {
-            let stderr_output = self
-                .stderr
-                .as_mut()
-                .map(read_child_stderr)
-                .transpose()?
-                .unwrap_or_default();
-            let stderr_suffix = if stderr_output.trim().is_empty() {
-                String::new()
-            } else {
-                format!(" stderr: {}", stderr_output.trim())
-            };
-            return Err(UploadError::Message(format!(
-                "Parser process exited unexpectedly.{stderr_suffix}"
-            )));
-        }
-
-        serde_json::from_str(line.trim()).map_err(|error| {
-            UploadError::Message(format!("Failed to parse parser response JSON: {error}"))
-        })
-    }
-}
-
-impl Drop for ParserBridge {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
     }
 }
 
@@ -1045,14 +771,14 @@ fn run_live_upload(
                     >= Duration::from_millis(LIVE_FLUSH_INTERVAL_MS));
 
         if should_flush {
-            flush_live_buffer(&app_handle, &mut runtime, false)?;
+            flush_live_buffer(&app_handle, &mut runtime, &cancel_flag, false)?;
         }
 
         std::thread::sleep(Duration::from_millis(LIVE_POLL_INTERVAL_MS));
     }
 
     if !runtime.buffered_lines.is_empty() {
-        flush_live_buffer(&app_handle, &mut runtime, true)?;
+        flush_live_buffer(&app_handle, &mut runtime, &cancel_flag, true)?;
     }
 
     if let Some(report_code) = runtime.report_code.clone() {
@@ -1342,68 +1068,35 @@ fn process_batch(
         );
     }
 
-    let master_info = parser.collect_master_info()?;
-    let current_master_ids = MasterIds {
-        actor_id: master_info.last_assigned_actor_id,
-        ability_id: master_info.last_assigned_ability_id,
-        tuple_id: master_info.last_assigned_tuple_id,
-        pet_id: master_info.last_assigned_pet_id,
-    };
-
     let code = report_code
         .as_ref()
         .ok_or_else(|| UploadError::Message("Report code missing during upload".to_string()))?;
 
-    if Some(current_master_ids) != *last_master_ids {
-        check_cancelled(cancel_flag)?;
-        emit_upload_progress(
-            app_handle,
-            "master",
-            &format!("Uploading master table for segment {}...", *segment_id),
-            23,
-        );
-        let master_payload = build_master_table_string(
-            &master_info,
-            fights_data.log_version,
-            fights_data.game_version,
-        );
-        let master_zip = make_zip_payload(&master_payload)?;
-        session.set_master_table(code, *segment_id, master_zip)?;
-        *last_master_ids = Some(current_master_ids);
-    } else {
-        emit_upload_progress(
-            app_handle,
-            "master",
-            &format!("Master table unchanged for segment {}", *segment_id),
-            23,
-        );
-    }
-
     check_cancelled(cancel_flag)?;
+    let segment_number = *segment_id;
+    let mut pipeline = UploadPipeline::new(
+        session,
+        parser,
+        code,
+        segment_id,
+        last_master_ids,
+        cancel_flag,
+    );
+    let master_uploaded = pipeline.prepare_master_info()?;
+    let master_message = if master_uploaded {
+        format!("Uploading master table for segment {segment_number}...")
+    } else {
+        format!("Master table unchanged for segment {segment_number}")
+    };
+    emit_upload_progress(app_handle, "master", &master_message, 23);
+
     emit_upload_progress(
         app_handle,
         "segment",
-        &format!("Uploading segment {}...", *segment_id),
+        &format!("Uploading segment {segment_number}..."),
         24,
     );
-    let fights_payload = build_fights_string(&fights_data);
-    let fights_zip = make_zip_payload(&fights_payload)?;
-    let total_events: u64 = fights_data
-        .fights
-        .iter()
-        .map(|fight| fight.event_count)
-        .sum();
-    *segment_id = session.add_segment(AddSegmentRequest {
-        report_code: code.to_string(),
-        segment_id: *segment_id,
-        start_time: fights_data.start_time,
-        end_time: fights_data.end_time,
-        mythic: fights_data.mythic,
-        is_live_log: false,
-        zip_bytes: fights_zip,
-    })?;
-
-    parser.clear_fights()?;
+    let (total_events, _) = pipeline.upload_segment(&fights_data, false)?;
 
     emit_upload_progress(
         app_handle,
@@ -1418,6 +1111,7 @@ fn process_batch(
 fn flush_live_buffer(
     app_handle: &AppHandle,
     runtime: &mut LiveUploadRuntime,
+    cancel_flag: &Arc<AtomicBool>,
     push_fight_if_needed: bool,
 ) -> Result<(), UploadError> {
     if runtime.buffered_lines.is_empty() {
@@ -1486,49 +1180,25 @@ fn flush_live_buffer(
         .as_ref()
         .ok_or_else(|| UploadError::Message("Live upload missing report code".to_string()))?;
 
-    let master_info = runtime.parser.collect_master_info()?;
-    let current_master_ids = MasterIds {
-        actor_id: master_info.last_assigned_actor_id,
-        ability_id: master_info.last_assigned_ability_id,
-        tuple_id: master_info.last_assigned_tuple_id,
-        pet_id: master_info.last_assigned_pet_id,
-    };
-
-    if Some(current_master_ids) != runtime.last_master_ids {
-        let master_payload = build_master_table_string(
-            &master_info,
-            fights_data.log_version,
-            fights_data.game_version,
-        );
-        let master_zip = make_zip_payload(&master_payload)?;
-        runtime
-            .session
-            .set_master_table(code, runtime.segment_id, master_zip)?;
-        runtime.last_master_ids = Some(current_master_ids);
-    }
-
-    let fights_payload = build_fights_string(&fights_data);
-    let fights_zip = make_zip_payload(&fights_payload)?;
-    runtime.segment_id = runtime.session.add_segment(AddSegmentRequest {
-        report_code: code.to_string(),
-        segment_id: runtime.segment_id,
-        start_time: fights_data.start_time,
-        end_time: fights_data.end_time,
-        mythic: fights_data.mythic,
-        is_live_log: false,
-        zip_bytes: fights_zip,
-    })?;
+    let (total_events, _) = UploadPipeline::new(
+        &runtime.session,
+        &mut runtime.parser,
+        code,
+        &mut runtime.segment_id,
+        &mut runtime.last_master_ids,
+        cancel_flag,
+    )
+    .upload_segment(&fights_data, false)?;
 
     runtime.total_uploaded_lines += runtime.buffered_lines.len() as u64;
     runtime.buffered_lines.clear();
     runtime.last_flush_at = Instant::now();
-    runtime.parser.clear_fights()?;
 
     emit_live_upload_progress(
         app_handle,
         "live",
         &format!(
-            "Uploaded live segment. Total lines sent: {}",
+            "Uploaded live segment with {total_events} events. Total lines sent: {}",
             runtime.total_uploaded_lines
         ),
         60,
@@ -1576,97 +1246,6 @@ fn read_live_log_lines(runtime: &mut LiveUploadRuntime) -> Result<(), UploadErro
     Ok(())
 }
 
-fn make_zip_payload(content: &str) -> Result<Vec<u8>, UploadError> {
-    let mut buffer = Cursor::new(Vec::<u8>::new());
-    let mut zip = ZipWriter::new(&mut buffer);
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .compression_level(Some(6));
-    zip.start_file("log.txt", options)?;
-    zip.write_all(content.as_bytes())?;
-    zip.finish()?;
-    Ok(buffer.into_inner())
-}
-
-fn build_master_table_string(
-    master_info: &CollectMasterInfoResponse,
-    log_version: i64,
-    game_version: i64,
-) -> String {
-    let mut parts = vec![format!("{log_version}|{game_version}|")];
-
-    parts.push(master_info.last_assigned_actor_id.to_string());
-    if !master_info.actors_string.is_empty() {
-        parts.push(master_info.actors_string.trim_end_matches('\n').to_string());
-    }
-
-    parts.push(master_info.last_assigned_ability_id.to_string());
-    if !master_info.abilities_string.is_empty() {
-        parts.push(
-            master_info
-                .abilities_string
-                .trim_end_matches('\n')
-                .to_string(),
-        );
-    }
-
-    parts.push(master_info.last_assigned_tuple_id.to_string());
-    if !master_info.tuples_string.is_empty() {
-        parts.push(master_info.tuples_string.trim_end_matches('\n').to_string());
-    }
-
-    parts.push(master_info.last_assigned_pet_id.to_string());
-    if !master_info.pets_string.is_empty() {
-        parts.push(master_info.pets_string.trim_end_matches('\n').to_string());
-    }
-
-    format!("{}\n", parts.join("\n"))
-}
-
-fn build_fights_string(fights_data: &CollectFightsResponse) -> String {
-    let total_events: u64 = fights_data
-        .fights
-        .iter()
-        .map(|fight| fight.event_count)
-        .sum();
-    let events_combined = fights_data
-        .fights
-        .iter()
-        .map(|fight| fight.events_string.as_str())
-        .collect::<String>();
-
-    format!(
-        "{}|{}\n{}\n{}",
-        fights_data.log_version, fights_data.game_version, total_events, events_combined
-    )
-}
-
-fn is_encounter_fight_candidate(fight: &ParserFight) -> bool {
-    if fight.events_string.contains("ENCOUNTER_START") {
-        return true;
-    }
-
-    if fight.encounter_id.unwrap_or(0) > 0 {
-        return true;
-    }
-
-    let has_named_encounter = fight
-        .encounter_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .is_some_and(|name| !name.eq_ignore_ascii_case("Unknown"));
-    if has_named_encounter {
-        return true;
-    }
-
-    if fight.boss_percentage.is_some() {
-        return true;
-    }
-
-    false
-}
-
 fn count_file_lines(path: &Path, cancel_flag: &Arc<AtomicBool>) -> Result<u64, UploadError> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -1683,26 +1262,6 @@ fn count_file_lines(path: &Path, cancel_flag: &Arc<AtomicBool>) -> Result<u64, U
     }
 
     Ok(count)
-}
-
-fn parse_start_date_from_filename(file_name: &str) -> Option<String> {
-    let regex = Regex::new(r"WoWCombatLog-(\d{2})(\d{2})(\d{2})_").ok()?;
-    let captures = regex.captures(file_name)?;
-
-    let month = captures.get(1)?.as_str().parse::<u32>().ok()?;
-    let day = captures.get(2)?.as_str().parse::<u32>().ok()?;
-    let year_suffix = captures.get(3)?.as_str().parse::<u32>().ok()?;
-    let year = 2000 + year_suffix;
-
-    Some(format!("{month}/{day}/{year}"))
-}
-
-fn normalize_report_description(description: Option<&str>) -> String {
-    description
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("")
-        .to_string()
 }
 
 pub(crate) fn resolve_client_version() -> String {

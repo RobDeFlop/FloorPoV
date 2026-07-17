@@ -1,3 +1,4 @@
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::wcl_upload::types::{
@@ -11,7 +12,7 @@ pub(crate) fn emit_upload_progress(app_handle: &AppHandle, step: &str, message: 
         message: message.to_string(),
         percent,
     };
-    let _ = app_handle.emit("wcl-upload-progress", payload);
+    emit_event(app_handle, "wcl-upload-progress", payload);
 }
 
 pub(crate) fn emit_upload_complete(app_handle: &AppHandle, result: &StartWclUploadResponse) {
@@ -19,21 +20,21 @@ pub(crate) fn emit_upload_complete(app_handle: &AppHandle, result: &StartWclUplo
         report_url: result.report_url.clone(),
         report_code: result.report_code.clone(),
     };
-    let _ = app_handle.emit("wcl-upload-complete", payload);
+    emit_event(app_handle, "wcl-upload-complete", payload);
 }
 
 pub(crate) fn emit_upload_error(app_handle: &AppHandle, message: &str) {
     let payload = WclUploadErrorEvent {
         message: message.to_string(),
     };
-    let _ = app_handle.emit("wcl-upload-error", payload);
+    emit_event(app_handle, "wcl-upload-error", payload);
 }
 
 pub(crate) fn emit_live_upload_error(app_handle: &AppHandle, message: &str) {
     let payload = WclUploadErrorEvent {
         message: message.to_string(),
     };
-    let _ = app_handle.emit("wcl-live-upload-error", payload);
+    emit_event(app_handle, "wcl-live-upload-error", payload);
 }
 
 pub(crate) fn emit_live_upload_progress(
@@ -47,7 +48,7 @@ pub(crate) fn emit_live_upload_progress(
         message: message.to_string(),
         percent,
     };
-    let _ = app_handle.emit("wcl-live-upload-progress", payload);
+    emit_event(app_handle, "wcl-live-upload-progress", payload);
 }
 
 pub(crate) fn emit_live_upload_complete(
@@ -59,7 +60,7 @@ pub(crate) fn emit_live_upload_complete(
         report_url,
         report_code,
     };
-    let _ = app_handle.emit("wcl-live-upload-complete", payload);
+    emit_event(app_handle, "wcl-live-upload-complete", payload);
 }
 
 pub(crate) fn emit_live_report_created(
@@ -71,5 +72,11 @@ pub(crate) fn emit_live_report_created(
         report_url: Some(report_url.to_string()),
         report_code: Some(report_code.to_string()),
     };
-    let _ = app_handle.emit("wcl-live-upload-report-created", payload);
+    emit_event(app_handle, "wcl-live-upload-report-created", payload);
+}
+
+fn emit_event<T: Serialize + Clone>(app_handle: &AppHandle, event_name: &str, payload: T) {
+    if let Err(error) = app_handle.emit(event_name, payload) {
+        tracing::warn!(event_name, %error, "Failed to emit WarcraftLogs event");
+    }
 }

@@ -1,66 +1,4 @@
-use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-
-use super::{
-    CombatTriggerEvent, ParseCombatLogDebugResult, ParsedCombatEvent, EVENT_ENCOUNTER_END,
-    EVENT_ENCOUNTER_START, MAX_DEBUG_EVENTS,
-};
-
-#[tauri::command]
-pub fn parse_combat_log_file(file_path: String) -> Result<ParseCombatLogDebugResult, String> {
-    if !cfg!(debug_assertions) {
-        return Err("Combat log debug parsing is only available in debug builds".to_string());
-    }
-
-    if file_path.trim().is_empty() {
-        return Err("Combat log file path is required".to_string());
-    }
-
-    let path = Path::new(&file_path);
-    if !path.is_file() {
-        return Err(format!("Combat log file not found: {}", file_path));
-    }
-
-    let file_size_bytes = std::fs::metadata(path)
-        .map_err(|error| error.to_string())?
-        .len();
-    let file = File::open(path).map_err(|error| error.to_string())?;
-    let reader = BufReader::new(file);
-
-    let mut total_lines = 0_u64;
-    let mut parsed_events: Vec<ParsedCombatEvent> = Vec::new();
-    let mut event_counts: BTreeMap<String, u64> = BTreeMap::new();
-    let mut truncated = false;
-    let mut debug_context = DebugParseContext::default();
-
-    for line_result in reader.lines() {
-        let line = line_result.map_err(|error| error.to_string())?;
-        total_lines += 1;
-
-        if let Some(parsed_event) = parse_important_log_line(&line, total_lines, &mut debug_context)
-        {
-            *event_counts
-                .entry(parsed_event.event_type.clone())
-                .or_insert(0) += 1;
-            if parsed_events.len() < MAX_DEBUG_EVENTS {
-                parsed_events.push(parsed_event);
-            } else {
-                truncated = true;
-            }
-        }
-    }
-
-    Ok(ParseCombatLogDebugResult {
-        file_path,
-        file_size_bytes,
-        total_lines,
-        parsed_events,
-        event_counts,
-        truncated,
-    })
-}
+use super::{CombatTriggerEvent, ParsedCombatEvent, EVENT_ENCOUNTER_END, EVENT_ENCOUNTER_START};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ImportantCombatEvent {
@@ -111,65 +49,31 @@ impl ImportantCombatEvent {
 pub(crate) fn extract_combat_trigger_event(
     event: &ImportantCombatEvent,
 ) -> Option<CombatTriggerEvent> {
-    match event.raw_event_type.as_str() {
-        "CHALLENGE_MODE_START" => Some(CombatTriggerEvent {
-            trigger_type: "start".to_string(),
-            mode: "mythicPlus".to_string(),
-            event_type: "CHALLENGE_MODE_START".to_string(),
-            encounter_name: event.encounter_name.clone(),
-            key_level: event.key_level,
-        }),
-        "CHALLENGE_MODE_END" => Some(CombatTriggerEvent {
-            trigger_type: "end".to_string(),
-            mode: "mythicPlus".to_string(),
-            event_type: "CHALLENGE_MODE_END".to_string(),
-            encounter_name: event.encounter_name.clone(),
-            key_level: event.key_level,
-        }),
-        "ENCOUNTER_START" => {
-            if event.encounter_category.as_deref() != Some("raid") {
-                return None;
-            }
-
-            Some(CombatTriggerEvent {
-                trigger_type: "start".to_string(),
-                mode: "raid".to_string(),
-                event_type: "ENCOUNTER_START".to_string(),
-                encounter_name: event.encounter_name.clone(),
-                key_level: event.key_level,
-            })
-        }
-        "ENCOUNTER_END" => {
-            if event.encounter_category.as_deref() != Some("raid") {
-                return None;
-            }
-
-            Some(CombatTriggerEvent {
-                trigger_type: "end".to_string(),
-                mode: "raid".to_string(),
-                event_type: "ENCOUNTER_END".to_string(),
-                encounter_name: event.encounter_name.clone(),
-                key_level: event.key_level,
-            })
-        }
+    let (trigger_type, mode, requires_raid_category) = (match event.raw_event_type.as_str() {
+        "CHALLENGE_MODE_START" => Some(("start", "mythicPlus", false)),
+        "CHALLENGE_MODE_END" => Some(("end", "mythicPlus", false)),
+        "ENCOUNTER_START" => Some(("start", "raid", true)),
+        "ENCOUNTER_END" => Some(("end", "raid", true)),
         "ARENA_MATCH_START" | "PVP_MATCH_START" | "BATTLEGROUND_START" => {
-            Some(CombatTriggerEvent {
-                trigger_type: "start".to_string(),
-                mode: "pvp".to_string(),
-                event_type: event.raw_event_type.clone(),
-                encounter_name: event.encounter_name.clone(),
-                key_level: event.key_level,
-            })
+            Some(("start", "pvp", false))
         }
-        "ARENA_MATCH_END" | "PVP_MATCH_COMPLETE" | "BATTLEGROUND_END" => Some(CombatTriggerEvent {
-            trigger_type: "end".to_string(),
-            mode: "pvp".to_string(),
-            event_type: event.raw_event_type.clone(),
-            encounter_name: event.encounter_name.clone(),
-            key_level: event.key_level,
-        }),
+        "ARENA_MATCH_END" | "PVP_MATCH_COMPLETE" | "BATTLEGROUND_END" => {
+            Some(("end", "pvp", false))
+        }
         _ => None,
+    })?;
+
+    if requires_raid_category && event.encounter_category.as_deref() != Some("raid") {
+        return None;
     }
+
+    Some(CombatTriggerEvent {
+        trigger_type: trigger_type.to_string(),
+        mode: mode.to_string(),
+        event_type: event.raw_event_type.clone(),
+        encounter_name: event.encounter_name.clone(),
+        key_level: event.key_level,
+    })
 }
 
 pub(crate) fn parse_important_combat_event(
@@ -246,7 +150,7 @@ fn resolve_encounter_state_for_event(
     (encounter_name, encounter_category)
 }
 
-fn parse_important_log_line(
+pub(crate) fn parse_important_log_line(
     line: &str,
     line_number: u64,
     context: &mut DebugParseContext,

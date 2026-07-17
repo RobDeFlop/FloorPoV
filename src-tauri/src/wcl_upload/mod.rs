@@ -5,8 +5,11 @@ mod core;
 mod error;
 mod events;
 mod filesystem;
+mod parser;
+mod payload;
 mod state;
 mod types;
+mod upload_pipeline;
 mod validation;
 
 #[tauri::command]
