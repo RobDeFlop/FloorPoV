@@ -38,6 +38,12 @@ pub fn run() {
         .manage(recording_state)
         .manage(wcl_upload::WclAuthService::new())
         .setup(|app| {
+            let main_window = app
+                .get_webview_window("main")
+                .ok_or_else(|| "Main application window was not created".to_string())?;
+            main_window.set_icon(tauri::include_image!("./icons/128x128.png"))?;
+            main_window.set_skip_taskbar(false)?;
+
             let output_folder = match settings::get_default_output_folder() {
                 Ok(path) => path,
                 Err(error) => {

@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Clapperboard } from "lucide-react";
+import floorpovIcon from "../../assets/floorpov-icon-ui.png";
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();
@@ -45,7 +45,12 @@ export function TitleBar() {
         onPointerDown={handleDragStart}
       >
         <div className="inline-flex items-center gap-2 rounded-sm border border-white/15 bg-white/5 px-2 py-1">
-          <Clapperboard className="h-3.5 w-3.5 text-emerald-300" />
+          <img
+            src={floorpovIcon}
+            alt=""
+            aria-hidden="true"
+            className="h-4 w-4 object-contain"
+          />
           <span className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-100">FloorPoV</span>
         </div>
 
