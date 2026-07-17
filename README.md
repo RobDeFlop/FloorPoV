@@ -2,7 +2,7 @@
 
 > **WoW Gameplay Recording and Combat-Log Analysis**
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/RobDeFlop/FloorPoV)
+[![Version](https://img.shields.io/badge/version-0.1.8--beta-blue.svg)](https://github.com/RobDeFlop/FloorPoV)
 [![License](https://img.shields.io/badge/license-GPLv3-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
 
