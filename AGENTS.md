@@ -8,6 +8,20 @@ This file defines active engineering rules for contributors and coding agents.
 For product planning and phased implementation details, see `docs/implementation-plan.md`.
 For expanded naming examples, see `docs/coding-guidelines.md`.
 
+## Git Branch Naming
+
+Use a conventional branch type prefix that describes the change:
+
+- `feat/<short-description>` for new functionality.
+- `fix/<short-description>` for bug fixes.
+- `refactor/<short-description>` for structural changes without intended behavior changes.
+- `chore/<short-description>` for maintenance work.
+- `docs/<short-description>` for documentation-only changes.
+- `test/<short-description>` for test-only changes.
+- `build/<short-description>` or `ci/<short-description>` for build and CI changes.
+
+Do not use the `agent/` prefix for new branches in this repository.
+
 ## Command Reference
 
 ```bash
