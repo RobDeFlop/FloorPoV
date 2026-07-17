@@ -208,22 +208,8 @@ pub(crate) struct ParseLinesResponse {
 pub(crate) struct ParserFight {
     pub event_count: u64,
     pub events_string: String,
-    #[allow(dead_code)]
-    pub start_time: Option<i64>,
-    #[allow(dead_code)]
-    pub end_time: Option<i64>,
     pub boss_percentage: Option<f64>,
-    #[allow(dead_code)]
-    pub is_trash: Option<bool>,
-    #[allow(dead_code)]
-    pub enemy_npcid: Option<i64>,
-    #[allow(dead_code)]
-    pub enemy_id: Option<i64>,
     pub encounter_id: Option<i64>,
-    #[allow(dead_code)]
-    pub difficulty: Option<i64>,
-    #[allow(dead_code)]
-    pub zone_id: Option<i64>,
     pub encounter_name: Option<String>,
 }
 
@@ -266,6 +252,16 @@ pub(crate) struct MasterIds {
     pub ability_id: i64,
     pub tuple_id: i64,
     pub pet_id: i64,
+}
+
+pub(crate) struct AddSegmentRequest {
+    pub report_code: String,
+    pub segment_id: u64,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub mythic: i64,
+    pub is_live_log: bool,
+    pub zip_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone)]
