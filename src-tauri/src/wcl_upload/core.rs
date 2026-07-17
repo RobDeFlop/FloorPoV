@@ -991,11 +991,45 @@ fn run_live_upload(
         total_uploaded_lines: 0,
     };
 
+    // WarcraftLogs requires a valid initial time range even when no encounter
+    // has been parsed yet. The live segments update the report with real event
+    // timestamps as soon as combat data becomes available.
+    let report_start_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    emit_live_upload_progress(
+        &app_handle,
+        "report",
+        "Creating WarcraftLogs live report...",
+        10,
+    );
+    let created_code = runtime.session.create_report(&CreateReportRequest {
+        file_name: runtime.file_name.clone(),
+        parser_version: runtime.parser_version,
+        start_time: report_start_time,
+        end_time: report_start_time.saturating_add(1),
+        description: runtime.upload_params.description.clone(),
+        region: runtime.upload_params.region,
+        visibility: runtime.upload_params.visibility,
+        guild_id: runtime.upload_params.guild_id,
+    })?;
+    let report_url = format!("https://www.warcraftlogs.com/reports/{created_code}");
+    runtime.report_code = Some(created_code.clone());
+    emit_live_upload_progress(
+        &app_handle,
+        "report",
+        &format!("Live report created: {report_url}"),
+        12,
+    );
+    emit_live_report_created(&app_handle, &report_url, &created_code);
+    set_live_report_info(Some(report_url), Some(created_code), true);
+
     emit_live_upload_progress(
         &app_handle,
         "live",
         "Live upload is active. Waiting for new combat log lines...",
-        10,
+        14,
     );
 
     loop {
@@ -1446,29 +1480,6 @@ fn flush_live_buffer(
         ),
         33,
     );
-
-    if runtime.report_code.is_none() {
-        let created_code = runtime.session.create_report(&CreateReportRequest {
-            file_name: runtime.file_name.clone(),
-            parser_version: runtime.parser_version,
-            start_time: fights_data.start_time,
-            end_time: fights_data.end_time,
-            description: runtime.upload_params.description.clone(),
-            region: runtime.upload_params.region,
-            visibility: runtime.upload_params.visibility,
-            guild_id: runtime.upload_params.guild_id,
-        })?;
-        runtime.report_code = Some(created_code.clone());
-        let report_url = format!("https://www.warcraftlogs.com/reports/{created_code}");
-        emit_live_upload_progress(
-            app_handle,
-            "live",
-            &format!("Live report created: {report_url}"),
-            35,
-        );
-        emit_live_report_created(app_handle, &report_url, &created_code);
-        set_live_report_info(Some(report_url), Some(created_code), true);
-    }
 
     let code = runtime
         .report_code

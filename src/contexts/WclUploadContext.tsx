@@ -282,6 +282,7 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
 
   const startLiveUpload = useCallback(async (payload: StartWclLiveUploadPayload) => {
     setErrorMessage(null);
+    setReportUrl(null);
     setProgressPercent(0);
     setProgressStatus("Starting live upload...");
     setProgressLines([]);

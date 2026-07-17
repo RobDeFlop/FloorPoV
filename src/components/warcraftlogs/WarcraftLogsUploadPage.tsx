@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  ExternalLink,
   FileText,
   LoaderCircle,
   ShieldCheck,
@@ -702,7 +703,10 @@ export function WarcraftLogsUploadPage() {
                   placeholder="you@example.com"
                   value={email}
                   disabled={isUploading || isLiveUploading || isAuthBusy}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setLoginFeedback(null);
+                  }}
                 />
               </FormField>
 
@@ -715,7 +719,10 @@ export function WarcraftLogsUploadPage() {
                   type="password"
                   value={password}
                   disabled={isUploading || isLiveUploading || isAuthBusy}
-                  onChange={(event) => setPassword(event.target.value)}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    setLoginFeedback(null);
+                  }}
                 />
               </FormField>
 
@@ -735,27 +742,31 @@ export function WarcraftLogsUploadPage() {
               Credentials are used only to create the WarcraftLogs session.
             </p>
 
-            {isAuthenticated && (
-              <p className="mt-2 inline-flex items-center gap-1.5 rounded-sm border border-emerald-300/30 bg-emerald-500/12 px-2 py-1 text-xs text-emerald-100">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                Connected as {authenticatedUserName ?? email}
-              </p>
-            )}
-
-            {loginFeedback && (
+            {(isAuthenticated || loginFeedback) && (
               <p
-                className={`mt-2 inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs ${
-                  loginFeedback.tone === "success"
-                    ? "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
-                    : "border-rose-300/30 bg-rose-500/12 text-rose-100"
+                className={`mt-2 inline-flex items-start gap-1.5 rounded-sm border px-2 py-1 text-xs ${
+                  loginFeedback?.tone === "error"
+                    ? "border-rose-300/30 bg-rose-500/12 text-rose-100"
+                    : "border-emerald-300/30 bg-emerald-500/12 text-emerald-100"
                 }`}
               >
-                {loginFeedback.tone === "success" ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
+                {loginFeedback?.tone === "error" ? (
+                  <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-300" />
                 ) : (
-                  <XCircle className="h-3.5 w-3.5 text-rose-300" />
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
                 )}
-                {loginFeedback.message}
+                <span>
+                  {isAuthenticated && (
+                    <span className="block font-medium">
+                      Connected as {authenticatedUserName ?? email}
+                    </span>
+                  )}
+                  {loginFeedback && (
+                    <span className={isAuthenticated ? "mt-0.5 block text-[11px] opacity-90" : ""}>
+                      {loginFeedback.message}
+                    </span>
+                  )}
+                </span>
               </p>
             )}
 
@@ -986,23 +997,26 @@ export function WarcraftLogsUploadPage() {
 
                   {reportUrl && (
                     <div className="rounded-sm border border-emerald-300/30 bg-emerald-500/12 p-3 text-xs text-emerald-100">
-                      <p className="mb-2 inline-flex items-center gap-1.5 font-medium">
+                      <p className="mb-3 inline-flex items-center gap-1.5 font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                        Report URL
+                        WarcraftLogs Report
                       </p>
-                      <p>
+                      <div className="flex flex-wrap items-center gap-2">
                         <a
                           href={reportUrl}
                           target="_blank"
                           rel="noreferrer noopener"
-                          className="break-all font-mono text-[11px] text-emerald-200 underline underline-offset-2 hover:text-emerald-100"
+                          title={reportUrl}
+                          className="inline-flex items-center gap-1.5 rounded-sm border border-emerald-300/35 bg-emerald-500/20 px-3 py-1.5 font-medium text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
                         >
-                          {reportUrl}
+                          Open Report
+                          <ExternalLink className="h-3.5 w-3.5" />
                         </a>
-                      </p>
-                      <div className="mt-3">
                         <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>
-                          Copy URL
+                          <span className="inline-flex items-center gap-1.5">
+                            <Copy className="h-3.5 w-3.5" />
+                            Copy URL
+                          </span>
                         </Button>
                       </div>
                     </div>
