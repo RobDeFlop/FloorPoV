@@ -22,6 +22,18 @@ Use a conventional branch type prefix that describes the change:
 
 Do not use the `agent/` prefix for new branches in this repository.
 
+## Commit Messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) for every commit. The required format is:
+
+```text
+<type>(<optional-scope>): <imperative description>
+```
+
+Allowed types are `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, and `test`.
+
+Keep the subject lowercase, omit the final period, and keep it at or below 72 characters. Use a body to explain why a change was made when the subject is not sufficient. See `CONTRIBUTING.md` for examples.
+
 ## Command Reference
 
 ```bash

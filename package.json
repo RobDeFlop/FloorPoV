@@ -4,8 +4,10 @@
   "version": "0.1.8-beta",
   "type": "module",
   "scripts": {
+    "prepare": "husky",
     "prepare:ffmpeg": "powershell -ExecutionPolicy Bypass -File ./scripts/fetch-ffmpeg.ps1",
     "prepare:node-runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/fetch-node-runtime.ps1",
+    "commitlint": "commitlint",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -27,11 +29,14 @@
     "sonner": "^2.0.7"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "husky": "^9.1.7",
     "tailwindcss": "^4.3.3",
     "typescript": "~7.0.2",
     "vite": "^8.1.5"

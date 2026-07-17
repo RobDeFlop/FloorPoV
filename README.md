@@ -1,139 +1,122 @@
 # FloorPoV
 
-> **WoW Gameplay Recording and Combat-Log Analysis**
+> Windows desktop recording and combat-log analysis for World of Warcraft.
 
-[![Version](https://img.shields.io/badge/version-0.1.8--beta-blue.svg)](https://github.com/RobDeFlop/FloorPoV)
+[![Latest release](https://img.shields.io/github/v/release/RobDeFlop/FloorPoV?include_prereleases&label=release)](https://github.com/RobDeFlop/FloorPoV/releases)
+[![Release workflow](https://github.com/RobDeFlop/FloorPoV/actions/workflows/release.yml/badge.svg)](https://github.com/RobDeFlop/FloorPoV/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/license-GPLv3-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)]()
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://github.com/RobDeFlop/FloorPoV/releases)
 
-FloorPoV is a desktop application that records your World of Warcraft gameplay while automatically detecting and marking important events like player deaths, boss encounters, kills, and interrupts directly on the video timeline. Perfect for analyzing Mythic+ runs, raid progression, and PvP matches.
+FloorPoV records World of Warcraft gameplay and places important combat events on the video timeline. Use it to review Mythic+ runs, raid progression, and PvP matches.
 
-![Video Analysis Screenshot](https://i.imgur.com/SEQw9I9.jpeg)
-![Log Analysis Screenshot](https://i.imgur.com/UwLeCqT.png)
+This project is currently in beta and supports Windows 10 and Windows 11.
 
-## ✨ Features
+![Video analysis screenshot](https://i.imgur.com/SEQw9I9.jpeg)
+![Log analysis screenshot](https://i.imgur.com/UwLeCqT.png)
 
-| Feature | Description |
-|---------|-------------|
-|  **Smart Event Markers** | Automatically detects player deaths, kills, interrupts, dispels, and boss encounters |
-|  **High-Quality Recording** | FFmpeg-powered capture with H.264/MP4 output and quality presets |
-|  **Manual Markers** | Add custom markers during gameplay with configurable hotkeys |
-|  **Combat Log Integration** | Real-time WoW combat log parsing for accurate event tracking |
-|  **Performance Optimized** | Lightweight recording that won't impact your gameplay performance |
-|  **System Audio Capture** | Optional desktop/game audio recording via WASAPI loopback |
-|  **Organized Library** | Browse recordings by game mode (Mythic+, Raid, PvP) with metadata |
+## Features
 
-## 🚀 Quick Start
+- Automatic event markers for player deaths, kills, interrupts, dispels, and boss encounters.
+- Manual timeline markers with configurable global hotkeys.
+- Automatic recording when Mythic+, raid, or PvP combat begins.
+- FFmpeg-based H.264/MP4 recording with hardware encoder support when available.
+- Optional desktop and game audio capture through WASAPI loopback.
+- Recording library organized by Mythic+, raid, and PvP game modes.
+- WarcraftLogs one-shot combat-log uploads and live logging.
+- Sidecar `.meta.json` files that preserve event metadata for later playback.
+
+## Download and install
+
+Download the latest Windows installer from the [GitHub Releases page](https://github.com/RobDeFlop/FloorPoV/releases), then run the installer.
+
+FloorPoV bundles the Node.js parser runtime and FFmpeg. End users do not need to install Node.js or FFmpeg separately.
+
+After installation:
+
+1. Open FloorPoV and select your World of Warcraft folder in **Settings**.
+2. Make sure WoW is producing a `Logs\WoWCombatLog*.txt` file before using combat detection, automatic recording, or live WarcraftLogs upload.
+3. Configure your recording, audio, and manual-marker hotkey settings.
+
+Beta releases may contain unfinished features or regressions. Please report reproducible problems through the [issue tracker](https://github.com/RobDeFlop/FloorPoV/issues).
+
+## How it works
+
+FloorPoV records your screen or selected window while monitoring the WoW combat log. Matching events are emitted as markers and saved with the recording:
+
+- **Kills and deaths** — jump directly to important combat moments.
+- **Boss encounters** — review raid progression and encounter timing.
+- **Interrupts and dispels** — analyze key moments in Mythic+ and PvP.
+- **Manual markers** — flag any moment with a global hotkey.
+- **WarcraftLogs** — upload an existing combat log or start a live upload.
+
+## Development
+
+### Technology
+
+| Layer | Technology |
+| --- | --- |
+| Desktop framework | Tauri 2 with a Rust backend |
+| Frontend | React 19, TypeScript, Tailwind CSS, and Vite |
+| Screen capture | FFmpeg Desktop Duplication (`ddagrab`) |
+| Audio capture | WASAPI system loopback |
 
 ### Prerequisites
 
-- Windows 10/11
+For local development, use Windows 10 or Windows 11 with:
 
-### Prepare bundled runtimes
+- [Bun](https://bun.sh/)
+- [Rust](https://rustup.rs/)
+- PowerShell
 
-From repo root, run:
+The preparation scripts download the pinned Windows Node.js and FFmpeg binaries into `src-tauri/bin/`. They are required before running or building the Tauri application, but do not need to be installed globally.
 
-```bash
-bun run prepare:node-runtime
-bun run prepare:ffmpeg
-```
+### Run locally
 
-This downloads pinned Windows binaries into `src-tauri/bin/` for local and CI builds.
+From PowerShell:
 
-### Installation
-
-1. Clone the repository
-
-```bash
+```powershell
 git clone https://github.com/RobDeFlop/FloorPoV.git
-cd FloorPoV
-```
+Set-Location FloorPoV
 
-1. Install dependencies
-
-```bash
 bun install
-```
-
-1. Run the application
-
-```bash
 bun run prepare:node-runtime
 bun run prepare:ffmpeg
 bun run tauri dev
 ```
 
-## 📸 How It Works
+### Development commands
 
-FloorPoV simultaneously records your screen/window and monitors your WoW combat log file. When events occur, they're automatically marked on the recording timeline:
-
-- **Kills & Deaths**: Instantly jump to combat moments
-- **Boss Encounters**: Review raid progression with clear markers
-- **Interrupts & Dispels**: Analyze key moments in Mythic+ and PvP
-- **Manual Markers**: Mark custom moments with hotkeys
-
-Each recording includes a metadata file (.meta.json) preserving all events for later playback.
-
-## 🛠️ Development
-
-### Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| **Desktop Framework** | Tauri 2 (Rust backend) |
-| **Frontend** | React 19, TypeScript, Tailwind CSS, Vite |
-| **Screen Capture** | via FFmpeg Desktop Duplication (DDAgrab) |
-| **Audio Capture** | WASAPI system loopback |
-
-### Development Commands
-
-```bash
-# Frontend only development
+```powershell
+# Frontend development
 bun run dev
 bun run build
+bunx tsc --noEmit
 
-# Full Tauri app (frontend + backend)
+# Full Tauri application
 bun run tauri dev
 bun run tauri build
 
-# Type checking
-bunx tsc --noEmit
-
-# Rust development
-cd src-tauri
+# Rust checks
+Set-Location src-tauri
 cargo check
 cargo clippy
 cargo fmt --check
 cargo test
 ```
 
-### Release Process
+### Runtime and release documentation
 
-See `docs/release-checklist.md` for the step-by-step installer release flow.
+- [Bundled Node.js runtime](docs/node-runtime-bundling.md)
+- [Bundled FFmpeg binary](docs/ffmpeg.md)
+- [Release checklist](docs/release-checklist.md)
+- [Coding guidelines](docs/coding-guidelines.md)
 
-Runtime bundling details:
+The GitHub release workflow builds the Windows NSIS installer and updater artifacts. See the [release checklist](docs/release-checklist.md) before publishing a beta release.
 
-- `docs/node-runtime-bundling.md`
-- `docs/ffmpeg.md`
+## Contributing
 
-## Use Cases
+Bug reports, feature requests, and pull requests are welcome. Please check the [open issues](https://github.com/RobDeFlop/FloorPoV/issues) before starting work and follow the repository's [contribution guide](CONTRIBUTING.md) and [coding guidelines](docs/coding-guidelines.md).
 
-- **Mythic+ Analysis**: Review deaths and interrupts to improve dungeon runs
-- **Raid Progression**: Analyze boss encounters and player performance
-- **PvP Improvement**: Study key moments in arena and battlegrounds
+## License
 
-## 📋 Requirements
-
-- Windows 10/11
-- [Rust](https://rustup.rs/)
-- [Node.js](https://nodejs.org/) 18+
-- [Bun](https://bun.sh/)
-- FFmpeg executable
-
-## 🤝 Contributing
-
-Contributions are welcome! Please check the [issues page](https://github.com/RobDeFlop/FloorPoV/issues) for current development priorities.
-
-## 📄 License
-
-GNU General Public License v3.0 - see [LICENSE](LICENSE) file for details.
+FloorPoV is licensed under the [GNU General Public License v3.0](LICENSE).
