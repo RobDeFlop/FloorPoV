@@ -34,7 +34,7 @@ pub async fn register_marker_hotkey(app_handle: AppHandle, hotkey: String) -> Re
             if event.state == ShortcutState::Pressed {
                 let handle = app_handle_clone.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::combat_log::emit_manual_marker(handle).await;
+                    let _ = crate::combat_log::watch::emit_manual_marker(handle).await;
                 });
             }
         })
