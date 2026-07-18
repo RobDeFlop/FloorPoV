@@ -11,6 +11,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "icons:generate": "tauri icon src/assets/floorpov-icon-master.png --output src-tauri/icons",
     "tauri": "tauri"
   },
   "dependencies": {

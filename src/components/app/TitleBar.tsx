@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import floorpovIcon from "../../assets/floorpov-icon-ui.png";
+import floorpovIcon from "../../assets/floorpov-icon-master.png";
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();
