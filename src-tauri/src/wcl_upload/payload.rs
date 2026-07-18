@@ -126,6 +126,14 @@ mod tests {
             boss_percentage,
             encounter_id,
             encounter_name: encounter_name.map(str::to_string),
+            start_time: None,
+            end_time: None,
+            is_trash: None,
+            enemy_npc_id: None,
+            enemy_id: None,
+            difficulty: None,
+            zone_id: None,
+            zone_name: None,
         }
     }
 

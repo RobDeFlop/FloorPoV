@@ -2,7 +2,7 @@ use regex::Regex;
 use reqwest::blocking::{Client, RequestBuilder, Response};
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
@@ -21,7 +21,8 @@ use crate::wcl_upload::constants::{
 use crate::wcl_upload::error::UploadError;
 use crate::wcl_upload::events::{
     emit_live_report_created, emit_live_upload_complete, emit_live_upload_error,
-    emit_live_upload_progress, emit_upload_complete, emit_upload_error, emit_upload_progress,
+    emit_live_upload_progress, emit_log_scan_progress, emit_upload_complete, emit_upload_error,
+    emit_upload_progress,
 };
 use crate::wcl_upload::filesystem::{
     check_node_runtime, find_latest_combat_log_path, resolve_node_binary_path,
@@ -31,16 +32,21 @@ use crate::wcl_upload::parser::ParserBridge;
 use crate::wcl_upload::payload::{
     is_encounter_fight_candidate, normalize_report_description, parse_start_date_from_filename,
 };
+use crate::wcl_upload::selection::{
+    build_activity_groups, ends_activity_boundary, fight_selection_key, record_fight_activity,
+    starts_activity_boundary, RawActivityTracker,
+};
 use crate::wcl_upload::state::{
-    begin_upload_session, check_cancelled, end_upload_session, set_live_report_info,
-    ACTIVE_LIVE_UPLOAD, ACTIVE_UPLOAD,
+    begin_scan_session, begin_upload_session, check_cancelled, clear_scan, end_scan_session,
+    end_upload_session, get_scan, set_live_report_info, store_scan, ACTIVE_LIVE_UPLOAD,
+    ACTIVE_UPLOAD,
 };
 use crate::wcl_upload::types::{
     ActiveLiveUpload, AddSegmentResponse, CreateReportRequest, CreateReportResponse,
     FetchWclGuildsResponse, LiveUploadRuntime, LoginResponse, MasterIds, ParserAssets, ParserFight,
     SidebarGuildsResponse, StartWclLiveUploadRequest, StartWclLiveUploadResponse,
     StartWclUploadRequest, StartWclUploadResponse, UploadSessionParams, WclGuild,
-    WclLiveUploadState,
+    WclLiveUploadState, WclLogScanResponse, WclScanSession,
 };
 use crate::wcl_upload::upload_pipeline::UploadPipeline;
 use crate::wcl_upload::validation::{validate_live_request, validate_request};
@@ -97,6 +103,269 @@ fn build_multipart_body(
     payload.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
     MultipartBody { boundary, payload }
+}
+
+pub async fn scan_wcl_log(
+    app_handle: AppHandle,
+    log_file_path: String,
+    region: u8,
+    session: WclSession,
+) -> Result<WclLogScanResponse, String> {
+    crate::wcl_upload::validation::validate_scan_request(&log_file_path, region)?;
+    if ACTIVE_UPLOAD
+        .lock()
+        .map_err(|error| format!("Failed to lock upload state: {error}"))?
+        .is_some()
+        || ACTIVE_LIVE_UPLOAD
+            .lock()
+            .map_err(|error| format!("Failed to lock live upload state: {error}"))?
+            .is_some()
+    {
+        return Err("Stop the active WarcraftLogs upload before scanning a log".to_string());
+    }
+
+    clear_scan()?;
+    let cancel_flag = begin_scan_session()?;
+    let app_handle_for_task = app_handle.clone();
+    let task_result = tokio::task::spawn_blocking(move || {
+        run_log_scan(
+            app_handle_for_task,
+            log_file_path,
+            region,
+            session,
+            cancel_flag,
+        )
+    })
+    .await;
+    let cleanup_result = end_scan_session();
+    let result = task_result.map_err(|error| format!("Combat-log scan task failed: {error}"))?;
+    cleanup_result?;
+
+    match result {
+        Ok(scan_session) => {
+            let response = scan_session.response.clone();
+            store_scan(scan_session)?;
+            Ok(response)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub fn cancel_wcl_log_scan() -> Result<(), String> {
+    crate::wcl_upload::state::cancel_scan_session()
+}
+
+pub fn validate_wcl_upload_scan(request: &StartWclUploadRequest) -> Result<(), String> {
+    validate_request(request)?;
+    let scan = get_scan(
+        request
+            .scan_id
+            .as_deref()
+            .ok_or_else(|| "Scan the combat log before uploading".to_string())?,
+    )?;
+    validate_scan_fingerprint(&scan, &request.log_file_path)?;
+    for activity_id in &request.selected_activity_ids {
+        if !scan.activity_fight_keys.contains_key(activity_id) {
+            return Err(
+                "The selected activities are no longer available. Scan the file again.".to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_log_scan(
+    app_handle: AppHandle,
+    log_file_path: String,
+    region: u8,
+    session: WclSession,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<WclScanSession, UploadError> {
+    let log_path = PathBuf::from(log_file_path.trim());
+    let metadata = std::fs::metadata(&log_path)?;
+    let file_name = log_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| UploadError::Message("Invalid combat log filename".to_string()))?
+        .to_string();
+    let total_bytes = metadata.len();
+    let modified_at_ms = file_modified_at_ms(&metadata)?;
+    let canonical_path = log_path.canonicalize()?.to_string_lossy().to_string();
+
+    emit_log_scan_progress(
+        &app_handle,
+        "Preparing combat-log scanner...",
+        0,
+        total_bytes,
+    );
+    check_cancelled(&cancel_flag)?;
+    let node_binary_path = resolve_node_binary_path(&app_handle)?;
+    check_node_runtime(&node_binary_path)?;
+    let parser_assets = session.fetch_parser_assets()?;
+    let parser_harness_path = resolve_parser_harness_path(&app_handle)?;
+    let mut parser = ParserBridge::new(
+        &node_binary_path,
+        &parser_harness_path,
+        &parser_assets.gamedata_code,
+        &parser_assets.parser_code,
+    )?;
+    parser.clear_state()?;
+    if let Some(start_date) = parse_start_date_from_filename(&file_name) {
+        parser.set_start_date(&start_date)?;
+    }
+
+    let mut reader = BufReader::new(File::open(&log_path)?);
+    let mut line = String::new();
+    let mut batch = Vec::with_capacity(BATCH_SIZE);
+    let mut processed_bytes = 0u64;
+    let mut fights = Vec::<ParserFight>::new();
+    let mut raw_activity_tracker = RawActivityTracker::default();
+    let mut batch_activity_id = None;
+    let mut activity_by_fight = HashMap::<String, usize>::new();
+
+    loop {
+        check_cancelled(&cancel_flag)?;
+        line.clear();
+        let bytes_read = reader.read_line(&mut line)?;
+        if bytes_read == 0 {
+            flush_scan_batch(
+                &mut parser,
+                &mut batch,
+                region,
+                batch_activity_id.take(),
+                &mut fights,
+                &mut activity_by_fight,
+            )?;
+            break;
+        }
+        processed_bytes = processed_bytes.saturating_add(bytes_read as u64);
+        let trimmed_line = line.trim_end_matches(['\r', '\n']);
+        if starts_activity_boundary(trimmed_line) {
+            flush_scan_batch(
+                &mut parser,
+                &mut batch,
+                region,
+                batch_activity_id.take(),
+                &mut fights,
+                &mut activity_by_fight,
+            )?;
+        }
+        let active_before_line = raw_activity_tracker.active_activity_id();
+        raw_activity_tracker.observe_line(trimmed_line);
+        if batch.is_empty() {
+            batch_activity_id = raw_activity_tracker
+                .active_activity_id()
+                .or(active_before_line);
+        }
+        batch.push(trimmed_line.to_string());
+        if ends_activity_boundary(trimmed_line) || batch.len() >= BATCH_SIZE {
+            flush_scan_batch(
+                &mut parser,
+                &mut batch,
+                region,
+                batch_activity_id.take(),
+                &mut fights,
+                &mut activity_by_fight,
+            )?;
+            emit_log_scan_progress(
+                &app_handle,
+                "Scanning combat log activities...",
+                processed_bytes,
+                total_bytes,
+            );
+        }
+    }
+
+    if fights.is_empty() {
+        return Err(UploadError::Message(
+            "No fights or activities were detected in this combat log".to_string(),
+        ));
+    }
+
+    let raw_activities = raw_activity_tracker.finish();
+    let (groups, activity_fight_keys) =
+        build_activity_groups(&fights, &raw_activities, &activity_by_fight);
+    if groups.is_empty() {
+        return Err(UploadError::Message(
+            "No selectable activities were detected in this combat log".to_string(),
+        ));
+    }
+    let scan_id = format!(
+        "scan-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    );
+    emit_log_scan_progress(
+        &app_handle,
+        "Activity scan complete",
+        total_bytes,
+        total_bytes,
+    );
+    Ok(WclScanSession {
+        response: WclLogScanResponse {
+            scan_id,
+            file_name,
+            file_size_bytes: total_bytes,
+            modified_at_ms,
+            groups,
+        },
+        canonical_path,
+        activity_fight_keys,
+    })
+}
+
+fn flush_scan_batch(
+    parser: &mut ParserBridge,
+    batch: &mut Vec<String>,
+    region: u8,
+    activity_id: Option<usize>,
+    fights: &mut Vec<ParserFight>,
+    activity_by_fight: &mut HashMap<String, usize>,
+) -> Result<(), UploadError> {
+    if batch.is_empty() {
+        return Ok(());
+    }
+    parser.parse_lines(batch, region)?;
+    let batch_fights = parser.collect_fights(true)?.fights;
+    record_fight_activity(&batch_fights, activity_id, activity_by_fight);
+    fights.extend(batch_fights);
+    parser.clear_fights()?;
+    batch.clear();
+    Ok(())
+}
+
+fn file_modified_at_ms(metadata: &std::fs::Metadata) -> Result<u64, UploadError> {
+    Ok(metadata
+        .modified()?
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            UploadError::Message(format!("Invalid combat-log modified time: {error}"))
+        })?
+        .as_millis() as u64)
+}
+
+fn validate_scan_fingerprint(scan: &WclScanSession, requested_path: &str) -> Result<(), String> {
+    let current_path = PathBuf::from(requested_path.trim())
+        .canonicalize()
+        .map_err(|error| format!("Could not re-check combat log before upload: {error}"))?;
+    if current_path.to_string_lossy() != scan.canonical_path {
+        return Err(
+            "The selected combat log path changed since scanning. Scan it again.".to_string(),
+        );
+    }
+    let metadata = std::fs::metadata(&current_path)
+        .map_err(|error| format!("Could not re-check combat log before upload: {error}"))?;
+    let modified_at_ms = file_modified_at_ms(&metadata).map_err(|error| error.to_string())?;
+    if metadata.len() != scan.response.file_size_bytes
+        || modified_at_ms != scan.response.modified_at_ms
+    {
+        return Err(
+            "The combat log changed since scanning. Scan it again before uploading.".to_string(),
+        );
+    }
+    Ok(())
 }
 
 fn random_multipart_boundary() -> String {
@@ -239,7 +508,7 @@ impl WclSession {
         Ok(guilds)
     }
 
-    fn fetch_parser_assets(&self) -> Result<ParserAssets, UploadError> {
+    pub(crate) fn fetch_parser_assets(&self) -> Result<ParserAssets, UploadError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_millis())
@@ -454,7 +723,9 @@ pub async fn start_wcl_upload(
     session: WclSession,
     user_name: Option<String>,
 ) -> Result<StartWclUploadResponse, String> {
-    validate_request(&request)?;
+    validate_wcl_upload_scan(&request)?;
+    let selected_fight_keys = selected_fight_keys_for_request(&request)?;
+    clear_scan()?;
 
     let cancel_flag = begin_upload_session()?;
     let app_handle_for_task = app_handle.clone();
@@ -468,6 +739,7 @@ pub async fn start_wcl_upload(
             cancel_flag_for_task,
             session,
             user_name,
+            selected_fight_keys,
         )
     })
     .await;
@@ -487,6 +759,29 @@ pub async fn start_wcl_upload(
             Err(message)
         }
     }
+}
+
+fn selected_fight_keys_for_request(
+    request: &StartWclUploadRequest,
+) -> Result<HashSet<String>, String> {
+    let scan_id = request
+        .scan_id
+        .as_deref()
+        .ok_or_else(|| "Scan the combat log before uploading".to_string())?;
+    let scan = get_scan(scan_id)?;
+    let mut keys = HashSet::new();
+    for activity_id in &request.selected_activity_ids {
+        let Some(activity_keys) = scan.activity_fight_keys.get(activity_id) else {
+            return Err(
+                "The selected activities are no longer available. Scan the file again.".to_string(),
+            );
+        };
+        keys.extend(activity_keys.iter().cloned());
+    }
+    if keys.is_empty() {
+        return Err("The selected activities contain no uploadable fights".to_string());
+    }
+    Ok(keys)
 }
 
 pub fn cancel_wcl_upload() -> Result<(), String> {
@@ -694,7 +989,12 @@ fn run_live_upload(
         parser.set_start_date(&start_date)?;
     }
 
-    let initial_offset = std::fs::metadata(&log_path)?.len();
+    let initial_file_length = std::fs::metadata(&log_path)?.len();
+    let initial_offset = if request.include_existing_contents {
+        0
+    } else {
+        initial_file_length
+    };
     let mut runtime = LiveUploadRuntime {
         session,
         parser,
@@ -715,6 +1015,9 @@ fn run_live_upload(
         buffered_lines: Vec::new(),
         last_flush_at: Instant::now(),
         total_uploaded_lines: 0,
+        initial_file_length,
+        include_existing_contents: request.include_existing_contents,
+        reported_existing_contents: !request.include_existing_contents,
     };
 
     // WarcraftLogs requires a valid initial time range even when no encounter
@@ -754,7 +1057,11 @@ fn run_live_upload(
     emit_live_upload_progress(
         &app_handle,
         "live",
-        "Live upload is active. Waiting for new combat log lines...",
+        if runtime.include_existing_contents {
+            "Live upload is active. Processing existing combat log contents..."
+        } else {
+            "Live upload is active. Waiting for new combat log lines..."
+        },
         14,
     );
 
@@ -772,6 +1079,19 @@ fn run_live_upload(
 
         if should_flush {
             flush_live_buffer(&app_handle, &mut runtime, &cancel_flag, false)?;
+        }
+
+        if runtime.include_existing_contents
+            && !runtime.reported_existing_contents
+            && runtime.file_offset >= runtime.initial_file_length
+        {
+            runtime.reported_existing_contents = true;
+            emit_live_upload_progress(
+                &app_handle,
+                "live",
+                "Existing combat log contents processed. Waiting for new lines...",
+                30,
+            );
         }
 
         std::thread::sleep(Duration::from_millis(LIVE_POLL_INTERVAL_MS));
@@ -804,6 +1124,7 @@ fn run_upload(
     cancel_flag: Arc<AtomicBool>,
     session: WclSession,
     user_name: Option<String>,
+    selected_fight_keys: HashSet<String>,
 ) -> Result<StartWclUploadResponse, UploadError> {
     let normalized_description = normalize_report_description(request.description.as_deref());
 
@@ -942,15 +1263,15 @@ fn run_upload(
                     &mut segment_id,
                     &mut last_master_ids,
                     &cancel_flag,
+                    &selected_fight_keys,
                 )?;
                 batch_lines.clear();
             }
             break;
         }
 
-        batch_lines.push(line.trim_end_matches(['\r', '\n']).to_string());
-
-        if batch_lines.len() >= BATCH_SIZE {
+        let trimmed_line = line.trim_end_matches(['\r', '\n']);
+        if starts_activity_boundary(trimmed_line) && !batch_lines.is_empty() {
             batch_number += 1;
             process_batch(
                 &app_handle,
@@ -968,6 +1289,33 @@ fn run_upload(
                 &mut segment_id,
                 &mut last_master_ids,
                 &cancel_flag,
+                &selected_fight_keys,
+            )?;
+            processed_lines += batch_lines.len() as u64;
+            batch_lines.clear();
+        }
+
+        batch_lines.push(trimmed_line.to_string());
+
+        if ends_activity_boundary(trimmed_line) || batch_lines.len() >= BATCH_SIZE {
+            batch_number += 1;
+            process_batch(
+                &app_handle,
+                &session,
+                &mut parser,
+                &request,
+                &normalized_description,
+                resolved_guild_id,
+                &file_name,
+                &batch_lines,
+                batch_number,
+                total_batches,
+                parser_assets.parser_version,
+                &mut report_code,
+                &mut segment_id,
+                &mut last_master_ids,
+                &cancel_flag,
+                &selected_fight_keys,
             )?;
             processed_lines += batch_lines.len() as u64;
             batch_lines.clear();
@@ -1028,13 +1376,18 @@ fn process_batch(
     segment_id: &mut u64,
     last_master_ids: &mut Option<MasterIds>,
     cancel_flag: &Arc<AtomicBool>,
+    selected_fight_keys: &HashSet<String>,
 ) -> Result<(), UploadError> {
     check_cancelled(cancel_flag)?;
 
     parser.parse_lines(lines, request.region)?;
-    let fights_data = parser.collect_fights(true)?;
+    let mut fights_data = parser.collect_fights(true)?;
+    fights_data
+        .fights
+        .retain(|fight| selected_fight_keys.contains(&fight_selection_key(fight)));
 
     if fights_data.fights.is_empty() {
+        parser.clear_fights()?;
         emit_upload_progress(
             app_handle,
             "parse",
@@ -1212,8 +1565,15 @@ fn read_live_log_lines(runtime: &mut LiveUploadRuntime) -> Result<(), UploadErro
         find_latest_combat_log_path(&runtime.wow_folder).map_err(UploadError::Message)?
     {
         if latest_path != runtime.log_path {
-            runtime.log_path = latest_path;
-            runtime.file_offset = 0;
+            let current_file_complete = std::fs::metadata(&runtime.log_path)
+                .map(|metadata| runtime.file_offset >= metadata.len())
+                .unwrap_or(true);
+            if current_file_complete {
+                // Finish the previous file before switching so an initial backfill
+                // cannot abandon unread lines when WoW rotates the combat log.
+                runtime.log_path = latest_path;
+                runtime.file_offset = 0;
+            }
         }
     }
 

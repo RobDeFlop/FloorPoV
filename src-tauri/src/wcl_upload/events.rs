@@ -2,9 +2,32 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::wcl_upload::types::{
-    StartWclUploadResponse, WclLiveUploadCompleteEvent, WclUploadCompleteEvent,
-    WclUploadErrorEvent, WclUploadProgressEvent,
+    StartWclUploadResponse, WclLiveUploadCompleteEvent, WclLogScanProgressEvent,
+    WclUploadCompleteEvent, WclUploadErrorEvent, WclUploadProgressEvent,
 };
+
+pub(crate) fn emit_log_scan_progress(
+    app_handle: &AppHandle,
+    message: &str,
+    processed_bytes: u64,
+    total_bytes: u64,
+) {
+    let percent = if total_bytes == 0 {
+        100
+    } else {
+        ((processed_bytes as f64 / total_bytes as f64) * 100.0).round() as u8
+    };
+    emit_event(
+        app_handle,
+        "wcl-log-scan-progress",
+        WclLogScanProgressEvent {
+            message: message.to_string(),
+            processed_bytes,
+            total_bytes,
+            percent: percent.min(100),
+        },
+    );
+}
 
 pub(crate) fn emit_upload_progress(app_handle: &AppHandle, step: &str, message: &str, percent: u8) {
     let payload = WclUploadProgressEvent {

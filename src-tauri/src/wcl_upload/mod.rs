@@ -7,6 +7,7 @@ mod events;
 mod filesystem;
 mod parser;
 mod payload;
+mod selection;
 mod state;
 mod types;
 mod upload_pipeline;
@@ -34,6 +35,35 @@ pub async fn start_wcl_upload(
             .map_err(|invalidation_error| invalidation_error.to_string())?;
     }
     result
+}
+
+#[tauri::command]
+pub async fn scan_wcl_log(
+    app_handle: tauri::AppHandle,
+    auth_service: tauri::State<'_, auth_service::WclAuthService>,
+    log_file_path: String,
+    region: u8,
+) -> Result<types::WclLogScanResponse, String> {
+    let authenticated = auth_service
+        .session_or_restore(&app_handle)
+        .map_err(|error| error.to_string())?;
+    let result = core::scan_wcl_log(app_handle, log_file_path, region, authenticated.session).await;
+    if let Err(error) = &result {
+        auth_service
+            .invalidate_if_authentication_failed(error)
+            .map_err(|invalidation_error| invalidation_error.to_string())?;
+    }
+    result
+}
+
+#[tauri::command]
+pub fn cancel_wcl_log_scan() -> Result<(), String> {
+    core::cancel_wcl_log_scan()
+}
+
+#[tauri::command]
+pub fn validate_wcl_upload_scan(request: types::StartWclUploadRequest) -> Result<(), String> {
+    core::validate_wcl_upload_scan(&request)
 }
 
 #[tauri::command]

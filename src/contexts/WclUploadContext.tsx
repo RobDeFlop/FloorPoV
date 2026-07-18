@@ -16,6 +16,43 @@ interface WclUploadErrorPayload {
   message: string;
 }
 
+interface WclLogScanProgressPayload {
+  message: string;
+  processedBytes: number;
+  totalBytes: number;
+  percent: number;
+}
+
+export interface WclActivity {
+  id: string;
+  kind: "raid" | "mythicPlus" | "pvp" | "other";
+  title: string;
+  subtitle: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  durationMs: number | null;
+  status: "kill" | "wipe" | "complete" | "incomplete" | "unknown";
+  difficulty: number | null;
+  keyLevel: number | null;
+  fightCount: number;
+}
+
+export interface WclActivityGroup {
+  id: string;
+  kind: WclActivity["kind"];
+  title: string;
+  subtitle: string | null;
+  activities: WclActivity[];
+}
+
+export interface WclLogScanResponse {
+  scanId: string;
+  fileName: string;
+  fileSizeBytes: number;
+  modifiedAtMs: number;
+  groups: WclActivityGroup[];
+}
+
 interface WclUploadCompletePayload {
   reportUrl: string;
 }
@@ -40,6 +77,8 @@ interface StartWclLiveUploadResponse {
 
 export interface StartWclUploadPayload {
   logFilePath: string;
+  scanId: string;
+  selectedActivityIds: string[];
   description: string;
   region: number;
   visibility: number;
@@ -48,6 +87,7 @@ export interface StartWclUploadPayload {
 
 export interface StartWclLiveUploadPayload {
   wowFolder: string;
+  includeExistingContents: boolean;
   description: string;
   region: number;
   visibility: number;
@@ -60,12 +100,17 @@ interface WclUploadContextType {
   progressPercent: number;
   progressStatus: string | null;
   progressLines: string[];
+  scanPercent: number;
+  scanStatus: string | null;
   errorMessage: string | null;
   reportUrl: string | null;
   setWclError: (message: string | null) => void;
   appendProgressLine: (line: string) => void;
   clearProgress: () => void;
   startUpload: (payload: StartWclUploadPayload) => Promise<void>;
+  scanLog: (logFilePath: string, region: number) => Promise<WclLogScanResponse>;
+  cancelScan: () => Promise<void>;
+  validateUploadScan: (payload: StartWclUploadPayload) => Promise<void>;
   cancelUpload: () => Promise<void>;
   startLiveUpload: (payload: StartWclLiveUploadPayload) => Promise<void>;
   stopLiveUpload: () => Promise<void>;
@@ -80,6 +125,8 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressStatus, setProgressStatus] = useState<string | null>(null);
   const [progressLines, setProgressLines] = useState<string[]>([]);
+  const [scanPercent, setScanPercent] = useState(0);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [reportUrl, setReportUrl] = useState<string | null>(null);
 
@@ -141,6 +188,17 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
           setProgressPercent((previous) => Math.max(previous, event.payload.percent));
           setProgressStatus(event.payload.message);
           appendProgressLine(event.payload.message);
+        },
+      );
+
+      const unlistenScanProgress = await listen<WclLogScanProgressPayload>(
+        "wcl-log-scan-progress",
+        (event) => {
+          if (disposed) {
+            return;
+          }
+          setScanPercent(event.payload.percent);
+          setScanStatus(event.payload.message);
         },
       );
 
@@ -226,6 +284,7 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
 
       return () => {
         unlistenProgress();
+        unlistenScanProgress();
         unlistenComplete();
         unlistenError();
         unlistenLiveProgress();
@@ -264,6 +323,40 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
       setIsUploading(false);
     } catch (error) {
       setIsUploading(false);
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      throw new Error(message);
+    }
+  }, []);
+
+  const scanLog = useCallback(async (logFilePath: string, region: number) => {
+    setErrorMessage(null);
+    setScanPercent(0);
+    setScanStatus("Starting activity scan...");
+    try {
+      return await invoke<WclLogScanResponse>("scan_wcl_log", { logFilePath, region });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setScanStatus("Activity scan failed");
+      setErrorMessage(message);
+      throw new Error(message);
+    }
+  }, []);
+
+  const cancelScan = useCallback(async () => {
+    try {
+      await invoke("cancel_wcl_log_scan");
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setErrorMessage(message);
+      throw new Error(message);
+    }
+  }, []);
+
+  const validateUploadScan = useCallback(async (payload: StartWclUploadPayload) => {
+    try {
+      await invoke("validate_wcl_upload_scan", { request: payload });
+    } catch (error) {
       const message = getErrorMessage(error);
       setErrorMessage(message);
       throw new Error(message);
@@ -323,12 +416,17 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
       progressPercent,
       progressStatus,
       progressLines,
+      scanPercent,
+      scanStatus,
       errorMessage,
       reportUrl,
       setWclError: setErrorMessage,
       appendProgressLine,
       clearProgress,
       startUpload,
+      scanLog,
+      cancelScan,
+      validateUploadScan,
       cancelUpload,
       startLiveUpload,
       stopLiveUpload,
@@ -341,12 +439,17 @@ export function WclUploadProvider({ children }: { children: ReactNode }) {
       isLiveUploading,
       isUploading,
       progressLines,
+      scanPercent,
+      scanStatus,
       progressPercent,
       progressStatus,
       refreshLiveState,
       reportUrl,
       startLiveUpload,
       startUpload,
+      scanLog,
+      cancelScan,
+      validateUploadScan,
       stopLiveUpload,
       cancelUpload,
     ],
