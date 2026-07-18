@@ -106,6 +106,7 @@ function startCommandLoop() {
             encounterID: fight.encounterID ?? null,
             difficulty: fight.difficulty ?? null,
             zoneID: fight.zoneID ?? null,
+            zoneName: fight.zoneName ?? fight.zone ?? null,
             encounterName: fight.encounterName ?? null,
           }));
           respond({

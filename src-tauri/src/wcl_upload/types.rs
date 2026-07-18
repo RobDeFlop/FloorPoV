@@ -1,5 +1,6 @@
 use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -9,6 +10,9 @@ use std::time::Instant;
 #[serde(rename_all = "camelCase")]
 pub struct StartWclUploadRequest {
     pub log_file_path: String,
+    pub scan_id: Option<String>,
+    #[serde(default)]
+    pub selected_activity_ids: Vec<String>,
     pub description: Option<String>,
     pub region: u8,
     pub visibility: u8,
@@ -19,6 +23,8 @@ pub struct StartWclUploadRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StartWclLiveUploadRequest {
     pub wow_folder: String,
+    #[serde(default)]
+    pub include_existing_contents: bool,
     pub description: Option<String>,
     pub region: u8,
     pub visibility: u8,
@@ -92,6 +98,58 @@ pub struct WclLiveUploadState {
     pub is_running: bool,
     pub report_url: Option<String>,
     pub report_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLogScanProgressEvent {
+    pub message: String,
+    pub processed_bytes: u64,
+    pub total_bytes: u64,
+    pub percent: u8,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclActivityGroup {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub activities: Vec<WclActivity>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclActivity {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub started_at: Option<i64>,
+    pub ended_at: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub status: String,
+    pub difficulty: Option<i64>,
+    pub key_level: Option<u32>,
+    pub fight_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WclLogScanResponse {
+    pub scan_id: String,
+    pub file_name: String,
+    pub file_size_bytes: u64,
+    pub modified_at_ms: u64,
+    pub groups: Vec<WclActivityGroup>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct WclScanSession {
+    pub(crate) response: WclLogScanResponse,
+    pub(crate) canonical_path: String,
+    pub(crate) activity_fight_keys: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -211,6 +269,22 @@ pub(crate) struct ParserFight {
     pub boss_percentage: Option<f64>,
     pub encounter_id: Option<i64>,
     pub encounter_name: Option<String>,
+    #[serde(default)]
+    pub start_time: Option<i64>,
+    #[serde(default)]
+    pub end_time: Option<i64>,
+    #[serde(default)]
+    pub is_trash: Option<bool>,
+    #[serde(default)]
+    pub enemy_npc_id: Option<i64>,
+    #[serde(default)]
+    pub enemy_id: Option<i64>,
+    #[serde(default)]
+    pub difficulty: Option<i64>,
+    #[serde(default)]
+    pub zone_id: Option<i64>,
+    #[serde(default)]
+    pub zone_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -299,6 +373,9 @@ pub(crate) struct LiveUploadRuntime {
     pub buffered_lines: Vec<String>,
     pub last_flush_at: Instant,
     pub total_uploaded_lines: u64,
+    pub initial_file_length: u64,
+    pub include_existing_contents: bool,
+    pub reported_existing_contents: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

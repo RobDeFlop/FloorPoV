@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  WclActivityGroup,
   StartWclLiveUploadPayload,
   StartWclUploadPayload,
   useWclUpload,
@@ -27,6 +28,7 @@ import { SettingsSelect, type SettingsSelectOption } from "../settings/SettingsS
 import { Button } from "../ui/Button";
 import { FormField } from "../ui/FormField";
 import { Input } from "../ui/Input";
+import { WclActivitySelectionModal } from "./WclActivitySelectionModal";
 
 interface WclGuild {
   id: number;
@@ -73,6 +75,7 @@ const GUILD_NONE_OPTION: SettingsSelectOption = {
 
 const WCL_UI_STORE_FILE = "settings.json";
 const WCL_REMEMBER_LOGIN_KEY = "wcl-remember-login-preference";
+const WCL_INCLUDE_EXISTING_KEY = "wcl-live-include-existing-preference";
 
 const FIELD_IDS = {
   email: "wcl-email",
@@ -93,11 +96,16 @@ export function WarcraftLogsUploadPage() {
     progressPercent,
     progressStatus,
     progressLines,
+    scanPercent,
+    scanStatus,
     errorMessage,
     reportUrl,
     setWclError,
     clearProgress,
     startUpload,
+    scanLog,
+    cancelScan,
+    validateUploadScan,
     cancelUpload,
     startLiveUpload,
     stopLiveUpload,
@@ -128,6 +136,16 @@ export function WarcraftLogsUploadPage() {
   const [isConsoleExpanded, setIsConsoleExpanded] = useState(true);
   const [preferencesStore, setPreferencesStore] = useState<Store | null>(null);
   const [isRememberLoginPreferenceLoaded, setIsRememberLoginPreferenceLoaded] = useState(false);
+  const [includeExistingContents, setIncludeExistingContents] = useState(false);
+  const [isLivePreferenceLoaded, setIsLivePreferenceLoaded] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [isScanningActivities, setIsScanningActivities] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<{
+    scanId: string;
+    groups: WclActivityGroup[];
+  } | null>(null);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
   const lastAuthStatusEmailRef = useRef("");
 
   const isAuthBusy = isLoggingIn || isLoadingGuilds;
@@ -176,11 +194,16 @@ export function WarcraftLogsUploadPage() {
         if (mounted && typeof savedPreference === "boolean") {
           setRememberLogin(savedPreference);
         }
+        const savedLivePreference = await preferencesStore.get<boolean>(WCL_INCLUDE_EXISTING_KEY);
+        if (mounted && typeof savedLivePreference === "boolean") {
+          setIncludeExistingContents(savedLivePreference);
+        }
       } catch (error) {
         console.error("Failed to load WarcraftLogs remember-login preference:", error);
       } finally {
         if (mounted) {
           setIsRememberLoginPreferenceLoaded(true);
+          setIsLivePreferenceLoaded(true);
         }
       }
     };
@@ -208,6 +231,23 @@ export function WarcraftLogsUploadPage() {
 
     void persistRememberLoginPreference();
   }, [isRememberLoginPreferenceLoaded, preferencesStore, rememberLogin]);
+
+  useEffect(() => {
+    if (!preferencesStore || !isLivePreferenceLoaded) {
+      return;
+    }
+
+    const persistLivePreference = async () => {
+      try {
+        await preferencesStore.set(WCL_INCLUDE_EXISTING_KEY, includeExistingContents);
+        await preferencesStore.save();
+      } catch (error) {
+        console.error("Failed to persist WarcraftLogs live backfill preference:", error);
+      }
+    };
+
+    void persistLivePreference();
+  }, [includeExistingContents, isLivePreferenceLoaded, preferencesStore]);
 
   const refreshAuthStatus = useCallback(
     async (emailToCheck?: string): Promise<WclAuthStatus> => {
@@ -319,11 +359,12 @@ export function WarcraftLogsUploadPage() {
     return (
       !isUploading &&
       !isLiveUploading &&
+      !isScanningActivities &&
       !isAuthBusy &&
       logFilePath.trim().length > 0 &&
       hasAuthenticatedSession
     );
-  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading, logFilePath]);
+  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isScanningActivities, isUploading, logFilePath]);
 
   const canLogin = useMemo(() => {
     return !isUploading && !isLiveUploading && !isAuthBusy && hasLoginInput;
@@ -593,14 +634,61 @@ export function WarcraftLogsUploadPage() {
       return;
     }
 
+    setIsActivityModalOpen(true);
+    setIsScanningActivities(true);
+    setScanError(null);
+    setScanResult(null);
+    setSelectedActivityIds(new Set());
+    try {
+      const result = await scanLog(logFilePath.trim(), Number(region));
+      setScanResult({ scanId: result.scanId, groups: result.groups });
+    } catch (error) {
+      setScanError(getErrorMessage(error));
+    } finally {
+      setIsScanningActivities(false);
+    }
+  };
+
+  const handleCancelActivityModal = async () => {
+    try {
+      await cancelScan();
+    } catch {
+      // error already handled in context
+    } finally {
+      setIsScanningActivities(false);
+      setIsActivityModalOpen(false);
+      setScanResult(null);
+      setScanError(null);
+      setSelectedActivityIds(new Set());
+    }
+  };
+
+  const handleUploadSelected = async () => {
+    if (!scanResult || selectedActivityIds.size === 0) {
+      return;
+    }
+
     const payload: StartWclUploadPayload = {
       logFilePath: logFilePath.trim(),
+      scanId: scanResult.scanId,
+      selectedActivityIds: [...selectedActivityIds],
       description,
       region: Number(region),
       visibility: Number(visibility),
       guildId: selectedGuildId === "none" ? null : Number(selectedGuildId),
     };
 
+    try {
+      await validateUploadScan(payload);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      setScanError(message);
+      setIsActivityModalOpen(true);
+      return;
+    }
+
+    setIsActivityModalOpen(false);
+    setScanResult(null);
     try {
       await startUpload(payload);
     } catch {
@@ -631,6 +719,7 @@ export function WarcraftLogsUploadPage() {
 
     const payload: StartWclLiveUploadPayload = {
       wowFolder,
+      includeExistingContents,
       description,
       region: Number(region),
       visibility: Number(visibility),
@@ -951,6 +1040,19 @@ export function WarcraftLogsUploadPage() {
                   One-shot upload sends the selected file once. Live upload tails your active combat
                   log until stopped.
                 </p>
+                <label className="flex items-start gap-2 text-xs text-neutral-300">
+                  <input
+                    type="checkbox"
+                    checked={includeExistingContents}
+                    onChange={(event) => setIncludeExistingContents(event.target.checked)}
+                    disabled={isUploading || isLiveUploading || isAuthBusy}
+                    className="mt-0.5 accent-emerald-400"
+                  />
+                  <span>
+                    <span className="block font-medium text-neutral-200">Include existing contents in live upload</span>
+                    <span className="block text-neutral-500">Backfill the latest WoW log before waiting for new lines.</span>
+                  </span>
+                </label>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="primary" onClick={handleStartUpload} disabled={!canStartUpload}>
                     {isUploading ? "Uploading..." : "Start Upload"}
@@ -1082,6 +1184,20 @@ export function WarcraftLogsUploadPage() {
           </SettingsSection>
         </div>
       </div>
+      {isActivityModalOpen && (
+        <WclActivitySelectionModal
+          isScanning={isScanningActivities}
+          scanPercent={scanPercent}
+          scanStatus={scanStatus}
+          scanError={scanError}
+          groups={scanResult?.groups ?? []}
+          selectedActivityIds={selectedActivityIds}
+          onSelectionChange={setSelectedActivityIds}
+          onUpload={handleUploadSelected}
+          onCancel={handleCancelActivityModal}
+          onRetry={handleStartUpload}
+        />
+      )}
     </div>
   );
 }
