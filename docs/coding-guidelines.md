@@ -2,6 +2,10 @@
 
 This document expands on `AGENTS.md` with naming examples and practical guidance.
 
+## User-facing copy
+
+All user-facing frontend text has been reviewed with the Humanizer skill and should remain direct, specific, and free of chatbot filler.
+
 ## Naming Principles
 
 - Prefer names that describe intent over names that describe implementation details.
