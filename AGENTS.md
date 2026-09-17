@@ -176,6 +176,8 @@ Writing style for docs and comments:
 - Prefer concrete language over vague claims.
 - Avoid cliches, metaphors, and hype terms.
 
+When adding or changing user-facing text in `src/`, `README.md`, or user-facing documentation, read and follow the standalone copy rules in `docs/coding-guidelines.md#user-facing-copy`.
+
 ## Project Structure
 
 ```text

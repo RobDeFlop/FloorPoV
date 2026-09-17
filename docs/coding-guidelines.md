@@ -4,7 +4,16 @@ This document expands on `AGENTS.md` with naming examples and practical guidance
 
 ## User-facing copy
 
-All user-facing frontend text has been reviewed with the Humanizer skill and should remain direct, specific, and free of chatbot filler.
+Apply these rules to text shown in the frontend, README, and user-facing documentation. They replace any dependency on an external writing skill.
+
+- State the point directly. Remove staged openings, fake objections, dramatic closers, and repeated conclusions.
+- Keep the supported facts and the writer's uncertainty. Do not add claims, sources, numbers, or promises.
+- Prefer concrete verbs and specific relationships over inflated significance, vague associations, sales language, and filler.
+- Use sentence case for headings and labels. Avoid decorative bold labels, emojis, repeated separators, and em dashes used as universal connectors.
+- Remove chatbot residue such as greetings, praise, offers to continue, and knowledge-limit disclaimers.
+- Keep technical names, commands, paths, quotes, accessibility text, warnings, and security guidance accurate.
+
+Before finishing a copy change, read the surrounding text as a whole and check that each sentence adds information, the wording remains natural when read aloud, and no fact or qualifier was lost.
 
 ## Naming Principles
 
