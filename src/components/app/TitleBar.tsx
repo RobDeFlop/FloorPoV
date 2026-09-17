@@ -51,7 +51,7 @@ export function TitleBar() {
 
         <div className="h-4 w-px bg-white/15" />
 
-        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Analyzer</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay analyzer</div>
 
       </div>
       <div className="flex h-full shrink-0">

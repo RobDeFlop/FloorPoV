@@ -336,7 +336,7 @@ export function CombatLogDebug() {
                 className="inline-flex items-center gap-2 rounded-sm border border-white/25 bg-white/6 px-4 py-2 text-sm text-neutral-100 transition-colors hover:bg-white/12"
               >
                 <FolderOpen className="h-4 w-4" />
-                Select Combat Log
+                Select combat log
               </button>
               <button
                 onClick={handleParseCombatLog}
@@ -358,19 +358,19 @@ export function CombatLogDebug() {
             <>
               <section className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">File Size</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">File size</div>
                   <div className="mt-1 text-sm text-neutral-100">{formatBytes(parseResult.fileSizeBytes)}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Lines Scanned</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Lines scanned</div>
                   <div className="mt-1 text-sm text-neutral-100">{parseResult.totalLines.toLocaleString()}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Important Events</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Important events</div>
                   <div className="mt-1 text-sm text-neutral-100">{totalImportantEvents.toLocaleString()}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Events Shown</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Events shown</div>
                   <div className="mt-1 text-sm text-neutral-100">
                     {parseResult.parsedEvents.length.toLocaleString()}
                     {parseResult.truncated ? " (truncated)" : ""}
@@ -380,7 +380,7 @@ export function CombatLogDebug() {
 
               <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Event Counts
+                  Event counts
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {Object.entries(parseResult.eventCounts).map(([eventType, count]) => (
@@ -403,7 +403,7 @@ export function CombatLogDebug() {
                 className="relative rounded-sm border border-white/10 bg-(--surface-1)/80 p-4"
               >
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Encounter Timeline
+                  Encounter timeline
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-400">
                   {["PARTY_KILL", "UNIT_DIED", "SPELL_INTERRUPT", "SPELL_DISPEL"].map((eventType) => {
@@ -550,7 +550,7 @@ export function CombatLogDebug() {
 
               <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Important Happenings
+                  Important events
                 </h2>
                 <div className="mt-3 max-h-96 overflow-auto rounded-sm border border-white/10 bg-black/20">
                   <table className="min-w-full text-left text-xs text-neutral-300">
@@ -598,7 +598,7 @@ export function CombatLogDebug() {
                       {parseResult.parsedEvents.length === 0 && (
                         <tr>
                           <td className="px-3 py-3 text-neutral-500" colSpan={6}>
-                            No important happenings found in this file.
+                            No important events found in this file.
                           </td>
                         </tr>
                       )}

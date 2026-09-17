@@ -63,8 +63,8 @@ const MARKER_HOTKEY_OPTIONS: SettingsSelectOption[] = HOTKEY_OPTIONS.map(({ valu
 }));
 
 const CAPTURE_SOURCE_OPTIONS: SettingsSelectOption[] = [
-  { value: "monitor", label: "Primary Monitor" },
-  { value: "window", label: "Specific Window" },
+  { value: "monitor", label: "Primary monitor" },
+  { value: "window", label: "Specific window" },
 ];
 
 const VIDEO_ENCODER_PREFERENCE_VALUES: VideoEncoderPreference[] = [
@@ -220,7 +220,7 @@ export function Settings({
   const [isLoadingCaptureWindows, setIsLoadingCaptureWindows] = useState(false);
   const [captureWindowsError, setCaptureWindowsError] = useState<string | null>(null);
   const [videoEncoderOptions, setVideoEncoderOptions] = useState<SettingsSelectOption[]>([
-    { value: "auto", label: "Auto (Recommended)" },
+    { value: "auto", label: "Auto (recommended)" },
   ]);
   const [isLoadingVideoEncoders, setIsLoadingVideoEncoders] = useState(false);
   const [videoEncodersError, setVideoEncodersError] = useState<string | null>(null);
@@ -340,7 +340,7 @@ export function Settings({
     try {
       const encoders = await invoke<AvailableVideoEncoder[]>("get_available_video_encoders");
       if (encoders.length === 0) {
-        setVideoEncoderOptions([{ value: "auto", label: "Auto (Recommended)" }]);
+        setVideoEncoderOptions([{ value: "auto", label: "Auto (recommended)" }]);
         return;
       }
 
@@ -358,7 +358,7 @@ export function Settings({
     } catch (error) {
       console.error("Failed to list available video encoders:", error);
       setVideoEncodersError("Could not detect video encoders. Auto fallback will still work.");
-      setVideoEncoderOptions([{ value: "auto", label: "Auto (Recommended)" }]);
+      setVideoEncoderOptions([{ value: "auto", label: "Auto (recommended)" }]);
     } finally {
       setIsLoadingVideoEncoders(false);
     }
@@ -669,13 +669,13 @@ export function Settings({
           </SettingsSection>
 
               <SettingsSection
-                title="Video & Audio"
+                title="Video & audio"
                 icon={<Video className="h-4 w-4" aria-hidden="true" />}
                 className="rounded-none border-0 bg-transparent p-0"
               >
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label htmlFor={FIELD_IDS.videoQuality} className="mb-2 block text-sm text-neutral-300">Quality Preset</label>
+                <label htmlFor={FIELD_IDS.videoQuality} className="mb-2 block text-sm text-neutral-300">Quality preset</label>
                 <SettingsSelect
                   id={FIELD_IDS.videoQuality}
                   value={formData.videoQuality}
@@ -694,7 +694,7 @@ export function Settings({
               </div>
 
               <div>
-                <label htmlFor={FIELD_IDS.frameRate} className="mb-2 block text-sm text-neutral-300">Frame Rate</label>
+                <label htmlFor={FIELD_IDS.frameRate} className="mb-2 block text-sm text-neutral-300">Frame rate</label>
                 <SettingsSelect
                   id={FIELD_IDS.frameRate}
                   value={String(formData.frameRate)}
@@ -730,7 +730,7 @@ export function Settings({
                     enableSystemAudio: checked,
                   });
                 }}
-                label="Enable System Audio"
+                label="Enable system audio"
               />
             </div>
           </div>
@@ -753,7 +753,7 @@ export function Settings({
               <div>
                 <ReadOnlyPathField
                   inputId={FIELD_IDS.outputFolder}
-                  label="Output Folder"
+                  label="Output folder"
                   value={formData.outputFolder}
                   onBrowse={handleBrowseFolder}
                 />
@@ -775,7 +775,7 @@ export function Settings({
 
               <FormField
                 id={FIELD_IDS.maxStorageGB}
-                label="Maximum Storage (GB)"
+                label="Maximum storage (GB)"
                 description={`Oldest recordings are removed when this limit is reached (minimum ${MIN_STORAGE_GB} GB)`}
               >
                 <Input
@@ -797,7 +797,7 @@ export function Settings({
               icon={<Swords className="h-4 w-4" aria-hidden="true" />}
               open={openGroups.wow}
               onOpenChange={(open) => onGroupToggle("wow", open)}
-              title="WoW Integration"
+              title="WoW integration"
             >
               <SettingsSection
                 title="Automation"
@@ -814,13 +814,13 @@ export function Settings({
                     enableAutoRecording: checked,
                   });
                 }}
-                label="Enable Auto Recording"
+                label="Enable auto recording"
                 description="Start recordings automatically when M+, raid, or PvP combat begins."
               />
 
               <FormField
                 id={FIELD_IDS.minAutoRaidRecordingSeconds}
-                label="Minimum Auto Raid Recording Length (seconds)"
+                label="Minimum auto raid recording length (seconds)"
                 description="Auto raid recordings shorter than this are treated as likely resets and deleted. Set 0 to disable this filter."
               >
                 <Input
@@ -849,14 +849,14 @@ export function Settings({
           </SettingsSection>
 
               <SettingsSection
-                title="WoW & Combat Log"
+                title="WoW & combat log"
                 icon={<Swords className="h-4 w-4" aria-hidden="true" />}
                 className="rounded-none border-0 bg-transparent p-0"
               >
             <div>
               <ReadOnlyPathField
                 inputId={FIELD_IDS.wowFolder}
-                label="WoW Folder"
+                label="WoW folder"
                 value={formData.wowFolder}
                 onBrowse={handleBrowseWowFolder}
               />
@@ -896,7 +896,7 @@ export function Settings({
               >
             <div className="space-y-4">
               <div>
-                <label htmlFor={FIELD_IDS.markerHotkey} className="mb-2 block text-sm text-neutral-300">Manual Marker Hotkey</label>
+                <label htmlFor={FIELD_IDS.markerHotkey} className="mb-2 block text-sm text-neutral-300">Manual marker hotkey</label>
                 <SettingsSelect
                   id={FIELD_IDS.markerHotkey}
                   value={formData.markerHotkey}
@@ -940,7 +940,7 @@ export function Settings({
                     enableAutoUpdate: checked,
                   });
                 }}
-                label="Enable Auto Updates"
+                label="Enable auto updates"
                 description="Check for beta updates on launch and install them automatically."
               />
             </div>
@@ -949,7 +949,7 @@ export function Settings({
           <div className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-neutral-200">
               <AlertTriangle className="h-4 w-4 text-neutral-400" aria-hidden="true" />
-              <span className="flex-1">Advanced & Troubleshooting</span>
+              <span className="flex-1">Advanced & troubleshooting</span>
               <span className="text-xs font-normal text-neutral-500">Optional</span>
             </div>
             <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
@@ -988,7 +988,7 @@ export function Settings({
                     enableRecordingDiagnostics: checked,
                   });
                 }}
-                label="Enable Recording Diagnostics"
+                label="Enable recording diagnostics"
                 description="Write per-second audio and FFmpeg pacing logs for stutter or crackle debugging."
               />
             </div>

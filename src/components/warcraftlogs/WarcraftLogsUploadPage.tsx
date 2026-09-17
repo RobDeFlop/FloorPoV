@@ -761,7 +761,7 @@ export function WarcraftLogsUploadPage() {
         <div>
           <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
             <UploadCloud className="h-4 w-4 text-neutral-300" />
-            WarcraftLogs Upload
+            WarcraftLogs upload
           </h1>
           <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
             Set up credentials, upload logs, and run live logging
@@ -773,7 +773,7 @@ export function WarcraftLogsUploadPage() {
         <div className="w-full space-y-4">
           <SettingsSection title="Account" icon={<ShieldCheck className="h-4 w-4" />}>
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-              <FormField id={FIELD_IDS.email} label="WarcraftLogs Email">
+              <FormField id={FIELD_IDS.email} label="WarcraftLogs email">
                 <Input
                   id={FIELD_IDS.email}
                   type="email"
@@ -789,7 +789,7 @@ export function WarcraftLogsUploadPage() {
 
               <FormField
                 id={FIELD_IDS.password}
-                label="WarcraftLogs Password"
+                label="WarcraftLogs password"
               >
                 <Input
                   id={FIELD_IDS.password}
@@ -911,7 +911,7 @@ export function WarcraftLogsUploadPage() {
               )}
           </SettingsSection>
 
-          <SettingsSection title="Upload Setup" icon={<FileText className="h-4 w-4" />}>
+          <SettingsSection title="Upload setup" icon={<FileText className="h-4 w-4" />}>
             <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <label htmlFor={FIELD_IDS.region} className="mb-2 block text-sm text-neutral-300">
@@ -974,7 +974,7 @@ export function WarcraftLogsUploadPage() {
                     onChange={setSelectedGuildId}
                   />
                   <Button variant="secondary" onClick={handleRefreshGuilds} disabled={!canLoadGuilds}>
-                    {isLoadingGuilds ? "Loading guilds..." : "Refresh Guilds"}
+                    {isLoadingGuilds ? "Loading guilds..." : "Refresh guilds"}
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-neutral-500">
@@ -985,11 +985,11 @@ export function WarcraftLogsUploadPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Combat Log" icon={<UploadCloud className="h-4 w-4" />}>
+          <SettingsSection title="Combat log" icon={<UploadCloud className="h-4 w-4" />}>
             <div className="space-y-3">
               <FormField
                 id={FIELD_IDS.logFilePath}
-                label="Log File"
+                label="Log file"
                 description="Choose a WoWCombatLog*.txt file, or resolve the latest one from your WoW folder."
               >
                 <Input
@@ -1008,20 +1008,20 @@ export function WarcraftLogsUploadPage() {
                   onClick={handleBrowseLogFile}
                   disabled={isUploading || isLiveUploading}
                 >
-                  Browse File
+                  Browse file
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={handleResolveLatestLog}
                   disabled={isUploading || isLiveUploading || isResolvingLatestLog}
                 >
-                  {isResolvingLatestLog ? "Finding latest log..." : "Use Latest WoW Log"}
+                  {isResolvingLatestLog ? "Finding latest log..." : "Use latest WoW log"}
                 </Button>
               </div>
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Upload Control" icon={<LoaderCircle className="h-4 w-4" />}>
+          <SettingsSection title="Upload control" icon={<LoaderCircle className="h-4 w-4" />}>
             <div className="space-y-4">
               <div className="space-y-3">
                 <p className="text-xs text-neutral-400">
@@ -1043,20 +1043,20 @@ export function WarcraftLogsUploadPage() {
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="primary" onClick={handleStartUpload} disabled={!canStartUpload}>
-                    {isUploading ? "Uploading..." : "Start Upload"}
+                    {isUploading ? "Uploading..." : "Start upload"}
                   </Button>
                   <Button variant="danger" onClick={handleCancelUpload} disabled={!isUploading}>
-                    Cancel Upload
+                    Cancel upload
                   </Button>
                   <Button
                     variant="secondary"
                     onClick={handleStartLiveUpload}
                     disabled={!canStartLiveUpload}
                   >
-                    {isLiveUploading ? "Live Upload Active" : "Start Live Upload"}
+                    {isLiveUploading ? "Live upload active" : "Start live upload"}
                   </Button>
                   <Button variant="danger" onClick={handleStopLiveUpload} disabled={!isLiveUploading}>
-                    Stop Live Upload
+                    Stop live upload
                   </Button>
                 </div>
               </div>
@@ -1064,7 +1064,7 @@ export function WarcraftLogsUploadPage() {
               <div className="rounded-sm border border-white/10 bg-black/20 p-3">
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
-                    Upload Status
+                    Upload status
                   </p>
                   <div
                     className="h-2 overflow-hidden rounded-full bg-neutral-800"
@@ -1099,7 +1099,7 @@ export function WarcraftLogsUploadPage() {
                     <div className="rounded-sm border border-emerald-300/30 bg-emerald-500/12 p-3 text-xs text-emerald-100">
                       <p className="mb-3 inline-flex items-center gap-1.5 font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                        WarcraftLogs Report
+                        WarcraftLogs report
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <a
@@ -1126,7 +1126,7 @@ export function WarcraftLogsUploadPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Activity Console" icon={<Terminal className="h-4 w-4" />}>
+          <SettingsSection title="Activity console" icon={<Terminal className="h-4 w-4" />}>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
@@ -1139,7 +1139,7 @@ export function WarcraftLogsUploadPage() {
                   ) : (
                     <ChevronDown className="h-3.5 w-3.5" />
                   )}
-                  {isConsoleExpanded ? "Hide Console" : "Show Console"}
+                  {isConsoleExpanded ? "Hide console" : "Show console"}
                 </button>
 
                 <div className="flex flex-wrap gap-2">
@@ -1151,7 +1151,7 @@ export function WarcraftLogsUploadPage() {
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Copy className="h-3.5 w-3.5" />
-                      Copy Logs
+                      Copy logs
                     </span>
                   </Button>
                   <Button
@@ -1160,7 +1160,7 @@ export function WarcraftLogsUploadPage() {
                     onClick={clearProgress}
                     disabled={progressLines.length === 0 || isUploading || isLiveUploading}
                   >
-                    Clear Console
+                    Clear console
                   </Button>
                 </div>
               </div>

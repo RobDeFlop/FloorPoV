@@ -228,7 +228,7 @@ export function GameModeRecordingsBrowser({
             className="inline-flex min-h-7 items-center gap-2 text-xs font-medium uppercase tracking-[0.09em] text-neutral-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 md:pointer-events-none"
           >
             <Film className="h-3.5 w-3.5 text-neutral-400" aria-hidden="true" />
-            Session Filters
+            Session filters
             <ChevronDown
               className={`h-3.5 w-3.5 text-neutral-500 transition-transform duration-150 motion-reduce:transition-none md:hidden ${isFiltersOpen ? "rotate-180" : ""}`}
               aria-hidden="true"

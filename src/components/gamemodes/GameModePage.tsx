@@ -61,20 +61,20 @@ interface GameModeConfigItem {
 
 const gameModeConfig: Record<GameMode, GameModeConfigItem> = {
   "mythic-plus": {
-    overviewTitle: "Mythic+ Sessions",
-    analysisTitle: "Mythic+ Analysis",
+    overviewTitle: "Mythic+ sessions",
+    analysisTitle: "Mythic+ analysis",
     description: "Browse sessions and inspect pulls, events, and pace.",
     icon: Sword,
   },
   raid: {
-    overviewTitle: "Raid Sessions",
-    analysisTitle: "Raid Analysis",
+    overviewTitle: "Raid sessions",
+    analysisTitle: "Raid analysis",
     description: "Browse sessions and review timelines and key events.",
     icon: Shield,
   },
   pvp: {
-    overviewTitle: "PvP Sessions",
-    analysisTitle: "PvP Analysis",
+    overviewTitle: "PvP sessions",
+    analysisTitle: "PvP analysis",
     description: "Browse sessions and analyze footage and combat metadata.",
     icon: Trophy,
   },
@@ -311,7 +311,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 className="h-full overflow-y-auto px-4 py-3 [scrollbar-gutter:stable]"
               >
                 <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
-                  <h2 className="text-sm font-semibold text-neutral-100">Recording Summary</h2>
+                  <h2 className="text-sm font-semibold text-neutral-100">Recording summary</h2>
                   <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-neutral-300 sm:grid-cols-2">
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-[0.09em] text-neutral-500">File</div>
@@ -373,7 +373,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   <>
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Player Overview
+                        Player overview
                       </h3>
                       <PlayerOverviewTable players={recordingMetadata.players ?? []} />
                     </section>
@@ -383,7 +383,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                       playerStats.deaths.length > 0) && (
                       <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                         <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                          Player Stats
+                          Player stats
                         </h3>
                         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
                           <PlayerStatChart
@@ -407,7 +407,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
 
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Encounter Segments
+                        Encounter segments
                       </h3>
                       {encounters.length === 0 ? (
                         <p className="mt-2 text-xs text-neutral-500">No encounter segments in metadata.</p>
@@ -436,7 +436,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
 
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Event Counts
+                        Event counts
                       </h3>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {sortedEventCounts.length > 0 ? (
@@ -470,7 +470,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                           className={`h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform duration-200 ${isEventsOpen ? "rotate-180" : ""}`}
                         />
                         <h3 className="text-sm font-semibold uppercase tracking-caps text-neutral-200">
-                          Important Events
+                          Important events
                         </h3>
                         <div className="ml-1 flex items-center gap-2">
                           <div className="flex items-baseline gap-1.5">

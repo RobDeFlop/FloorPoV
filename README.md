@@ -43,11 +43,11 @@ Beta releases may contain unfinished features or regressions. Please report repr
 
 FloorPoV records your screen or selected window while monitoring the WoW combat log. Matching events are emitted as markers and saved with the recording:
 
-- **Kills and deaths** — jump directly to important combat moments.
-- **Boss encounters** — review raid progression and encounter timing.
-- **Interrupts and dispels** — analyze key moments in Mythic+ and PvP.
-- **Manual markers** — flag any moment with a global hotkey.
-- **WarcraftLogs** — upload an existing combat log or start a live upload.
+- Kills and deaths: jump directly to important combat moments.
+- Boss encounters: review raid progression and encounter timing.
+- Interrupts and dispels: analyze key moments in Mythic+ and PvP.
+- Manual markers: flag any moment with a global hotkey.
+- WarcraftLogs: upload an existing combat log or start a live upload.
 
 ## Development
 

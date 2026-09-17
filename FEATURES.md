@@ -1,8 +1,8 @@
-# FloorPoV Feature Ideas
+# FloorPoV feature ideas
 
-## Future Features to Implement
+## Future features to implement
 
-### Game Events & Analysis
+### Game events and analysis
 
 - [ ] Scrollable event list (see all events in a list view)
 - [ ] Boss ability tracking (Mythic+/Raid)
@@ -12,15 +12,15 @@
 - [ ] Damage/healing breakdown per event
 - [ ] Event filtering by type
 
-### Video Player Video controls panel (
+### Video player controls
 
-- [ ]play/pause, volume, speed)
+- [ ] Play/pause, volume, and speed
 - [ ] Frame-by-frame navigation
 - [ ] Video metadata display (resolution, fps, codec)
 - [ ] Screenshot capture
 - [ ] Video annotations/notes
 
-### Combat Log Parsing
+### Combat log parsing
 
 - [ ] Real combat log file import (.txt)
 - [ ] Combat log parsing from live recording
@@ -37,7 +37,7 @@
 - [ ] Keyboard shortcuts
 - [ ] Dark/light theme toggle
 
-### Data Management
+### Data management
 
 - [ ] Video library/organization
 - [ ] Search and filter recordings

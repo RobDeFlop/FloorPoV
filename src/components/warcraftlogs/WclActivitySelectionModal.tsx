@@ -144,7 +144,7 @@ export function WclActivitySelectionModal({
               id="wcl-activity-selection-title"
               className="text-sm font-semibold uppercase tracking-[0.11em] text-neutral-100"
             >
-              Select Activities to Upload
+              Select activities to upload
             </h2>
             <p id="wcl-activity-selection-description" className="mt-1 text-xs text-neutral-400">
               Choose raid pulls, whole Mythic+ runs, or PvP matches from this combat log.
@@ -181,14 +181,14 @@ export function WclActivitySelectionModal({
               </div>
               <p className="mt-2 text-xs text-neutral-400">{scanPercent}%</p>
             </div>
-            <Button ref={cancelScanButtonRef} variant="secondary" onClick={onCancel}>Cancel Scan</Button>
+            <Button ref={cancelScanButtonRef} variant="secondary" onClick={onCancel}>Cancel scan</Button>
           </div>
         ) : scanError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
             <p className="max-w-lg text-sm text-rose-200" role="alert">{scanError}</p>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={onCancel}>Close</Button>
-              <Button variant="primary" onClick={onRetry}>Scan Again</Button>
+              <Button variant="primary" onClick={onRetry}>Scan again</Button>
             </div>
           </div>
         ) : (
@@ -202,7 +202,7 @@ export function WclActivitySelectionModal({
                   onClick={selectAllSupported}
                   disabled={!hasSupportedActivities}
                 >
-                  Select All
+                  Select all
                 </Button>
                 <Button
                   variant="secondary"
@@ -210,7 +210,7 @@ export function WclActivitySelectionModal({
                   onClick={clearSelection}
                   disabled={selectedCount === 0}
                 >
-                  Clear Selection
+                  Clear selection
                 </Button>
                 {otherGroup && hasSupportedActivities && (
                   <Button variant="secondary" size="sm" onClick={() => setShowOther((current) => !current)}>
@@ -221,7 +221,7 @@ export function WclActivitySelectionModal({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {visibleGroups.length === 0 ? (
-                <p className="p-6 text-center text-sm text-neutral-400">No selectable activities were found.</p>
+                <p className="p-6 text-center text-sm text-neutral-400">No activities can be selected.</p>
               ) : (
                 <div className="space-y-2">
                   {visibleGroups.map((group) => {

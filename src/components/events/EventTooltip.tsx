@@ -10,7 +10,7 @@ interface EventTooltipProps {
 export function EventTooltip({ event, x }: EventTooltipProps) {
   const label =
     event.type === "death" ? "Death" :
-    event.type === "manual" ? "Manual Marker" :
+    event.type === "manual" ? "Manual marker" :
     "Kill";
 
   const description =

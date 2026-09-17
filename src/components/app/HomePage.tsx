@@ -130,7 +130,7 @@ export function HomePage() {
       </div>
 
       <RecordingsList
-        title="Recent Recordings"
+        title="Recent recordings"
         description="Your latest sessions across Mythic+, raid, and PvP."
         autoLoadLatest
         showManagementActions={false}

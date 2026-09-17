@@ -100,7 +100,7 @@ export function PlayerOverviewTable({ players }: PlayerOverviewTableProps) {
   if (sortedPlayers.length === 0) {
     return (
       <p className="mt-2 text-xs text-neutral-400">
-        No COMBATANT_INFO player data is available for this recording.
+        This recording has no COMBATANT_INFO player data.
       </p>
     );
   }

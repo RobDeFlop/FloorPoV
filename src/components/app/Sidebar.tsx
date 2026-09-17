@@ -178,7 +178,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
 
       <nav className="flex-1 px-3 pb-3" aria-label="Game modes">
         <SidebarDividerBlock>
-          <SidebarSectionLabel label="Game Modes" />
+          <SidebarSectionLabel label="Game modes" />
           <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-1">
             {gameModes.map(({ label, view, icon: Icon }) => (
               <SidebarNavButton
@@ -215,7 +215,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               >
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  Live Log active
+                  Live log active
                 </span>
                 <span className="font-medium text-emerald-50">Stop</span>
               </button>
