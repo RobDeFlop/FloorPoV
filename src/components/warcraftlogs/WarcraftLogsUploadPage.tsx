@@ -480,8 +480,8 @@ export function WarcraftLogsUploadPage() {
         tone: "success",
         message:
           guildCount > 0
-            ? `Login successful. Loaded ${guildCount} guild${guildCount === 1 ? "" : "s"}.`
-            : "Login successful. No guilds found for this account.",
+            ? `Logged in. Loaded ${guildCount} guild${guildCount === 1 ? "" : "s"}.`
+            : "Logged in. No guilds found for this account.",
       });
     } catch (error) {
       const message = getErrorMessage(error);
@@ -489,8 +489,8 @@ export function WarcraftLogsUploadPage() {
       setLoginFeedback({
         tone: "error",
         message: didLoginSucceed
-          ? `Login succeeded, but loading guilds failed: ${message}`
-          : `Login failed: ${message}`,
+          ? `Logged in, but loading guilds failed: ${message}`
+          : `Could not log in: ${message}`,
       });
     } finally {
       setIsLoadingGuilds(false);
@@ -580,7 +580,7 @@ export function WarcraftLogsUploadPage() {
         directory: false,
         multiple: false,
         defaultPath: settings.wowFolder || undefined,
-        filters: [{ name: "Combat Logs", extensions: ["txt"] }],
+        filters: [{ name: "Combat logs", extensions: ["txt"] }],
       });
 
       if (selected && typeof selected === "string") {
@@ -764,7 +764,7 @@ export function WarcraftLogsUploadPage() {
             WarcraftLogs upload
           </h1>
           <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
-            Set up credentials, upload logs, and run live logging
+            Upload combat logs to WarcraftLogs or upload live as you play.
           </p>
         </div>
       </div>
@@ -810,7 +810,7 @@ export function WarcraftLogsUploadPage() {
                   disabled={!canLogin}
                   className="w-full lg:w-auto"
                 >
-                  {isLoggingIn ? "Logging in..." : "Login"}
+                  {isLoggingIn ? "Logging in..." : "Log in"}
                 </Button>
               </div>
             </div>
@@ -990,7 +990,7 @@ export function WarcraftLogsUploadPage() {
               <FormField
                 id={FIELD_IDS.logFilePath}
                 label="Log file"
-                description="Choose a WoWCombatLog*.txt file, or resolve the latest one from your WoW folder."
+                description="Choose a WoWCombatLog*.txt file or use the latest log from your WoW folder."
               >
                 <Input
                   id={FIELD_IDS.logFilePath}
@@ -1025,8 +1025,8 @@ export function WarcraftLogsUploadPage() {
             <div className="space-y-4">
               <div className="space-y-3">
                 <p className="text-xs text-neutral-400">
-                  One-shot upload sends the selected file once. Live upload tails your active combat
-                  log until stopped.
+                  Upload the selected file once, or keep uploading new combat log entries until you stop
+                  live upload.
                 </p>
                 <label className="flex items-start gap-2 text-xs text-neutral-300">
                   <input
@@ -1038,7 +1038,7 @@ export function WarcraftLogsUploadPage() {
                   />
                   <span>
                     <span className="block font-medium text-neutral-200">Include existing contents in live upload</span>
-                    <span className="block text-neutral-500">Backfill the latest WoW log before waiting for new lines.</span>
+                    <span className="block text-neutral-500">Upload existing entries from the latest WoW log before waiting for new entries.</span>
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -1109,7 +1109,7 @@ export function WarcraftLogsUploadPage() {
                           title={reportUrl}
                           className="inline-flex items-center gap-1.5 rounded-sm border border-emerald-300/35 bg-emerald-500/20 px-3 py-1.5 font-medium text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
                         >
-                          Open Report
+                          Open report
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                         <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>

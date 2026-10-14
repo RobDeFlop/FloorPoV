@@ -357,7 +357,7 @@ export function Settings({
       });
     } catch (error) {
       console.error("Failed to list available video encoders:", error);
-      setVideoEncodersError("Could not detect video encoders. Auto fallback will still work.");
+      setVideoEncodersError("Could not detect video encoders. Auto selection is still available.");
       setVideoEncoderOptions([{ value: "auto", label: "Auto (recommended)" }]);
     } finally {
       setIsLoadingVideoEncoders(false);
@@ -527,10 +527,8 @@ export function Settings({
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/15">
               <Settings2 className="h-5 w-5 text-amber-200" aria-hidden="true" />
             </div>
-            <h2 className="mb-2 text-lg font-semibold text-neutral-100">Settings are temporarily locked</h2>
-            <p className="text-sm text-neutral-300">
-              Stop recording from Home to edit settings. Your current recording remains safe.
-            </p>
+            <h2 className="mb-2 text-lg font-semibold text-neutral-100">Settings locked while recording</h2>
+            <p className="text-sm text-neutral-300">Stop recording to edit settings.</p>
           </div>
         </div>
       )}
@@ -546,7 +544,7 @@ export function Settings({
               <Settings2 className="h-4 w-4 text-neutral-300" aria-hidden="true" />
               Settings
             </h1>
-            <p className="mt-1 text-sm text-neutral-400">Configure capture before the next pull.</p>
+            <p className="mt-1 text-sm text-neutral-400">Choose your recording settings.</p>
           </div>
           {(isRecording || hasChanges) && (
             <div
@@ -579,7 +577,7 @@ export function Settings({
               <div>
                 <label htmlFor={FIELD_IDS.captureSource} className="mb-2 inline-flex items-center gap-1.5 text-sm text-neutral-300">
                   <AppWindow className="h-3.5 w-3.5" />
-                  Capture Source
+                  Capture source
                 </label>
                 <SettingsSelect
                   id={FIELD_IDS.captureSource}
@@ -595,7 +593,7 @@ export function Settings({
                   ariaDescribedBy="settings-capture-source-help"
                 />
                 <p id="settings-capture-source-help" className="mt-1 text-xs text-neutral-400">
-                  Choose your source: primary monitor or one specific window.
+                  Record your primary monitor or a specific window.
                 </p>
               </div>
 
@@ -636,7 +634,7 @@ export function Settings({
                   </div>
 
                   <p id="settings-capture-window-help" className="text-xs text-neutral-400">
-                    Pick a visible top-level window. Minimized windows can show black frames.
+                    Choose a visible application window. Minimized windows may produce black frames.
                   </p>
 
                   {isSavedCaptureWindowUnavailable && (
@@ -738,7 +736,7 @@ export function Settings({
 
             <SettingsGroup
               contentId="settings-group-storage"
-              description="Where recordings go and when they are cleaned up"
+              description="Where recordings are saved and when they are deleted"
               icon={<HardDrive className="h-4 w-4" aria-hidden="true" />}
               open={openGroups.storage}
               onOpenChange={(open) => onGroupToggle("storage", open)}
@@ -955,7 +953,7 @@ export function Settings({
             <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
               <div>
                 <label htmlFor={FIELD_IDS.videoEncoderPreference} className="mb-2 block text-sm text-neutral-300">
-                  Video Encoder
+                  Video encoder
                 </label>
                 <SettingsSelect
                   id={FIELD_IDS.videoEncoderPreference}
@@ -970,7 +968,7 @@ export function Settings({
                   ariaDescribedBy="settings-video-encoder-help"
                 />
                 <p id="settings-video-encoder-help" className="mt-1 text-xs text-neutral-400">
-                  Auto picks the best available encoder. Hardware encoders usually reduce in-game stutter.
+                  Auto selects an available encoder. Hardware encoders usually reduce in-game stutter.
                 </p>
                 {videoEncodersError && (
                   <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-amber-200">
@@ -1015,7 +1013,7 @@ export function Settings({
                 onClick={() => void handleSave()}
                 disabled={!hasChanges}
               >
-                Save Changes
+                Save changes
               </Button>
             </div>
           </div>
@@ -1037,7 +1035,7 @@ export function Settings({
               Leave Settings with unsaved changes?
             </h2>
             <p id="settings-leave-description" className="mt-2 text-sm leading-6 text-neutral-300">
-              Save your changes before leaving, or discard them and continue without saving.
+              Save or discard your changes before leaving.
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button ref={cancelLeaveButtonRef} variant="secondary" onClick={handleCancelNavigation}>

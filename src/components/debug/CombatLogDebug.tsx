@@ -179,7 +179,7 @@ export function CombatLogDebug() {
         continue;
       }
 
-      const encounterName = event.encounterName || "Unknown Encounter";
+      const encounterName = event.encounterName || "Unknown encounter";
       const encounterCategory = event.encounterCategory || "unknown";
       const encounterKey = `${encounterName}:${encounterCategory}`;
 
@@ -273,7 +273,7 @@ export function CombatLogDebug() {
       const selected = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "Combat Logs", extensions: ["txt", "log"] }],
+        filters: [{ name: "Combat logs", extensions: ["txt", "log"] }],
       });
 
       if (typeof selected === "string") {
@@ -320,7 +320,7 @@ export function CombatLogDebug() {
       <div className="shrink-0 border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
         <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
           <Bug className="h-4 w-4 text-amber-400" />
-          Combat Log Debug
+          Combat log debug
         </h1>
         <p className="mt-1 text-xs uppercase tracking-[0.12em] text-neutral-500">
           Select a combat log file and inspect parsed events

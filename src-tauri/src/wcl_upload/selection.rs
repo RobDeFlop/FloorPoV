@@ -104,7 +104,7 @@ impl RawActivityTracker {
                         match event_type {
                             "ARENA_MATCH_START" => "Arena",
                             "BATTLEGROUND_START" => "Battleground",
-                            _ => "PvP Match",
+                            _ => "PvP match",
                         }
                         .to_string(),
                     ),
@@ -630,16 +630,16 @@ fn group_title(window: &ActivityWindow) -> String {
     match kind {
         ActivityKind::Raid => fight
             .and_then(|fight| fight.encounter_name.clone())
-            .unwrap_or_else(|| "Raid Encounter".to_string()),
+            .unwrap_or_else(|| "Raid encounter".to_string()),
         ActivityKind::MythicPlus => fight
             .and_then(|fight| fight.zone_name.clone())
             .filter(|name| !name.trim().is_empty())
-            .unwrap_or_else(|| "Mythic+ Dungeon".to_string()),
+            .unwrap_or_else(|| "Mythic+ dungeon".to_string()),
         ActivityKind::Pvp => fight
             .and_then(|fight| fight.zone_name.clone())
             .filter(|name| !name.trim().is_empty())
             .unwrap_or_else(|| "PvP".to_string()),
-        ActivityKind::Other => "Other Fights".to_string(),
+        ActivityKind::Other => "Other fights".to_string(),
     }
 }
 
@@ -685,7 +685,7 @@ fn pvp_format(fights: &[ParserFight]) -> Option<String> {
         .iter()
         .any(|fight| contains_event(fight, "PVP_MATCH_START"))
     {
-        return Some("PvP Match".to_string());
+        return Some("PvP match".to_string());
     }
     None
 }
@@ -694,10 +694,10 @@ fn difficulty_label(difficulty: i64) -> String {
     match difficulty {
         1 | 14 => "Normal".to_string(),
         2 | 15 => "Heroic".to_string(),
-        7 | 17 => "Raid Finder".to_string(),
+        7 | 17 => "Raid finder".to_string(),
         8 => "Mythic+".to_string(),
         16 | 23 => "Mythic".to_string(),
-        233 => "Mythic Flex".to_string(),
+        233 => "Mythic flex".to_string(),
         _ => format!("Difficulty {difficulty}"),
     }
 }
@@ -860,7 +860,7 @@ mod tests {
         let (groups, _) = build_activity_groups(&[raid_fight], &[], &HashMap::new());
 
         assert_eq!(groups[0].kind, "raid");
-        assert_eq!(groups[0].subtitle.as_deref(), Some("Mythic Flex"));
+        assert_eq!(groups[0].subtitle.as_deref(), Some("Mythic flex"));
     }
 
     #[test]
@@ -931,7 +931,7 @@ mod tests {
         let (groups, _) = build_activity_groups(&fights, &[], &HashMap::new());
 
         assert_eq!(groups[0].kind, "pvp");
-        assert_eq!(groups[0].subtitle.as_deref(), Some("PvP Match"));
+        assert_eq!(groups[0].subtitle.as_deref(), Some("PvP match"));
         assert_eq!(groups[0].activities[0].status, "incomplete");
     }
 

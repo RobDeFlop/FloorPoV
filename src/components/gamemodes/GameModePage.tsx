@@ -31,12 +31,12 @@ type AnalysisTab = "video-analysis" | "log-analysis" | "metadata";
 const ANALYSIS_TAB_ITEMS: TabControlItem<AnalysisTab>[] = [
   {
     value: "video-analysis",
-    label: "Video Analysis",
+    label: "Video analysis",
     icon: Clapperboard,
   },
   {
     value: "log-analysis",
-    label: "Log Analysis",
+    label: "Log analysis",
     icon: FileSearch,
   },
   {

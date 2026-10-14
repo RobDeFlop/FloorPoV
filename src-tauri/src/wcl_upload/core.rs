@@ -1493,7 +1493,7 @@ fn flush_live_buffer(
 
         emit_upload_progress(
             app_handle, "wcl-live-upload-progress",  "live",
-            "Encounter markers missing in this flush. Applying safe fallback to keep upload moving.",
+            "Encounter markers are missing from this batch. Using fallback fight selection to continue uploading.",
             34,
         );
     }

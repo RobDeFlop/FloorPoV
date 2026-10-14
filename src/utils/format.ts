@@ -43,11 +43,11 @@ export function getEventTypeLabel(eventType: string): string {
     case "SPELL_DISPEL":
       return "Dispel";
     case "MANUAL_MARKER":
-      return "Manual Marker";
+      return "Manual marker";
     case "ENCOUNTER_START":
-      return "Encounter Start";
+      return "Encounter start";
     case "ENCOUNTER_END":
-      return "Encounter End";
+      return "Encounter end";
     default:
       return eventType;
   }

@@ -214,7 +214,7 @@ export function WclActivitySelectionModal({
                 </Button>
                 {otherGroup && hasSupportedActivities && (
                   <Button variant="secondary" size="sm" onClick={() => setShowOther((current) => !current)}>
-                    {showOther ? "Hide Other" : "Show Other"}
+                    {showOther ? "Hide other" : "Show other"}
                   </Button>
                 )}
               </div>
@@ -356,7 +356,7 @@ export function WclActivitySelectionModal({
                 onClick={onUpload}
                 disabled={selectedCount === 0}
               >
-                Upload Selected ({selectedCount})
+                Upload selected ({selectedCount})
               </Button>
             </div>
           </>

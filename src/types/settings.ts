@@ -57,7 +57,7 @@ export const HOTKEY_OPTIONS = [
   { value: "F10", label: "F10" },
   { value: "F11", label: "F11" },
   { value: "F12", label: "F12" },
-  { value: "none", label: "None (Disabled)" },
+  { value: "none", label: "None (disabled)" },
 ] as const;
 
 export const RECORDING_EVENT_TIMEOUT_MS = 15000;

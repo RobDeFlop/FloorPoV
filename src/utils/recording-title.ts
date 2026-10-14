@@ -62,13 +62,13 @@ export function getRecordingDisplayTitle(
   }
 
   if (resolvedMode === "raid") {
-    const primary = recording.zone_name?.trim() || "Raid Session";
+    const primary = recording.zone_name?.trim() || "Raid session";
     const secondary = recording.encounter_name?.trim();
     return secondary ? `${primary} · ${secondary}` : primary;
   }
 
   if (resolvedMode === "pvp") {
-    const primary = recording.zone_name?.trim() || "PvP Session";
+    const primary = recording.zone_name?.trim() || "PvP session";
     const secondary = recording.encounter_name?.trim() || "Match";
     return `${primary} · ${secondary}`;
   }
