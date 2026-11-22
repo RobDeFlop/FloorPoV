@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag to publish (example: v0.1.0-beta.1)"
+        description: "Tag for the release draft (example: v0.2.0-beta)"
         required: true
         type: string
 
@@ -54,11 +54,10 @@ jobs:
           tagName: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
           releaseName: FloorPoV ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }}
           releaseBody: |
-            Automated beta release for FloorPoV.
-
-            Includes Windows installers, updater signatures, and latest.json metadata.
-          releaseDraft: false
-          prerelease: true
+            Includes the Windows installer, its updater signature, and latest.json.
+          # Review signed assets before publishing to the shared update channel.
+          releaseDraft: true
+          prerelease: false
           args: --bundles nsis
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
