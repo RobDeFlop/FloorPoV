@@ -200,12 +200,12 @@ See `docs/implementation-plan.md` for phased implementation planning.
 
 ### Issue tracker
 
-Issues and PRDs live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+For issue operations, including maps and child tickets, follow `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Uses the default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+When triaging issues, use the role mapping in `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context layout with root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+Before exploring the codebase, follow the single-context rules in `docs/agents/domain.md`.
