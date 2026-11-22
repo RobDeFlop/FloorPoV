@@ -148,9 +148,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [isLoading, settings.appTheme]);
 
   const updateSettings = async (newSettings: RecordingSettings) => {
-    if (!store) return;
-    
     try {
+      if (!store) {
+        throw new Error("Settings store is unavailable");
+      }
+
       const oldHotkey = settings.markerHotkey;
       const newHotkey = newSettings.markerHotkey;
       const nextSettings: RecordingSettings = {

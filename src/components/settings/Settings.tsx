@@ -2,7 +2,6 @@ import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { motion, useReducedMotion } from "motion/react";
 import {
   AlertTriangle,
   AppWindow,
@@ -21,7 +20,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { useRecording } from "../../contexts/RecordingContext";
-import { smoothTransition } from "../../lib/motion";
 import { useSettings } from "../../contexts/SettingsContext";
 import { installAvailableAppUpdate } from "../../services/app-updater";
 import { Button } from "../ui/Button";
@@ -160,11 +158,9 @@ function SettingsGroup({
   title,
   children,
 }: SettingsGroupProps) {
-  const reduceMotion = useReducedMotion();
-
   return (
     <section
-      className={`overflow-hidden rounded-sm border bg-(--surface-1)/80 transition-colors duration-150 motion-reduce:transition-none ${
+      className={`overflow-hidden rounded-sm border bg-(--surface-1)/80 ${
         open ? "border-emerald-300/25" : "border-white/10"
       }`}
     >
@@ -173,12 +169,12 @@ function SettingsGroup({
         aria-controls={contentId}
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
-        className={`flex min-h-16 w-full cursor-pointer items-center gap-3 border-l-2 border-transparent px-4 py-3 text-left transition-colors duration-150 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300/60 motion-reduce:transition-none ${
+        className={`flex min-h-16 w-full cursor-pointer items-center gap-3 border-l-2 border-transparent px-4 py-3 text-left hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300/60 ${
           open ? "border-l-emerald-300/70 bg-white/[0.04]" : ""
         }`}
       >
         <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-white/5 text-neutral-300 transition-colors motion-reduce:transition-none ${
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-white/5 text-neutral-300 ${
             open ? "bg-emerald-300/10 text-emerald-200" : ""
           }`}
         >
@@ -195,18 +191,14 @@ function SettingsGroup({
           aria-hidden="true"
         />
       </button>
-      <motion.div
-        className="overflow-hidden"
-        initial={false}
-        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-        transition={reduceMotion ? { duration: 0 } : smoothTransition}
-        aria-hidden={!open}
+      <div
+        id={contentId}
+        hidden={!open}
         inert={!open}
+        className="space-y-6 border-t border-white/10 px-4 pb-4 pt-4"
       >
-        <div id={contentId} className="space-y-6 border-t border-white/10 px-4 pb-4 pt-4">
-          {children}
-        </div>
-      </motion.div>
+        {children}
+      </div>
     </section>
   );
 }
@@ -234,6 +226,9 @@ export function Settings({
   const [folderSize, setFolderSize] = useState<number>(0);
   const [isWowFolderValid, setIsWowFolderValid] = useState<boolean>(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
   const leaveDialogRef = useRef<HTMLDivElement>(null);
   const cancelLeaveButtonRef = useRef<HTMLButtonElement>(null);
@@ -427,26 +422,36 @@ export function Settings({
   };
 
   const handleSave = async (): Promise<boolean> => {
+    if (savingRef.current) return false;
     if (!isStorageLimitWithinBounds(formData.maxStorageGB)) {
+      setSaveError(`Set a storage limit between ${MIN_STORAGE_GB} and ${MAX_STORAGE_GB} GB.`);
       return false;
     }
 
+    savingRef.current = true;
+    setIsSaving(true);
+    setSaveError(null);
     try {
       await updateSettings(formData);
       setHasChanges(false);
       return true;
-    } catch (error) {
-      // Error already logged in context
+    } catch {
+      setSaveError("Could not save settings. Try again.");
       return false;
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   };
 
   const handleCancel = () => {
     setFormData(settings);
     setHasChanges(false);
+    setSaveError(null);
   };
 
   const handleCancelNavigation = () => {
+    if (savingRef.current) return;
     setIsLeaveDialogOpen(false);
     onNavigationHandled();
   };
@@ -585,7 +590,7 @@ export function Settings({
       )}
 
       <fieldset
-        disabled={isRecording}
+        disabled={isRecording || isSaving}
         className="m-0 flex min-h-0 flex-1 flex-col border-0 p-0"
         aria-label="Recording settings"
       >
@@ -622,7 +627,7 @@ export function Settings({
               <SettingsSection
                 title="Capture"
                 icon={<Monitor className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="space-y-4">
               <div>
@@ -720,7 +725,7 @@ export function Settings({
               <SettingsSection
                 title="Video & audio"
                 icon={<Video className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="grid gap-4 md:grid-cols-2">
               <div>
@@ -817,7 +822,7 @@ export function Settings({
               <SettingsSection
                 title="Output"
                 icon={<HardDrive className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="space-y-4">
               <div>
@@ -872,7 +877,7 @@ export function Settings({
               <SettingsSection
                 title="Automation"
                 icon={<CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="space-y-4">
               <SettingsToggleField
@@ -922,7 +927,7 @@ export function Settings({
               <SettingsSection
                 title="WoW & combat log"
                 icon={<Swords className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div>
               <ReadOnlyPathField
@@ -963,7 +968,7 @@ export function Settings({
               <SettingsSection
                 title="Hotkeys"
                 icon={<Keyboard className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="space-y-4">
               <div>
@@ -996,7 +1001,7 @@ export function Settings({
               onOpenChange={(open) => onGroupToggle("app", open)}
               title="App"
             >
-          <SettingsSection title="Appearance and startup" icon={<AppWindow className="h-4 w-4" />}>
+          <SettingsSection embedded title="Appearance and startup" icon={<AppWindow className="h-4 w-4" />}>
             <div className="space-y-4">
               <div>
                 <p id={FIELD_IDS.appTheme} className="mb-2 text-sm text-neutral-300">
@@ -1011,21 +1016,20 @@ export function Settings({
                     const isSelected = formData.appTheme === value;
 
                     return (
-                      <button
-                        key={value}
-                        type="button"
-                        role="radio"
-                        aria-checked={isSelected}
-                        onClick={() => setFormData({ ...formData, appTheme: value })}
-                        className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
-                          isSelected
-                            ? "bg-white/12 text-neutral-100"
-                            : "text-neutral-400 hover:bg-white/6 hover:text-neutral-200"
-                        }`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                        {label}
-                      </button>
+                      <label key={value} className="cursor-pointer">
+                        <input
+                          className="peer sr-only"
+                          type="radio"
+                          name="settings-app-theme"
+                          value={value}
+                          checked={isSelected}
+                          onChange={() => setFormData({ ...formData, appTheme: value })}
+                        />
+                        <span className="inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm text-neutral-400 hover:bg-white/6 peer-checked:bg-white/12 peer-checked:text-neutral-100 peer-focus-visible:ring-2 peer-focus-visible:ring-white/45">
+                          <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                          {label}
+                        </span>
+                      </label>
                     );
                   })}
                 </div>
@@ -1063,7 +1067,7 @@ export function Settings({
               <SettingsSection
                 title="Updates"
                 icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
-                className="rounded-none border-0 bg-transparent p-0"
+                embedded
               >
             <div className="space-y-4">
               <SettingsToggleField
@@ -1098,13 +1102,13 @@ export function Settings({
             </div>
           </SettingsSection>
 
-          <div className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
+          <section>
             <div className="flex items-center gap-2 text-sm font-semibold text-neutral-200">
               <AlertTriangle className="h-4 w-4 text-neutral-400" aria-hidden="true" />
-              <span className="flex-1">Advanced & troubleshooting</span>
+              <h2 className="flex-1">Advanced & troubleshooting</h2>
               <span className="text-xs font-normal text-neutral-500">Optional</span>
             </div>
-            <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+            <div className="mt-3 space-y-4">
               <div>
                 <label htmlFor={FIELD_IDS.videoEncoderPreference} className="mb-2 block text-sm text-neutral-300">
                   Video encoder
@@ -1144,16 +1148,20 @@ export function Settings({
                 description="Write per-second audio and FFmpeg pacing logs for stutter or crackle debugging."
               />
             </div>
-          </div>
+          </section>
             </SettingsGroup>
           </div>
         </div>
 
         <div className="shrink-0 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3 pr-2">
-            <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
-              {hasChanges ? "Changes are not saved" : "All changes saved"}
-            </span>
+            {saveError && hasChanges && !isLeaveDialogOpen ? (
+              <span role="alert" className="text-xs text-rose-300">{saveError}</span>
+            ) : (
+              <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
+                {isSaving ? "Saving changes…" : hasChanges ? "Changes are not saved" : "All changes saved"}
+              </span>
+            )}
             <div className="flex flex-wrap justify-end gap-3">
               <Button
                 variant="secondary"
@@ -1191,15 +1199,16 @@ export function Settings({
             <p id="settings-leave-description" className="mt-2 text-sm leading-6 text-neutral-300">
               Save or discard your changes before leaving.
             </p>
+            {saveError && <p role="alert" className="mt-2 text-sm text-rose-300">{saveError}</p>}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <Button ref={cancelLeaveButtonRef} variant="secondary" onClick={handleCancelNavigation}>
+              <Button ref={cancelLeaveButtonRef} variant="secondary" onClick={handleCancelNavigation} disabled={isSaving}>
                 Cancel
               </Button>
-              <Button variant="secondary" onClick={handleDiscardAndLeave}>
+              <Button variant="secondary" onClick={handleDiscardAndLeave} disabled={isSaving}>
                 Discard changes
               </Button>
-              <Button variant="primary" onClick={() => void handleSaveAndLeave()}>
-                Save and leave
+              <Button variant="primary" onClick={() => void handleSaveAndLeave()} disabled={isSaving}>
+                {isSaving ? "Saving changes…" : "Save and leave"}
               </Button>
             </div>
           </div>
