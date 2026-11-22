@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useModalFocus } from "../../hooks/useModalFocus";
 
@@ -38,10 +38,13 @@ export function DeleteConfirmDialog({
   descriptionId,
   title,
 }: DeleteConfirmDialogProps) {
+  const generatedId = useId();
   const internalDialogRef = useRef<HTMLDivElement>(null);
   const internalCancelButtonRef = useRef<HTMLButtonElement>(null);
   const activeDialogRef = dialogRef ?? internalDialogRef;
   const resolvedCancelButtonRef = cancelButtonRef ?? internalCancelButtonRef;
+  const resolvedTitleId = titleId ?? `${generatedId}-title`;
+  const resolvedDescriptionId = descriptionId ?? `${generatedId}-description`;
 
   useModalFocus({
     isOpen: true,
@@ -58,20 +61,20 @@ export function DeleteConfirmDialog({
         className="w-full max-w-md rounded-sm border border-white/15 bg-(--surface-2) p-4 shadow-(--surface-glow)"
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
+        aria-labelledby={resolvedTitleId}
+        aria-describedby={resolvedDescriptionId}
         tabIndex={-1}
       >
         <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-sm border border-rose-300/25 bg-rose-500/12">
           <AlertTriangle className="h-4 w-4 text-rose-200" />
         </div>
         <h3
-          id={titleId}
+          id={resolvedTitleId}
           className="text-sm font-semibold uppercase tracking-[0.11em] text-neutral-100"
         >
           {title}
         </h3>
-        <p id={descriptionId} className="mt-2 text-sm text-neutral-300">
+        <p id={resolvedDescriptionId} className="mt-2 text-sm text-neutral-300">
           {description}
         </p>
         <div className="mt-4 flex items-center justify-end gap-2">

@@ -1,10 +1,16 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use tauri::{AppHandle, Manager};
 
 use crate::recording::metadata as recording_metadata;
 
 fn default_capture_source() -> String {
     "monitor".to_string()
+}
+
+fn default_audio_capture_mode() -> String {
+    "wow".to_string()
 }
 
 fn default_video_encoder_preference() -> String {
@@ -25,6 +31,8 @@ pub struct RecordingSettings {
     #[serde(default)]
     pub capture_window_title: Option<String>,
     pub enable_system_audio: bool,
+    #[serde(default = "default_audio_capture_mode")]
+    pub audio_capture_mode: String,
     pub enable_recording_diagnostics: bool,
 }
 
@@ -102,6 +110,71 @@ pub fn get_default_output_folder() -> Result<String, String> {
     Ok(videos_dir.to_string_lossy().to_string())
 }
 
+pub(crate) fn output_folder_from_settings_value(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("recording-settings")
+        .and_then(|settings| settings.get("outputFolder"))
+        .and_then(|folder| folder.as_str())
+        .map(str::trim)
+        .filter(|folder| !folder.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+pub(crate) fn read_stored_output_folder(app_handle: &AppHandle) -> Option<String> {
+    let app_data_dir = app_handle.path().app_data_dir().ok()?;
+    let settings_path = app_data_dir.join("settings.json");
+    let contents = std::fs::read_to_string(settings_path).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
+    output_folder_from_settings_value(&value)
+}
+
+pub(crate) fn resolve_startup_recordings_folder(app_handle: &AppHandle) -> Result<String, String> {
+    if let Some(stored_folder) = read_stored_output_folder(app_handle) {
+        return Ok(stored_folder);
+    }
+
+    get_default_output_folder()
+}
+
+pub(crate) fn register_recordings_folder_scope(
+    app_handle: &AppHandle,
+    folder_path: &str,
+) -> Result<(), String> {
+    let folder = folder_path.trim();
+    if folder.is_empty() {
+        return Err("Output folder path is empty".to_string());
+    }
+
+    let path = PathBuf::from(folder);
+    std::fs::create_dir_all(&path).map_err(|error| {
+        format!(
+            "Could not create the recordings folder '{}': {error}",
+            path.display()
+        )
+    })?;
+
+    app_handle
+        .asset_protocol_scope()
+        .allow_directory(&path, true)
+        .map_err(|error| {
+            format!(
+                "Could not allow the recordings folder '{}' for playback: {error}",
+                path.display()
+            )
+        })?;
+
+    tracing::info!(
+        folder = %path.display(),
+        "Registered asset scope for recordings folder"
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn allow_recordings_folder(app: AppHandle, folder_path: String) -> Result<(), String> {
+    register_recordings_folder_scope(&app, &folder_path)
+}
+
 #[tauri::command]
 pub fn get_folder_size(path: String) -> Result<u64, String> {
     let path = Path::new(&path);
@@ -139,7 +212,61 @@ pub fn get_recording_metadata(
         return Err("Only .mp4 recordings are supported".to_string());
     }
 
-    recording_metadata::read_recording_metadata(recording_path)
+    let mut metadata = recording_metadata::read_recording_metadata(recording_path)?;
+    if let Some(loaded_metadata) = metadata.as_mut() {
+        crate::combat_log::metadata::rebase_recording_metadata_from_log_clock(loaded_metadata);
+    }
+
+    Ok(metadata)
+}
+
+#[tauri::command]
+pub fn write_export_file(file_path: String, contents: String) -> Result<(), String> {
+    let path = Path::new(&file_path);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+
+    if extension.as_deref() != Some("md") && extension.as_deref() != Some("json") {
+        return Err("Export file must be .md or .json".to_string());
+    }
+
+    if let Some(parent_directory) = path.parent() {
+        if !parent_directory.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent_directory).map_err(|error| {
+                format!(
+                    "Failed to create export directory '{}': {error}",
+                    parent_directory.display()
+                )
+            })?;
+        }
+    }
+
+    std::fs::write(path, contents)
+        .map_err(|error| format!("Failed to write export file '{}': {error}", path.display()))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_recording_note(
+    file_path: String,
+    note_id: Option<String>,
+    timestamp_seconds: f64,
+    text: String,
+) -> Result<recording_metadata::RecordingNoteMetadata, String> {
+    recording_metadata::upsert_recording_note(
+        Path::new(&file_path),
+        note_id,
+        timestamp_seconds,
+        &text,
+    )
+}
+
+#[tauri::command]
+pub fn delete_recording_note(file_path: String, note_id: String) -> Result<(), String> {
+    recording_metadata::delete_recording_note(Path::new(&file_path), &note_id)
 }
 
 #[tauri::command]
@@ -293,4 +420,45 @@ pub fn cleanup_old_recordings(
         freed_bytes,
         deleted_files,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::output_folder_from_settings_value;
+
+    #[test]
+    fn reads_custom_output_folder_from_stored_settings() {
+        let value = serde_json::json!({
+            "recording-settings": {
+                "outputFolder": "D:\\videos"
+            }
+        });
+
+        assert_eq!(
+            output_folder_from_settings_value(&value).as_deref(),
+            Some("D:\\videos")
+        );
+    }
+
+    #[test]
+    fn ignores_blank_output_folder_in_stored_settings() {
+        let value = serde_json::json!({
+            "recording-settings": {
+                "outputFolder": "   "
+            }
+        });
+
+        assert_eq!(output_folder_from_settings_value(&value), None);
+    }
+
+    #[test]
+    fn ignores_settings_without_output_folder() {
+        let value = serde_json::json!({
+            "recording-settings": {
+                "startMinimized": true
+            }
+        });
+
+        assert_eq!(output_folder_from_settings_value(&value), None);
+    }
 }

@@ -1,5 +1,18 @@
 use super::{CombatTriggerEvent, ParsedCombatEvent, EVENT_ENCOUNTER_END, EVENT_ENCOUNTER_START};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CombatAmountKind {
+    Damage,
+    Heal,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CombatAmountSample {
+    pub(crate) dest_guid: String,
+    pub(crate) amount: u64,
+    pub(crate) kind: CombatAmountKind,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ImportantCombatEvent {
     pub(crate) raw_event_type: String,
@@ -8,6 +21,10 @@ pub(crate) struct ImportantCombatEvent {
     pub(crate) source: Option<String>,
     pub(crate) target: Option<String>,
     pub(crate) target_kind: Option<String>,
+    pub(crate) extra_spell_name: Option<String>,
+    pub(crate) dest_guid: Option<String>,
+    pub(crate) amount: Option<u64>,
+    pub(crate) ability_name: Option<String>,
     pub(crate) zone_name: Option<String>,
     pub(crate) encounter_name: Option<String>,
     pub(crate) encounter_category: Option<String>,
@@ -35,12 +52,24 @@ impl ImportantCombatEvent {
     ) -> Option<super::CombatEvent> {
         let timestamp = recording_elapsed_seconds?;
         match self.event_type.as_str() {
-            "PARTY_KILL" | "UNIT_DIED" => Some(super::CombatEvent {
-                timestamp,
-                event_type: self.event_type,
-                source: self.source,
-                target: self.target,
-            }),
+            "UNIT_DIED" | "BLOODLUST" | "ENCOUNTER_START" | "ENCOUNTER_END" => {
+                let name = matches!(
+                    self.event_type.as_str(),
+                    "ENCOUNTER_START" | "ENCOUNTER_END"
+                )
+                .then_some(self.encounter_name)
+                .flatten();
+                Some(super::CombatEvent {
+                    timestamp,
+                    event_type: self.event_type,
+                    source: self.source,
+                    target: self.target,
+                    extra_spell_name: self.extra_spell_name,
+                    amount: self.amount,
+                    ability_name: self.ability_name,
+                    name,
+                })
+            }
             _ => None,
         }
     }
@@ -81,11 +110,18 @@ pub(crate) fn parse_important_combat_event(
     context: &mut DebugParseContext,
 ) -> Option<ImportantCombatEvent> {
     let parsed_line = parse_log_line_fields(line)?;
+    // Vote-to-abandon / hearth never writes CHALLENGE_MODE_END. An outdoor
+    // ZONE_CHANGE is the combat-log signal that the key is over.
+    let raw_event_type = remap_instance_leave_to_challenge_end(context, &parsed_line);
 
-    update_debug_context(context, &parsed_line);
+    update_debug_context(context, &raw_event_type, &parsed_line);
 
     if let Some(zone_name) = extract_zone_name(&parsed_line.raw_event_type, &parsed_line.fields) {
-        context.current_zone = Some(zone_name);
+        // MAP_CHANGE/ZONE_CHANGED fire for dungeon floors (Augurs' Terrace inside Murder
+        // Row). Keep the CHALLENGE_MODE_START dungeon name as the M+ zone.
+        if parsed_line.raw_event_type == "CHALLENGE_MODE_START" || !context.in_challenge_mode {
+            context.current_zone = Some(zone_name);
+        }
     }
 
     let (encounter_name, encounter_category) =
@@ -99,13 +135,23 @@ pub(crate) fn parse_important_combat_event(
         return None;
     }
 
+    if parsed_line.normalized_event_type == "UNIT_DIED"
+        && parsed_line.target_kind.as_deref() != Some("PLAYER")
+    {
+        return None;
+    }
+
     Some(ImportantCombatEvent {
-        raw_event_type: parsed_line.raw_event_type,
+        raw_event_type,
         log_timestamp: Some(parsed_line.log_timestamp),
         event_type: parsed_line.normalized_event_type,
         source: parsed_line.source,
         target: parsed_line.target,
         target_kind: parsed_line.target_kind,
+        extra_spell_name: parsed_line.extra_spell_name,
+        dest_guid: parsed_line.dest_guid,
+        amount: None,
+        ability_name: parsed_line.ability_name,
         zone_name: context.current_zone.clone(),
         encounter_name,
         encounter_category,
@@ -168,6 +214,7 @@ pub(crate) fn parse_important_log_line(
         source: parsed_event.source,
         target: parsed_event.target,
         target_kind: parsed_event.target_kind,
+        ability_name: parsed_event.ability_name,
         zone_name: parsed_event.zone_name,
         encounter_name: parsed_event.encounter_name,
         encounter_category: parsed_event.encounter_category,
@@ -196,6 +243,9 @@ struct ParsedLogLine {
     source: Option<String>,
     target: Option<String>,
     target_kind: Option<String>,
+    extra_spell_name: Option<String>,
+    dest_guid: Option<String>,
+    ability_name: Option<String>,
     fields: Vec<String>,
 }
 
@@ -208,10 +258,10 @@ fn parse_log_line_fields(line: &str) -> Option<ParsedLogLine> {
     let mut fields = trimmed_line.split(',');
     let header = fields.next()?.trim();
     let raw_event_type = extract_event_type(header)?;
-    let normalized_event_type = normalize_important_event_type(raw_event_type)?;
     let remaining_fields = fields
         .map(|value| value.trim().to_string())
         .collect::<Vec<String>>();
+    let normalized_event_type = normalize_important_event_type(raw_event_type, &remaining_fields)?;
 
     let source_name = remaining_fields.get(1).map(|value| value.as_str());
     let source_guid = remaining_fields.first().map(|value| value.as_str());
@@ -229,16 +279,78 @@ fn parse_log_line_fields(line: &str) -> Option<ParsedLogLine> {
         source: normalize_entity_name(source_name, source_kind.as_deref()),
         target: normalize_entity_name(dest_name, target_kind.as_deref()),
         target_kind,
+        extra_spell_name: None,
+        dest_guid: normalize_name(dest_guid),
+        ability_name: None,
         fields: remaining_fields,
     })
 }
 
-fn normalize_important_event_type(event_type: &str) -> Option<&'static str> {
+pub(crate) fn parse_combat_amount_sample(line: &str) -> Option<CombatAmountSample> {
+    let trimmed_line = line.trim();
+    if trimmed_line.is_empty() {
+        return None;
+    }
+
+    let mut fields = trimmed_line.split(',');
+    let header = fields.next()?.trim();
+    let raw_event_type = extract_event_type(header)?;
+    let remaining_fields = fields.map(|value| value.trim()).collect::<Vec<&str>>();
+
+    let (kind, amount_index) = amount_field_layout(raw_event_type)?;
+    let amount = parse_combat_amount_field(remaining_fields.get(amount_index).copied())?;
+    if amount == 0 {
+        return None;
+    }
+
+    let dest_guid = normalize_name(remaining_fields.get(4).copied())?;
+    let dest_flags = remaining_fields.get(6).copied();
+    let target_kind = classify_unit_type(dest_flags, Some(dest_guid.as_str())).map(str::to_string);
+    if is_guardian_target(target_kind.as_deref()) {
+        return None;
+    }
+
+    Some(CombatAmountSample {
+        dest_guid,
+        amount,
+        kind,
+    })
+}
+
+fn amount_field_layout(raw_event_type: &str) -> Option<(CombatAmountKind, usize)> {
+    match raw_event_type {
+        "SPELL_DAMAGE"
+        | "SPELL_PERIODIC_DAMAGE"
+        | "RANGE_DAMAGE"
+        | "DAMAGE_SHIELD"
+        | "DAMAGE_SPLIT" => Some((CombatAmountKind::Damage, 11)),
+        "SWING_DAMAGE" | "SWING_DAMAGE_LANDED" => Some((CombatAmountKind::Damage, 8)),
+        "ENVIRONMENTAL_DAMAGE" => Some((CombatAmountKind::Damage, 9)),
+        "SPELL_HEAL" | "SPELL_PERIODIC_HEAL" => Some((CombatAmountKind::Heal, 11)),
+        _ => None,
+    }
+}
+
+fn parse_combat_amount_field(value: Option<&str>) -> Option<u64> {
+    let raw = value?.trim().trim_matches('"');
+    if raw.is_empty() || raw == "nil" {
+        return None;
+    }
+
+    if let Ok(amount) = raw.parse::<u64>() {
+        return Some(amount);
+    }
+
+    raw.parse::<f64>()
+        .ok()
+        .filter(|amount| amount.is_finite() && *amount >= 0.0)
+        .map(|amount| amount as u64)
+}
+
+fn normalize_important_event_type(event_type: &str, fields: &[String]) -> Option<&'static str> {
     match event_type {
-        "PARTY_KILL" => Some("PARTY_KILL"),
         "UNIT_DIED" | "UNIT_DESTROYED" => Some("UNIT_DIED"),
-        "SPELL_INTERRUPT" => Some("SPELL_INTERRUPT"),
-        "SPELL_DISPEL" => Some("SPELL_DISPEL"),
+        "SPELL_CAST_SUCCESS" => classify_bloodlust_cast(fields),
         "ENCOUNTER_START" => Some("ENCOUNTER_START"),
         "ENCOUNTER_END" => Some("ENCOUNTER_END"),
         event_type if is_zone_context_event_type(event_type) => Some("ZONE_CONTEXT"),
@@ -247,6 +359,39 @@ fn normalize_important_event_type(event_type: &str) -> Option<&'static str> {
         | "BATTLEGROUND_START" | "BATTLEGROUND_END" => Some("PVP_CONTEXT"),
         _ => None,
     }
+}
+
+fn classify_bloodlust_cast(fields: &[String]) -> Option<&'static str> {
+    let spell_id = extract_spell_id(fields)?;
+    if is_bloodlust_spell_id(spell_id) {
+        Some("BLOODLUST")
+    } else {
+        None
+    }
+}
+
+fn extract_spell_id(fields: &[String]) -> Option<u32> {
+    fields.get(8)?.trim_matches('"').parse().ok()
+}
+
+fn is_bloodlust_spell_id(spell_id: u32) -> bool {
+    matches!(
+        spell_id,
+        2825 |     // Bloodlust
+        32182 |    // Heroism
+        80353 |    // Time Warp
+        90355 |    // Ancient Hysteria
+        160452 |   // Netherwinds
+        264667 |   // Primal Rage
+        272678 |   // Primal Rage (command pet)
+        390386 |   // Fury of the Aspects
+        178207 |   // Drums of Fury
+        230935 |   // Drums of the Mountain
+        256740 |   // Drums of the Maelstrom
+        309658 |   // Drums of Deathly Ferocity
+        381301 |   // Feral Hide Drums
+        444257 // Thunderous Drums
+    )
 }
 
 fn should_ignore_unconscious_death(parsed_line: &ParsedLogLine) -> bool {
@@ -288,8 +433,42 @@ fn parse_unconscious_flag(value: &str) -> Option<bool> {
     }
 }
 
-fn update_debug_context(context: &mut DebugParseContext, parsed_line: &ParsedLogLine) {
-    match parsed_line.raw_event_type.as_str() {
+fn remap_instance_leave_to_challenge_end(
+    context: &DebugParseContext,
+    parsed_line: &ParsedLogLine,
+) -> String {
+    if context.in_challenge_mode
+        && outdoor_zone_change_left_instance(&parsed_line.raw_event_type, &parsed_line.fields)
+    {
+        return "CHALLENGE_MODE_END".to_string();
+    }
+
+    parsed_line.raw_event_type.clone()
+}
+
+fn outdoor_zone_change_left_instance(raw_event_type: &str, fields: &[String]) -> bool {
+    if !matches!(
+        raw_event_type,
+        "ZONE_CHANGE" | "ZONE_CHANGED" | "ZONE_CHANGE_NEW_AREA"
+    ) {
+        return false;
+    }
+
+    matches!(
+        fields
+            .get(2)
+            .map(|value| value.trim().trim_matches('"'))
+            .and_then(|value| value.parse::<i64>().ok()),
+        Some(0)
+    )
+}
+
+fn update_debug_context(
+    context: &mut DebugParseContext,
+    raw_event_type: &str,
+    parsed_line: &ParsedLogLine,
+) {
+    match raw_event_type {
         "CHALLENGE_MODE_START" => {
             context.in_challenge_mode = true;
             context.current_key_level = extract_challenge_mode_key_level(&parsed_line.fields);
@@ -393,6 +572,7 @@ fn is_zone_context_event_type(raw_event_type: &str) -> bool {
             | "ZONE_CHANGED_INDOORS"
             | "PLAYER_ENTERING_WORLD"
             | "MAP_CHANGE"
+            | "CHALLENGE_MODE_START"
     )
 }
 
@@ -543,6 +723,8 @@ impl LogTimestamp {
         let day: u32 = date_parts[1].parse().ok()?;
         // date_parts[2] would be the year (if present), but we ignore it since we only care about time-of-day
 
+        // Archon and some log exporters append a timezone (`25.067-3`, `25.067+00:00`).
+        let time_part = strip_log_timezone_suffix(time_part);
         let time_parts: Vec<&str> = time_part.split(':').collect();
         if time_parts.len() != 3 {
             return None;
@@ -555,8 +737,12 @@ impl LogTimestamp {
         let (second, fractional) = if let Some((sec, frac_str)) = second_and_millis.split_once('.')
         {
             let sec_val: u32 = sec.parse().ok()?;
-            let frac_val: f64 = format!("0.{}", frac_str).parse().ok()?;
-            (sec_val, frac_val)
+            if frac_str.is_empty() {
+                (sec_val, 0.0)
+            } else {
+                let frac_val: f64 = format!("0.{frac_str}").parse().ok()?;
+                (sec_val, frac_val)
+            }
         } else {
             (second_and_millis.parse().ok()?, 0.0)
         };
@@ -577,6 +763,30 @@ impl LogTimestamp {
             + (self.minute as f64) * 60.0
             + (self.second as f64)
             + self.fractional_seconds
+    }
+}
+
+pub(crate) fn log_clock_diff_seconds(origin_seconds: f64, current_seconds: f64) -> f64 {
+    let mut diff = current_seconds - origin_seconds;
+    // Keep the shortest same-day offset. Only wrap when the recording crossed midnight.
+    if diff > 43_200.0 {
+        diff -= 86_400.0;
+    } else if diff < -43_200.0 {
+        diff += 86_400.0;
+    }
+
+    diff
+}
+
+fn strip_log_timezone_suffix(value: &str) -> &str {
+    let without_z = value
+        .strip_suffix('Z')
+        .or_else(|| value.strip_suffix('z'))
+        .unwrap_or(value);
+
+    match without_z.find(['+', '-']) {
+        Some(index) => &without_z[..index],
+        None => without_z,
     }
 }
 

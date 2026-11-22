@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -8,13 +8,14 @@ use crate::recording::metadata::{
 };
 
 use super::parse::{
-    extract_raw_event_type_from_line, is_context_only_event, normalize_name,
-    parse_combatant_info_snapshot, parse_important_combat_event,
-    parse_player_identities_from_log_line, should_reset_player_roster_for_event, DebugParseContext,
+    extract_raw_event_type_from_line, is_context_only_event, log_clock_diff_seconds,
+    normalize_name, parse_combat_amount_sample, parse_combatant_info_snapshot,
+    parse_important_combat_event, parse_player_identities_from_log_line,
+    should_reset_player_roster_for_event, CombatAmountKind, CombatAmountSample, DebugParseContext,
     ImportantCombatEvent, LogTimestamp,
 };
 use super::{
-    EVENT_ENCOUNTER_END, EVENT_ENCOUNTER_START, EVENT_MANUAL_MARKER,
+    CombatTriggerEvent, EVENT_ENCOUNTER_END, EVENT_ENCOUNTER_START, EVENT_MANUAL_MARKER,
     MAX_PERSISTED_HIGH_VOLUME_EVENTS,
 };
 
@@ -36,6 +37,8 @@ pub(crate) struct RecordingMetadataAccumulator {
     recording_active: bool,
     recording_elapsed_origin_seconds: f64,
     session_log_origin_seconds: Option<f64>,
+    last_damage_by_dest: HashMap<String, u64>,
+    persist_all_high_volume_events: bool,
 }
 
 impl RecordingMetadataAccumulator {
@@ -53,7 +56,26 @@ impl RecordingMetadataAccumulator {
         self.capture_combatant_info_snapshot(line);
         self.capture_player_names_for_known_roster(line);
 
-        let parsed_event = parse_important_combat_event(line, &mut self.context)?;
+        if let Some(sample) = parse_combat_amount_sample(line) {
+            self.note_last_damage(&sample);
+        }
+
+        let Some(mut parsed_event) = parse_important_combat_event(line, &mut self.context) else {
+            return None;
+        };
+
+        if parsed_event.event_type == "UNIT_DIED" {
+            if let Some(dest_guid) = parsed_event.dest_guid.as_ref() {
+                parsed_event.amount = self.last_damage_by_dest.get(dest_guid).copied();
+            }
+        }
+
+        if parsed_event.raw_event_type == "CHALLENGE_MODE_START" {
+            update_option_if_some(&mut self.zone_name, parsed_event.zone_name.as_ref());
+            if let Some(key_level) = parsed_event.key_level {
+                self.key_level = Some(key_level);
+            }
+        }
 
         if self.recording_active && !is_context_only_event(&parsed_event.raw_event_type) {
             self.record_important_event(&parsed_event, elapsed_seconds);
@@ -61,9 +83,22 @@ impl RecordingMetadataAccumulator {
         Some(parsed_event)
     }
 
+    pub(crate) fn begin_import_session(&mut self) {
+        self.reset_recording_data();
+        self.recording_active = true;
+        self.recording_elapsed_origin_seconds = 0.0;
+        self.persist_all_high_volume_events = true;
+        self.recording_players = self.context_players.clone();
+        self.zone_name = self.context.current_zone.clone();
+        self.latest_encounter_name = self.context.current_encounter.clone();
+        self.latest_encounter_category = self.context.current_encounter_category.clone();
+        self.key_level = self.context.current_key_level;
+    }
+
     pub(crate) fn begin_recording_session(&mut self, elapsed_seconds: f64) {
         self.reset_recording_data();
         self.recording_active = true;
+        self.persist_all_high_volume_events = false;
         self.recording_elapsed_origin_seconds = elapsed_seconds;
         self.recording_players = self.context_players.clone();
         self.zone_name = self.context.current_zone.clone();
@@ -113,20 +148,62 @@ impl RecordingMetadataAccumulator {
                 source: None,
                 target: None,
                 target_kind: None,
+                extra_spell_name: None,
+                ability_name: None,
+                amount: None,
                 zone_name: self.zone_name.clone(),
                 encounter_name: self.latest_encounter_name.clone(),
                 encounter_category: self.latest_encounter_category.clone(),
                 key_level: self.key_level,
+                name: None,
             });
         }
     }
 
     pub(crate) fn finish_recording_session(&mut self) {
         self.recording_active = false;
+        self.persist_all_high_volume_events = false;
     }
 
     pub(crate) fn is_recording_session_active(&self) -> bool {
         self.recording_active
+    }
+
+    pub(crate) fn take_abandoned_auto_session_end_trigger(&mut self) -> Option<CombatTriggerEvent> {
+        if !self.recording_active {
+            return None;
+        }
+
+        let trigger = if self.context.in_challenge_mode {
+            CombatTriggerEvent {
+                trigger_type: "end".to_string(),
+                mode: "mythicPlus".to_string(),
+                event_type: "CHALLENGE_MODE_END".to_string(),
+                encounter_name: self.latest_encounter_name.clone(),
+                key_level: self.key_level,
+            }
+        } else if self.context.in_pvp_match {
+            CombatTriggerEvent {
+                trigger_type: "end".to_string(),
+                mode: "pvp".to_string(),
+                event_type: "PVP_MATCH_COMPLETE".to_string(),
+                encounter_name: self.latest_encounter_name.clone(),
+                key_level: None,
+            }
+        } else {
+            return None;
+        };
+
+        if trigger.mode == "mythicPlus" {
+            self.context.in_challenge_mode = false;
+            self.context.current_key_level = None;
+            self.context.challenge_mode_start_log_timestamp = None;
+        } else {
+            self.context.in_pvp_match = false;
+            self.context.pvp_match_start_log_timestamp = None;
+        }
+
+        Some(trigger)
     }
 
     pub(crate) fn current_context_zone_name(&self) -> Option<String> {
@@ -146,24 +223,16 @@ impl RecordingMetadataAccumulator {
         if let (Some(origin), Some(current)) =
             (self.session_log_origin_seconds, log_timestamp_seconds)
         {
-            let diff = current - origin;
-
-            // Normal case: current >= origin
-            if diff >= 0.0 {
+            let diff = log_clock_diff_seconds(origin, current);
+            if diff.is_finite() && diff >= 0.0 {
                 return Some(diff);
-            }
-
-            // Midnight rollover: current < origin means we crossed midnight
-            let next_day_diff = current + 86400.0 - origin;
-            if next_day_diff >= 0.0 {
-                return Some(next_day_diff);
             }
 
             tracing::warn!(
                 origin_seconds = origin,
                 current_seconds = current,
                 diff_seconds = diff,
-                "Log-clock produced negative diff even after midnight adjustment, using fallback"
+                "Log-clock produced an invalid diff, using fallback"
             );
         }
 
@@ -189,6 +258,7 @@ impl RecordingMetadataAccumulator {
         self.important_events_dropped_count = 0;
         self.high_volume_events_in_buffer = 0;
         self.session_log_origin_seconds = None;
+        self.last_damage_by_dest.clear();
     }
 
     pub(crate) fn record_manual_marker(&mut self, elapsed_seconds: f64) {
@@ -203,6 +273,10 @@ impl RecordingMetadataAccumulator {
             source: None,
             target: None,
             target_kind: None,
+            extra_spell_name: None,
+            dest_guid: None,
+            amount: None,
+            ability_name: None,
             zone_name: self.zone_name.clone(),
             encounter_name: self.latest_encounter_name.clone(),
             encounter_category: self.latest_encounter_category.clone(),
@@ -233,7 +307,9 @@ impl RecordingMetadataAccumulator {
             .entry(event.event_type.clone())
             .or_insert(0) += 1;
 
-        update_option_if_some(&mut self.zone_name, event.zone_name.as_ref());
+        if !self.context.in_challenge_mode {
+            update_option_if_some(&mut self.zone_name, event.zone_name.as_ref());
+        }
         update_option_if_some(
             &mut self.latest_encounter_name,
             event.encounter_name.as_ref(),
@@ -259,11 +335,38 @@ impl RecordingMetadataAccumulator {
             source: event.source.clone(),
             target: event.target.clone(),
             target_kind: event.target_kind.clone(),
+            extra_spell_name: event.extra_spell_name.clone(),
+            ability_name: event.ability_name.clone(),
+            amount: event.amount,
             zone_name: event.zone_name.clone(),
             encounter_name: event.encounter_name.clone(),
             encounter_category: event.encounter_category.clone(),
             key_level: event.key_level,
+            name: None,
         });
+    }
+
+    fn note_last_damage(&mut self, sample: &CombatAmountSample) {
+        if sample.kind != CombatAmountKind::Damage {
+            return;
+        }
+
+        self.last_damage_by_dest
+            .insert(sample.dest_guid.clone(), sample.amount);
+    }
+
+    pub(crate) fn set_manual_marker_name(
+        &mut self,
+        timestamp_seconds: f64,
+        occurrence: usize,
+        name: Option<String>,
+    ) -> bool {
+        crate::recording::metadata::apply_manual_marker_name(
+            &mut self.important_events,
+            timestamp_seconds,
+            occurrence,
+            name,
+        )
     }
 
     fn reset_player_roster(&mut self) {
@@ -370,7 +473,7 @@ impl RecordingMetadataAccumulator {
     }
 
     fn push_event_with_cap(&mut self, event: RecordingImportantEventMetadata) {
-        if is_structural_event_type(&event.event_type) {
+        if is_structural_event_type(&event.event_type) || self.persist_all_high_volume_events {
             self.important_events.push(event);
             return;
         }
@@ -433,11 +536,91 @@ fn encounter_key(encounter_name: &str, encounter_category: &str) -> String {
     format!("{encounter_name}:{encounter_category}")
 }
 
+/// Structural events anchor the recording timeline and are rare enough to keep
+/// unconditionally. Player deaths stay in the capped pool so a long session
+/// cannot grow `.meta.json` without bound.
 fn is_structural_event_type(event_type: &str) -> bool {
     matches!(
         event_type,
-        EVENT_MANUAL_MARKER | EVENT_ENCOUNTER_START | EVENT_ENCOUNTER_END
+        EVENT_MANUAL_MARKER | EVENT_ENCOUNTER_START | EVENT_ENCOUNTER_END | "BLOODLUST"
     )
+}
+
+const LOG_CLOCK_REBASE_EPSILON_SECONDS: f64 = 0.05;
+
+pub(crate) fn rebase_recording_metadata_from_log_clock(metadata: &mut RecordingMetadata) -> bool {
+    let parseable_events = metadata
+        .important_events
+        .iter()
+        .enumerate()
+        .filter_map(|(index, event)| {
+            let log_timestamp = event.log_timestamp.as_deref()?;
+            let log_seconds = LogTimestamp::parse(log_timestamp)?.to_seconds_since_midnight();
+            Some((index, log_seconds, event.timestamp_seconds))
+        })
+        .collect::<Vec<_>>();
+
+    if parseable_events.len() < 2 {
+        return false;
+    }
+
+    let Some((_, anchor_log_seconds, anchor_video_seconds)) = parseable_events
+        .iter()
+        .max_by(|left, right| {
+            left.2
+                .partial_cmp(&right.2)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| left.0.cmp(&right.0))
+        })
+        .copied()
+    else {
+        return false;
+    };
+
+    let mut did_rebase = false;
+    for (index, log_seconds, video_seconds) in parseable_events {
+        let next_seconds =
+            anchor_video_seconds + log_clock_diff_seconds(anchor_log_seconds, log_seconds);
+        if (video_seconds - next_seconds).abs() < LOG_CLOCK_REBASE_EPSILON_SECONDS {
+            continue;
+        }
+
+        metadata.important_events[index].timestamp_seconds = next_seconds;
+        did_rebase = true;
+    }
+
+    if did_rebase {
+        sync_encounters_from_rebased_events(metadata);
+    }
+
+    did_rebase
+}
+
+fn sync_encounters_from_rebased_events(metadata: &mut RecordingMetadata) {
+    let encounter_starts = metadata
+        .important_events
+        .iter()
+        .filter(|event| event.event_type == EVENT_ENCOUNTER_START)
+        .collect::<Vec<_>>();
+    let encounter_ends = metadata
+        .important_events
+        .iter()
+        .filter(|event| event.event_type == EVENT_ENCOUNTER_END)
+        .collect::<Vec<_>>();
+
+    for (index, encounter) in metadata.encounters.iter_mut().enumerate() {
+        if let Some(start_event) = encounter_starts.get(index) {
+            if start_event.encounter_name.as_deref() == Some(encounter.name.as_str()) {
+                encounter.started_at_seconds = Some(start_event.timestamp_seconds);
+            }
+        }
+
+        if let Some(end_event) = encounter_ends.get(index) {
+            if end_event.encounter_name.as_deref() == Some(encounter.name.as_str()) {
+                encounter.ended_at_seconds = Some(end_event.timestamp_seconds);
+            }
+        }
+    }
 }
 
 pub(crate) fn persist_recording_metadata_snapshot(

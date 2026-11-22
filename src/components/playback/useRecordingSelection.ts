@@ -6,6 +6,7 @@ interface RecordingSelectionItem {
 
 interface UseRecordingSelectionOptions<T extends RecordingSelectionItem> {
   recordings: T[];
+  visibleRecordings?: T[];
   isActionLocked: boolean;
   onPlainActivate: (recording: T) => void;
 }
@@ -26,12 +27,14 @@ interface UseRecordingSelectionResult<T extends RecordingSelectionItem> {
 
 export function useRecordingSelection<T extends RecordingSelectionItem>({
   recordings,
+  visibleRecordings,
   isActionLocked,
   onPlainActivate,
 }: UseRecordingSelectionOptions<T>): UseRecordingSelectionResult<T> {
   const [selectedRecordingPaths, setSelectedRecordingPaths] = useState<string[]>([]);
   const [selectionAnchorPath, setSelectionAnchorPath] = useState<string | null>(null);
   const suppressRowClickPathRef = useRef<string | null>(null);
+  const rangeRecordings = visibleRecordings ?? recordings;
 
   const selectedRecordingPathSet = useMemo(() => {
     return new Set(selectedRecordingPaths);
@@ -47,9 +50,9 @@ export function useRecordingSelection<T extends RecordingSelectionItem>({
   }, []);
 
   const selectAll = useCallback(() => {
-    const allPaths = recordings.map((recording) => recording.file_path);
+    const allPaths = rangeRecordings.map((recording) => recording.file_path);
     setSelectedRecordingPaths(allPaths);
-  }, [recordings]);
+  }, [rangeRecordings]);
 
   const toggleRecordingSelection = useCallback((recordingPath: string) => {
     setSelectedRecordingPaths((previousSelectedPaths) => {
@@ -64,17 +67,17 @@ export function useRecordingSelection<T extends RecordingSelectionItem>({
   }, []);
 
   const selectRecordingRange = useCallback((recordingPath: string, appendToSelection: boolean) => {
-    const targetIndex = recordings.findIndex((recording) => recording.file_path === recordingPath);
+    const targetIndex = rangeRecordings.findIndex((recording) => recording.file_path === recordingPath);
     if (targetIndex < 0) {
       return;
     }
 
     const anchorPath = selectionAnchorPath ?? recordingPath;
-    const anchorIndex = recordings.findIndex((recording) => recording.file_path === anchorPath);
+    const anchorIndex = rangeRecordings.findIndex((recording) => recording.file_path === anchorPath);
     const normalizedAnchorIndex = anchorIndex >= 0 ? anchorIndex : targetIndex;
     const startIndex = Math.min(normalizedAnchorIndex, targetIndex);
     const endIndex = Math.max(normalizedAnchorIndex, targetIndex);
-    const rangePaths = recordings
+    const rangePaths = rangeRecordings
       .slice(startIndex, endIndex + 1)
       .map((recording) => recording.file_path);
     const normalizedRangePaths = Array.from(new Set([...rangePaths, recordingPath]));
@@ -92,7 +95,7 @@ export function useRecordingSelection<T extends RecordingSelectionItem>({
     });
 
     setSelectionAnchorPath(recordingPath);
-  }, [recordings, selectionAnchorPath]);
+  }, [rangeRecordings, selectionAnchorPath]);
 
   const applySelectionShortcut = useCallback((event: MouseEvent<HTMLElement>, recordingPath: string) => {
     if (isActionLocked) {

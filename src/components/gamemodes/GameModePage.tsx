@@ -12,12 +12,19 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useMarker } from "../../contexts/MarkerContext";
+import { useRecording } from "../../contexts/RecordingContext";
+import { useVideo } from "../../contexts/VideoContext";
+import { useRecordingsList } from "../../hooks/useRecordingsList";
+import { useClearStalePlayback } from "../../hooks/useClearStalePlayback";
 import { RecordingMetadata } from "../../types/events";
 import { RecordingInfo } from "../../types/recording";
 import { type GameMode } from "../../types/ui";
-import { formatBytes, formatDate, formatEncounterCategory, formatTime, getEventTypeLabel } from "../../utils/format";
+import { formatBytes, formatCompactAmount, formatDate, formatEncounterCategory, formatTime, getEventTypeLabel } from "../../utils/format";
 import { getRecordingDisplayTitle } from "../../utils/recording-title";
 import { GameEvents } from "../events/GameEvents";
+import { PlaybackEventList } from "../events/PlaybackEventList";
+import { CompareVideoPlayer } from "../playback/CompareVideoPlayer";
+import { ExportAnalysisReportButton } from "../playback/ExportAnalysisReportButton";
 import { VideoPlayer } from "../playback/VideoPlayer";
 import { contentViewVariants, smoothTransition } from "../../lib/motion";
 import { PageHeader } from "../app/PageHeader";
@@ -98,6 +105,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   const metadataRequestPathRef = useRef<string | null>(null);
   const { setEncounters } = useMarker();
   const reduceMotion = useReducedMotion();
+  const { playbackMetadataEpoch } = useRecording();
+  const { isCompareMode } = useVideo();
+  const { recordings, isLoading: isRecordingsLoading, error: recordingsError, loadRecordings, setRecordings } =
+    useRecordingsList();
 
   const filterEvent = useCallback(
     (targetKind: string | undefined, target: string | undefined) => {
@@ -161,6 +172,26 @@ export function GameModePage({ gameMode }: GameModePageProps) {
     setActiveTab("video-analysis");
     setEncounters([]);
   }, [setEncounters]);
+  const handleStalePlaybackCleared = useCallback(() => {
+    setSelectedRecording(null);
+    setRecordingMetadata(null);
+    setMetadataError(null);
+    metadataRequestPathRef.current = null;
+  }, []);
+
+  useClearStalePlayback(
+    recordings,
+    !isRecordingsLoading && !recordingsError,
+    handleStalePlaybackCleared,
+  );
+
+  useEffect(() => {
+    if (!selectedRecording || playbackMetadataEpoch === 0) {
+      return;
+    }
+
+    void loadRecordingMetadata(selectedRecording.file_path);
+  }, [loadRecordingMetadata, playbackMetadataEpoch, selectedRecording]);
 
   const sortedEventCounts = useMemo(() => {
     if (!recordingMetadata?.importantEventCounts) {
@@ -196,18 +227,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
       return "Unknown";
     };
 
-    const kickCounts: Record<string, number> = {};
-    const dispelCounts: Record<string, number> = {};
     const deathCounts: Record<string, number> = {};
 
     for (const event of events) {
-      if (event.eventType === "SPELL_INTERRUPT" && event.source) {
-        const key = toPlayerLabel(event.source);
-        kickCounts[key] = (kickCounts[key] ?? 0) + 1;
-      } else if (event.eventType === "SPELL_DISPEL" && event.source) {
-        const key = toPlayerLabel(event.source);
-        dispelCounts[key] = (dispelCounts[key] ?? 0) + 1;
-      } else if (event.eventType === "UNIT_DIED" && event.target && event.targetKind === "PLAYER") {
+      if (event.eventType === "UNIT_DIED" && event.target && event.targetKind === "PLAYER") {
         const key = toPlayerLabel(event.target);
         deathCounts[key] = (deathCounts[key] ?? 0) + 1;
       }
@@ -225,8 +248,6 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         });
 
     return {
-      kicks: toSorted(kickCounts),
-      dispels: toSorted(dispelCounts),
       deaths: toSorted(deathCounts),
     };
   }, [recordingMetadata?.importantEvents]);
@@ -254,6 +275,11 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         <PageHeader icon={Icon} title={config.overviewTitle} description={config.description} />
         <GameModeRecordingsBrowser
           gameMode={gameMode}
+          recordings={recordings}
+          isLoading={isRecordingsLoading}
+          listError={recordingsError}
+          loadRecordings={loadRecordings}
+          setRecordings={setRecordings}
           onRecordingActivate={handleRecordingActivate}
         />
       </motion.div>
@@ -271,6 +297,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
             <PageHeader
               icon={Icon}
               title={config.analysisTitle}
+              action={<ExportAnalysisReportButton recordingPath={selectedRecording.file_path} />}
               description={getRecordingDisplayTitle(selectedRecording, gameMode)}
               backAction={{ label: "Back to sessions", onClick: handleBackToSessions }}
             />
@@ -298,9 +325,12 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 aria-labelledby={`${ANALYSIS_TABS_ID_BASE}-video-analysis-tab`}
                 className="flex h-full min-h-0 flex-col"
               >
-                <main className="min-h-0 flex-1 overflow-hidden">
-                  <VideoPlayer />
-                </main>
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                  <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                    {isCompareMode ? <CompareVideoPlayer /> : <VideoPlayer />}
+                  </main>
+                  {!isCompareMode && <PlaybackEventList />}
+                </div>
                 <GameEvents />
               </div>
             ) : activeTab === "metadata" ? (
@@ -378,24 +408,12 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                       <PlayerOverviewTable players={recordingMetadata.players ?? []} />
                     </section>
 
-                    {(playerStats.kicks.length > 0 ||
-                      playerStats.dispels.length > 0 ||
-                      playerStats.deaths.length > 0) && (
+                    {playerStats.deaths.length > 0 && (
                       <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                         <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
                           Player stats
                         </h3>
-                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
-                          <PlayerStatChart
-                            title="Kicks"
-                            data={playerStats.kicks}
-                            color="#34d399"
-                          />
-                          <PlayerStatChart
-                            title="Dispels"
-                            data={playerStats.dispels}
-                            color="#60a5fa"
-                          />
+                        <div className="mt-3 grid grid-cols-1 gap-4">
                           <PlayerStatChart
                             title="Deaths"
                             data={playerStats.deaths}
@@ -548,8 +566,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                                       <tr>
                                         <th className="px-2 py-1.5 font-medium">Time</th>
                                         <th className="px-2 py-1.5 font-medium">Event</th>
+                                        <th className="px-2 py-1.5 font-medium">Ability</th>
                                         <th className="px-2 py-1.5 font-medium">Source</th>
                                         <th className="px-2 py-1.5 font-medium">Target</th>
+                                        <th className="px-2 py-1.5 font-medium">Amount</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -563,9 +583,16 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                                           </td>
                                           <td className="px-2 py-1.5 text-amber-200">
                                             {getEventTypeLabel(event.eventType)}
+                                            {event.abilityName ? ` · ${event.abilityName}` : ""}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-neutral-300">
+                                            {event.abilityName || "-"}
                                           </td>
                                           <td className="px-2 py-1.5 text-neutral-300">{event.source || "-"}</td>
                                           <td className="px-2 py-1.5 text-neutral-300">{event.target || "-"}</td>
+                                          <td className="px-2 py-1.5 font-mono text-neutral-300">
+                                            {formatCompactAmount(event.amount) || "-"}
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>

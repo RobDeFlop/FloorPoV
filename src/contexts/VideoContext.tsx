@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { VIDEO_LOADING_TIMEOUT_MS, VOLUME_MAX, VOLUME_MIN } from "../types/settings";
+import type { CompareSeekMode, CompareVideoSlot } from "../utils/compare-playback";
 
 interface VideoContextType {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -12,11 +14,21 @@ interface VideoContextType {
   volume: number;
   playbackRate: number;
   videoSrc: string | null;
+  loadedFilePath: string | null;
+  isCompareMode: boolean;
+  compareVideos: [CompareVideoSlot, CompareVideoSlot] | null;
+  compareSeekMode: CompareSeekMode;
+  play: () => void;
+  pause: () => void;
   togglePlay: () => void;
   seek: (time: number) => void;
   setVolume: (volume: number) => void;
   setPlaybackRate: (rate: number) => void;
-  loadVideo: (src: string) => void;
+  loadVideo: (src: string, filePath: string) => void;
+  clearPlayback: () => void;
+  enterCompareMode: (left: CompareVideoSlot, right: CompareVideoSlot) => void;
+  exitCompareMode: () => void;
+  setCompareSeekMode: (mode: CompareSeekMode) => void;
   updateTime: (time: number) => void;
   updateDuration: (duration: number) => void;
   syncIsPlaying: (playing: boolean) => void;
@@ -35,6 +47,7 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   const objectUrlRef = useRef<string | null>(null);
   const loadingTimeoutRef = useRef<number | null>(null);
   const videoSrcRef = useRef<string | null>(null);
+  const loadedFilePathRef = useRef<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -47,6 +60,26 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   const fullscreenTransitionRef = useRef<Promise<void> | null>(null);
   const closeAfterFullscreenExitRef = useRef(false);
   const isFullscreen = fullscreenPhase !== "windowed";
+  const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [compareVideos, setCompareVideos] = useState<[CompareVideoSlot, CompareVideoSlot] | null>(
+    null,
+  );
+  // Kept outside compare state so the choice survives leaving and re-entering compare mode.
+  const [compareSeekMode, setCompareSeekMode] = useState<CompareSeekMode>("shared");
+
+  const resetCompareMode = useCallback(() => {
+    setIsCompareMode(false);
+    setCompareVideos(null);
+  }, []);
+
+  const play = useCallback(() => {
+    videoRef.current?.play();
+  }, []);
+
+  const pause = useCallback(() => {
+    videoRef.current?.pause();
+  }, []);
 
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
@@ -58,9 +91,16 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const seek = useCallback((time: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
+    const videoElement = videoRef.current;
+    if (!videoElement) {
+      return;
     }
+
+    const mediaDuration = videoElement.duration;
+    const upperBound = Number.isFinite(mediaDuration) ? mediaDuration : Number.POSITIVE_INFINITY;
+    const nextTime = Number.isFinite(time) ? Math.min(upperBound, Math.max(0, time)) : 0;
+    videoElement.currentTime = nextTime;
+    setCurrentTime(nextTime);
   }, []);
 
   const updateTime = useCallback((time: number) => {
@@ -237,13 +277,58 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     };
   }, [exitFullscreen]);
 
+  const clearSinglePlayback = useCallback(() => {
+    if (loadingTimeoutRef.current !== null) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+
+    const videoElement = videoRef.current;
+    if (videoElement) {
+      videoElement.pause();
+      videoElement.removeAttribute("src");
+      videoElement.load();
+    }
+
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+
+    videoSrcRef.current = null;
+    loadedFilePathRef.current = null;
+    setVideoSrc(null);
+    setLoadedFilePath(null);
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    setIsVideoLoading(false);
+  }, []);
   const loadVideo = useCallback(
-    (src: string) => {
+    (src: string, filePath: string) => {
+      resetCompareMode();
+
       const currentSrc = videoSrcRef.current;
+      loadedFilePathRef.current = filePath;
+      setLoadedFilePath(filePath);
+
       if (src === currentSrc) {
-        if (videoRef.current) {
-          videoRef.current.pause();
-          videoRef.current.currentTime = 0;
+        const videoElement = videoRef.current;
+
+        // Re-selecting a recording that failed to load should retry it rather than
+        // leave the previous failure on screen.
+        if (videoElement?.error) {
+          setCurrentTime(0);
+          setDuration(0);
+          setIsPlaying(false);
+          setVideoLoading(true);
+          videoElement.load();
+          return;
+        }
+
+        if (videoElement) {
+          videoElement.pause();
+          videoElement.currentTime = 0;
         }
         setCurrentTime(0);
         setIsPlaying(false);
@@ -267,8 +352,56 @@ export function VideoProvider({ children }: { children: ReactNode }) {
       setIsPlaying(false);
       setVideoLoading(true);
     },
-    [setVideoLoading]
+    [resetCompareMode, setVideoLoading]
   );
+
+  const enterCompareMode = useCallback(
+    (left: CompareVideoSlot, right: CompareVideoSlot) => {
+      clearSinglePlayback();
+      setCompareVideos([left, right]);
+      setIsCompareMode(true);
+    },
+    [clearSinglePlayback],
+  );
+
+  const exitCompareMode = useCallback(() => {
+    resetCompareMode();
+  }, [resetCompareMode]);
+
+  const clearPlayback = useCallback(() => {
+    resetCompareMode();
+    clearSinglePlayback();
+  }, [clearSinglePlayback, resetCompareMode]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      return;
+    }
+
+    let frameId = 0;
+    const syncPlaybackTime = () => {
+      const videoElement = videoRef.current;
+      if (videoElement) {
+        setCurrentTime(videoElement.currentTime);
+      }
+      frameId = window.requestAnimationFrame(syncPlaybackTime);
+    };
+
+    frameId = window.requestAnimationFrame(syncPlaybackTime);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const unlistenHiddenToTray = listen("window-hidden-to-tray", () => {
+      videoRef.current?.pause();
+    });
+
+    return () => {
+      unlistenHiddenToTray.then((unsubscribe) => unsubscribe());
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -292,11 +425,21 @@ export function VideoProvider({ children }: { children: ReactNode }) {
         volume,
         playbackRate,
         videoSrc,
+        loadedFilePath,
+        isCompareMode,
+        compareVideos,
+        compareSeekMode,
+        play,
+        pause,
         togglePlay,
         seek,
         setVolume,
         setPlaybackRate,
         loadVideo,
+        clearPlayback,
+        enterCompareMode,
+        exitCompareMode,
+        setCompareSeekMode,
         updateTime,
         updateDuration,
         syncIsPlaying,

@@ -14,6 +14,34 @@ interface TabControlsProps<TValue extends string> {
   idBase?: string;
 }
 
+export function getNextTabIndex(
+  currentIndex: number,
+  itemCount: number,
+  key: string,
+): number | null {
+  if (itemCount <= 0) {
+    return null;
+  }
+
+  if (key === "ArrowRight" || key === "ArrowDown") {
+    return (currentIndex + 1) % itemCount;
+  }
+
+  if (key === "ArrowLeft" || key === "ArrowUp") {
+    return (currentIndex - 1 + itemCount) % itemCount;
+  }
+
+  if (key === "Home") {
+    return 0;
+  }
+
+  if (key === "End") {
+    return itemCount - 1;
+  }
+
+  return null;
+}
+
 export function TabControls<TValue extends string>({
   value,
   onChange,
@@ -48,22 +76,13 @@ export function TabControls<TValue extends string>({
               type="button"
               onClick={() => onChange(itemValue)}
               onKeyDown={(event) => {
-                let nextIndex: number | null = null;
-
-                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                  nextIndex = (index + 1) % items.length;
-                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                  nextIndex = (index - 1 + items.length) % items.length;
-                } else if (event.key === "Home") {
-                  nextIndex = 0;
-                } else if (event.key === "End") {
-                  nextIndex = items.length - 1;
+                const nextIndex = getNextTabIndex(index, items.length, event.key);
+                if (nextIndex === null) {
+                  return;
                 }
 
-                if (nextIndex !== null) {
-                  event.preventDefault();
-                  focusAdjacentTab(nextIndex);
-                }
+                event.preventDefault();
+                focusAdjacentTab(nextIndex);
               }}
               role="tab"
               tabIndex={isActive ? 0 : -1}

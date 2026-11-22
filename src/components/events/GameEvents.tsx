@@ -5,11 +5,9 @@ import { EventTooltip } from "./EventTooltip";
 import { EventMarker } from "./EventMarker";
 import { useVideo } from "../../contexts/VideoContext";
 import { useMarker } from "../../contexts/MarkerContext";
-import { GameEvent, RecordingEncounterMetadata } from "../../types/events";
+import { EVENT_SEEK_OFFSET_SECONDS, GameEvent, RecordingEncounterMetadata } from "../../types/events";
 import { formatTime } from "../../utils/format";
 import { AnimatedTooltip } from "../ui/AnimatedTooltip";
-
-const EVENT_SEEK_OFFSET_SECONDS = 5;
 
 interface EncounterTooltipProps {
   encounter: RecordingEncounterMetadata;

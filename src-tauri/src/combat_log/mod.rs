@@ -1,5 +1,6 @@
 pub(crate) mod debug;
-mod metadata;
+pub(crate) mod import;
+pub(crate) mod metadata;
 pub(crate) mod parse;
 pub(crate) mod watch;
 
@@ -92,6 +93,13 @@ pub struct CombatEvent {
     pub event_type: String,
     pub source: Option<String>,
     pub target: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra_spell_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amount: Option<u64>,
+    pub ability_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -121,6 +129,7 @@ pub struct ParsedCombatEvent {
     pub source: Option<String>,
     pub target: Option<String>,
     pub target_kind: Option<String>,
+    pub ability_name: Option<String>,
     pub zone_name: Option<String>,
     pub encounter_name: Option<String>,
     pub encounter_category: Option<String>,

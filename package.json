@@ -1,7 +1,7 @@
 {
   "name": "floorpov",
   "private": true,
-  "version": "0.2.0-beta",
+  "version": "0.2.0-beta.1",
   "type": "module",
   "scripts": {
     "prepare": "husky",
@@ -11,12 +11,16 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "test": "bun test",
     "icons:generate": "tauri icon src/assets/floorpov-icon-master.png --output src-tauri/icons",
     "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-global-shortcut": "^2.3.2",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-store": "^2.4.4",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "lucide-react": "^1.31.0",

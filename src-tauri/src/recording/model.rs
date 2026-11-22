@@ -155,6 +155,7 @@ pub(crate) struct RecordingSessionConfig {
     pub(crate) bitrate: u32,
     pub(crate) capture_input: CaptureInput,
     pub(crate) include_system_audio: bool,
+    pub(crate) audio_capture_mode: String,
     pub(crate) enable_diagnostics: bool,
 }
 
@@ -167,6 +168,7 @@ pub(crate) struct SegmentConfig<'a> {
     pub(crate) output_frame_rate: u32,
     pub(crate) bitrate: u32,
     pub(crate) include_system_audio: bool,
+    pub(crate) audio_capture_mode: &'a str,
     pub(crate) enable_diagnostics: bool,
     pub(crate) video_encoder: &'a str,
     pub(crate) encoder_preset: Option<&'a str>,

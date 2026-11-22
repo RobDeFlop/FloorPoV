@@ -14,21 +14,21 @@ export function SettingsToggleField({
   description,
 }: SettingsToggleFieldProps) {
   return (
-    <div className="space-y-2">
-      <label
-        htmlFor={id}
-        className="flex items-center gap-3 rounded-sm border border-white/20 bg-black/20 px-3 py-2 text-neutral-200"
-      >
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-          className="h-4 w-4"
-        />
-        <span className="text-sm">{label}</span>
-      </label>
-      {description && <p className="text-xs text-neutral-400">{description}</p>}
-    </div>
+    <label
+      htmlFor={id}
+      className="flex cursor-pointer items-start gap-3 rounded-sm border border-white/20 bg-black/20 px-3 py-2.5 text-neutral-200"
+    >
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="mt-0.5 h-4 w-4 shrink-0"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm">{label}</span>
+        {description && <span className="mt-1 block text-xs font-normal text-neutral-400">{description}</span>}
+      </span>
+    </label>
   );
 }
