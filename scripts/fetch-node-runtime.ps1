@@ -34,17 +34,6 @@ function Get-Sha256Hex([string]$Path) {
   return ([System.BitConverter]::ToString($hashBytes) -replace "-", "").ToLowerInvariant()
 }
 
-function Expand-ZipArchive([string]$ArchivePath, [string]$DestinationPath) {
-  $expandArchiveCommand = Get-Command -Name "Expand-Archive" -ErrorAction SilentlyContinue
-  if ($null -ne $expandArchiveCommand) {
-    Expand-Archive -Path $ArchivePath -DestinationPath $DestinationPath -Force
-    return
-  }
-
-  Add-Type -AssemblyName "System.IO.Compression.FileSystem"
-  [System.IO.Compression.ZipFile]::ExtractToDirectory($ArchivePath, $DestinationPath)
-}
-
 if (!(Test-Path -Path $ConfigPath -PathType Leaf)) {
   throw "Node runtime config not found: $ConfigPath"
 }
@@ -88,7 +77,9 @@ if (Test-Path -Path $extractRoot) {
   Remove-Item -Recurse -Force $extractRoot
 }
 New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
-Expand-ZipArchive -ArchivePath $archivePath -DestinationPath $extractRoot
+# Use the two-argument overload available in Windows PowerShell 5.1.
+Add-Type -AssemblyName "System.IO.Compression.FileSystem"
+[System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractRoot)
 
 $entryDir = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
 if ($null -eq $entryDir) {
