@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   AlertTriangle,
@@ -242,6 +242,18 @@ function CompareVolumeSlider({ label, volume, onVolumeChange }: CompareVolumeSli
 export function CompareVideoPlayer() {
   const { compareVideos, compareSeekMode, setCompareSeekMode, exitCompareMode } = useVideo();
   const videoElementsRef = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null]);
+  // A new ref callback on a playback update would detach the video and pause it.
+  const videoSlotRefs = useMemo(() => COMPARE_SLOT_INDEXES.map((index) => (
+    (element: HTMLVideoElement | null) => {
+      videoElementsRef.current[index] = element;
+      if (!element) return;
+
+      return () => {
+        element.pause();
+        videoElementsRef.current[index] = null;
+      };
+    }
+  )), []);
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const [slotStates, setSlotStates] = useState<CompareSlotPlaybackStates>(createSlotPlaybackStates);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -631,13 +643,7 @@ export function CompareVideoPlayer() {
 
               <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-neutral-950">
                 <video
-                  ref={(element) => {
-                    videoElementsRef.current[index] = element;
-                    return () => {
-                      element?.pause();
-                      videoElementsRef.current[index] = null;
-                    };
-                  }}
+                  ref={videoSlotRefs[index]}
                   src={slot.src}
                   className="h-full w-full object-contain"
                   controls={false}
