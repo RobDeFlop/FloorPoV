@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { invoke } from '@tauri-apps/api/core';
+import { allowRecordingsFolderForPlayback } from '../utils/recording-playback';
+import { applyAppTheme, normalizeAppTheme, persistAppTheme } from '../utils/theme';
 
 interface SettingsContextType {
   settings: RecordingSettings;
@@ -10,6 +12,8 @@ interface SettingsContextType {
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+
+const FORK_IN_APP_UPDATES_KEY = "fork-in-app-updates-v1";
 
 function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null {
   if (defaultFolder.endsWith('\\FloorPoV')) {
@@ -53,10 +57,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const mergedSettings: RecordingSettings = {
           ...DEFAULT_SETTINGS,
           ...stored,
+          appTheme: normalizeAppTheme(stored.appTheme),
         };
 
         const defaultFolder = await invoke<string>('get_default_output_folder');
         const legacyDefaultFolder = getLegacyDefaultOutputFolderPath(defaultFolder);
+        const hasEnabledInAppUpdates =
+          (await store.get<boolean>(FORK_IN_APP_UPDATES_KEY)) === true;
         let shouldPersistMergedSettings = false;
 
         if (!mergedSettings.outputFolder) {
@@ -72,9 +79,27 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           shouldPersistMergedSettings = true;
         }
 
+        if (!hasEnabledInAppUpdates && !mergedSettings.enableAutoUpdate) {
+          mergedSettings.enableAutoUpdate = true;
+          shouldPersistMergedSettings = true;
+        }
+
         if (shouldPersistMergedSettings) {
           await store.set('recording-settings', mergedSettings);
+        }
+
+        if (!hasEnabledInAppUpdates) {
+          await store.set(FORK_IN_APP_UPDATES_KEY, true);
+        }
+
+        if (shouldPersistMergedSettings || !hasEnabledInAppUpdates) {
           await store.save();
+        }
+
+        try {
+          await allowRecordingsFolderForPlayback(mergedSettings.outputFolder);
+        } catch (error) {
+          console.error('Failed to allow recordings folder for playback:', error);
         }
 
         setSettings(mergedSettings);
@@ -89,8 +114,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       } else {
         const defaultFolder = await invoke<string>('get_default_output_folder');
         const initialSettings = { ...DEFAULT_SETTINGS, outputFolder: defaultFolder };
+        try {
+          await allowRecordingsFolderForPlayback(initialSettings.outputFolder);
+        } catch (error) {
+          console.error('Failed to allow recordings folder for playback:', error);
+        }
         setSettings(initialSettings);
         await store.set('recording-settings', initialSettings);
+        await store.set(FORK_IN_APP_UPDATES_KEY, true);
         await store.save();
         
         if (initialSettings.markerHotkey !== 'none') {
@@ -108,12 +139,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [store]);
 
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    persistAppTheme(applyAppTheme(settings.appTheme, document.documentElement));
+  }, [isLoading, settings.appTheme]);
+
   const updateSettings = async (newSettings: RecordingSettings) => {
     if (!store) return;
     
     try {
       const oldHotkey = settings.markerHotkey;
       const newHotkey = newSettings.markerHotkey;
+      const nextSettings: RecordingSettings = {
+        ...newSettings,
+        appTheme: normalizeAppTheme(newSettings.appTheme),
+      };
       
       if (oldHotkey !== newHotkey) {
         if (oldHotkey !== 'none') {
@@ -130,9 +173,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      await store.set('recording-settings', newSettings);
+      if (settings.outputFolder !== nextSettings.outputFolder) {
+        try {
+          await allowRecordingsFolderForPlayback(nextSettings.outputFolder);
+        } catch (error) {
+          console.error('Failed to allow recordings folder for playback:', error);
+        }
+      }
+
+      await store.set('recording-settings', nextSettings);
       await store.save();
-      setSettings(newSettings);
+      setSettings(nextSettings);
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;

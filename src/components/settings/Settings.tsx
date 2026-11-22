@@ -11,8 +11,10 @@ import {
   HardDrive,
   Keyboard,
   Monitor,
+  Moon,
   RefreshCw,
   Settings2,
+  Sun,
   Swords,
   Video,
   Volume2,
@@ -21,10 +23,12 @@ import {
 import { useRecording } from "../../contexts/RecordingContext";
 import { smoothTransition } from "../../lib/motion";
 import { useSettings } from "../../contexts/SettingsContext";
+import { installAvailableAppUpdate } from "../../services/app-updater";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { FormField } from "../ui/FormField";
 import {
+  AudioCaptureMode,
   CaptureSource,
   FrameRate,
   HOTKEY_OPTIONS,
@@ -45,6 +49,7 @@ import { useModalFocus } from "../../hooks/useModalFocus";
 import { SettingsToggleField } from "./SettingsToggleField";
 import { shallowEqual } from "../../utils/comparison";
 import { formatBytes } from "../../utils/format";
+import { applyAppTheme, type AppTheme } from "../../utils/theme";
 import { AvailableVideoEncoder, CaptureWindowInfo } from "../../types/recording";
 import { type AppView } from "../../types/ui";
 
@@ -67,6 +72,16 @@ const CAPTURE_SOURCE_OPTIONS: SettingsSelectOption[] = [
   { value: "window", label: "Specific window" },
 ];
 
+const AUDIO_CAPTURE_MODE_OPTIONS: SettingsSelectOption[] = [
+  { value: "wow", label: "WoW only" },
+  { value: "desktop", label: "Entire desktop" },
+];
+
+const APP_THEME_OPTIONS: Array<{ value: AppTheme; label: string; icon: typeof Moon }> = [
+  { value: "dark", label: "Dark", icon: Moon },
+  { value: "light", label: "Light", icon: Sun },
+];
+
 const VIDEO_ENCODER_PREFERENCE_VALUES: VideoEncoderPreference[] = [
   "auto",
   "h264_nvenc",
@@ -86,13 +101,15 @@ const FIELD_IDS = {
   wowFolder: "settings-wow-folder",
   markerHotkey: "settings-marker-hotkey",
   enableSystemAudio: "settings-enable-system-audio",
+  audioCaptureMode: "settings-audio-capture-mode",
   enableRecordingDiagnostics: "settings-enable-recording-diagnostics",
   enableAutoRecording: "settings-enable-auto-recording",
   minAutoRaidRecordingSeconds: "settings-min-auto-raid-recording-seconds",
   enableAutoUpdate: "settings-enable-auto-update",
+  startMinimized: "settings-start-minimized",
+  showFullscreenEventsPanel: "settings-show-fullscreen-events-panel",
+  appTheme: "settings-app-theme",
 };
-
-
 
 function formatCaptureWindowLabel(title: string, processName: string | null): string {
   return processName && processName.trim().length > 0 ? `${title} (${processName})` : title;
@@ -116,6 +133,10 @@ function isVideoEncoderPreference(value: string): value is VideoEncoderPreferenc
 
 function isMarkerHotkey(value: string): value is MarkerHotkey {
   return HOTKEY_OPTIONS.some((option) => option.value === value);
+}
+
+function isAudioCaptureMode(value: string): value is AudioCaptureMode {
+  return value === "wow" || value === "desktop";
 }
 
 export type SettingsGroupId = "recording" | "storage" | "wow" | "controls" | "app";
@@ -224,6 +245,8 @@ export function Settings({
   ]);
   const [isLoadingVideoEncoders, setIsLoadingVideoEncoders] = useState(false);
   const [videoEncodersError, setVideoEncodersError] = useState<string | null>(null);
+  const [isCheckingForUpdate, setIsCheckingForUpdate] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setFormData(settings);
@@ -289,6 +312,14 @@ export function Settings({
 
     onNavigateWithoutGuard(navigationRequest);
   }, [hasChanges, navigationRequest, onNavigateWithoutGuard]);
+
+  useEffect(() => {
+    applyAppTheme(formData.appTheme, document.documentElement);
+
+    return () => {
+      applyAppTheme(settings.appTheme, document.documentElement);
+    };
+  }, [formData.appTheme, settings.appTheme]);
 
   const loadCaptureWindows = useCallback(async () => {
     setIsLoadingCaptureWindows(true);
@@ -446,6 +477,26 @@ export function Settings({
     onEscape: handleCancelNavigation,
   });
 
+  const handleCheckForUpdate = async () => {
+    if (isCheckingForUpdate) {
+      return;
+    }
+
+    setIsCheckingForUpdate(true);
+    setUpdateCheckStatus("Checking for updates...");
+
+    try {
+      const updateResult = await installAvailableAppUpdate(setUpdateCheckStatus);
+      if (updateResult === "up-to-date") {
+        setUpdateCheckStatus("You're on the latest version.");
+      }
+    } catch (error) {
+      console.error("Update check failed:", error);
+      setUpdateCheckStatus("Could not check for updates.");
+    } finally {
+      setIsCheckingForUpdate(false);
+    }
+  };
   const handleBrowseWowFolder = async () => {
     try {
       const selected = await open({
@@ -708,6 +759,7 @@ export function Settings({
                 <p className="mt-1 text-xs text-neutral-400">Sets your target capture FPS.</p>
               </div>
 
+
             </div>
           </SettingsSection>
 
@@ -717,7 +769,9 @@ export function Settings({
               Audio
             </div>
             <div className="space-y-4">
-              <p className="text-sm text-neutral-400">Include game and desktop audio in your recordings.</p>
+              <p className="text-sm text-neutral-400">
+                WoW only keeps Discord and the browser out of the VOD.
+              </p>
 
               <SettingsToggleField
                 id={FIELD_IDS.enableSystemAudio}
@@ -730,6 +784,24 @@ export function Settings({
                 }}
                 label="Enable system audio"
               />
+
+              {formData.enableSystemAudio && (
+                <div>
+                  <label htmlFor={FIELD_IDS.audioCaptureMode} className="mb-1 block text-sm text-neutral-200">
+                    Capture source
+                  </label>
+                  <SettingsSelect
+                    id={FIELD_IDS.audioCaptureMode}
+                    value={formData.audioCaptureMode}
+                    options={AUDIO_CAPTURE_MODE_OPTIONS}
+                    onChange={(nextValue) => {
+                      if (isAudioCaptureMode(nextValue)) {
+                        setFormData({ ...formData, audioCaptureMode: nextValue });
+                      }
+                    }}
+                  />
+                </div>
+              )}
             </div>
           </div>
             </SettingsGroup>
@@ -843,6 +915,7 @@ export function Settings({
                 />
               </FormField>
 
+
             </div>
           </SettingsSection>
 
@@ -908,7 +981,7 @@ export function Settings({
                   ariaDescribedBy="settings-marker-hotkey-help"
                 />
                 <p id="settings-marker-hotkey-help" className="mt-1 text-xs text-neutral-400">
-                  Press this key during recording to add a marker. If it conflicts, choose another key.
+                  Press this key during recording to add a marker.
                 </p>
               </div>
             </div>
@@ -923,6 +996,70 @@ export function Settings({
               onOpenChange={(open) => onGroupToggle("app", open)}
               title="App"
             >
+          <SettingsSection title="Appearance and startup" icon={<AppWindow className="h-4 w-4" />}>
+            <div className="space-y-4">
+              <div>
+                <p id={FIELD_IDS.appTheme} className="mb-2 text-sm text-neutral-300">
+                  Theme
+                </p>
+                <div
+                  role="radiogroup"
+                  aria-labelledby={FIELD_IDS.appTheme}
+                  className="inline-flex rounded-sm border border-white/20 bg-black/20 p-0.5"
+                >
+                  {APP_THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+                    const isSelected = formData.appTheme === value;
+
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        onClick={() => setFormData({ ...formData, appTheme: value })}
+                        className={`inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 ${
+                          isSelected
+                            ? "bg-white/12 text-neutral-100"
+                            : "text-neutral-400 hover:bg-white/6 hover:text-neutral-200"
+                        }`}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-xs text-neutral-400">
+                  Dark is the default. Light retints surfaces and text across the app.
+                </p>
+              </div>
+              <SettingsToggleField
+                id={FIELD_IDS.startMinimized}
+                checked={formData.startMinimized}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    startMinimized: checked,
+                  });
+                }}
+                label="Start Minimized to Tray"
+                description="Launch in the tray. The X button hides the window; quit from the tray icon."
+              />
+              <SettingsToggleField
+                id={FIELD_IDS.showFullscreenEventsPanel}
+                checked={formData.showFullscreenEventsPanel}
+                onChange={(checked) => {
+                  setFormData({
+                    ...formData,
+                    showFullscreenEventsPanel: checked,
+                  });
+                }}
+                label="Show Events in Fullscreen"
+                description="Keep a retractable Events tab in fullscreen playback."
+              />
+            </div>
+          </SettingsSection>
+
               <SettingsSection
                 title="Updates"
                 icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
@@ -941,6 +1078,23 @@ export function Settings({
                 label="Enable auto updates"
                 description="Check for beta updates on launch and install them automatically."
               />
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void handleCheckForUpdate();
+                  }}
+                  disabled={isCheckingForUpdate}
+                >
+                  {isCheckingForUpdate ? "Checking..." : "Check for Updates"}
+                </Button>
+                {updateCheckStatus && (
+                  <p className="text-xs text-neutral-400" role="status" aria-live="polite">
+                    {updateCheckStatus}
+                  </p>
+                )}
+              </div>
             </div>
           </SettingsSection>
 

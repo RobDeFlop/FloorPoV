@@ -2,6 +2,10 @@ import { Clapperboard } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { MEDIA_SECTION_RESIZE_DELTA } from "../../types/settings";
 import { PageHeader } from "./PageHeader";
+import { useVideo } from "../../contexts/VideoContext";
+import { CompareVideoPlayer } from "../playback/CompareVideoPlayer";
+import { ExportAnalysisReportButton } from "../playback/ExportAnalysisReportButton";
+import { PlaybackEventList } from "../events/PlaybackEventList";
 import { VideoPlayer } from "../playback/VideoPlayer";
 import { RecordingsList } from "../playback/RecordingsList";
 
@@ -9,6 +13,7 @@ const EMPTY_RECORDINGS_MESSAGE =
   "Start a recording by beginning a raid encounter, a Mythic+ run, or a PvP session. Your recordings will appear here.";
 
 export function HomePage() {
+  const { loadedFilePath, isCompareMode } = useVideo();
   const [isResizingMedia, setIsResizingMedia] = useState(false);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [mediaSectionHeight, setMediaSectionHeight] = useState(() =>
@@ -99,16 +104,18 @@ export function HomePage() {
       <PageHeader
         icon={Clapperboard}
         title="Home"
+        action={loadedFilePath && !isCompareMode && <ExportAnalysisReportButton recordingPath={loadedFilePath} />}
         description="Review recent recordings and continue where you left off."
       />
 
       <section
-        className="flex w-full shrink-0 flex-col overflow-hidden"
+        className="flex w-full shrink-0 overflow-hidden"
         style={{ height: mediaSectionHeight }}
       >
         <main className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-neutral-950/70">
-          <VideoPlayer emptyStateMessage="Select a recording to start playback." />
+          {isCompareMode ? <CompareVideoPlayer /> : <VideoPlayer />}
         </main>
+        {loadedFilePath && !isCompareMode && <PlaybackEventList />}
       </section>
 
       <div
@@ -133,7 +140,6 @@ export function HomePage() {
         title="Recent recordings"
         description="Your latest sessions across Mythic+, raid, and PvP."
         autoLoadLatest
-        showManagementActions={false}
         emptyMessage={EMPTY_RECORDINGS_MESSAGE}
       />
     </div>

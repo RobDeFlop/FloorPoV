@@ -43,6 +43,7 @@ export interface RecordingCommandSettings {
   capture_window_hwnd: string;
   capture_window_title: string;
   enable_system_audio: boolean;
+  audio_capture_mode: string;
   enable_recording_diagnostics: boolean;
 }
 

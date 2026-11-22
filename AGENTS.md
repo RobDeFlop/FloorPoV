@@ -60,9 +60,12 @@ cargo fmt
 
 ### Tests
 
-No JS/TS test framework is configured in the repo right now.
+Frontend unit tests use the built-in Bun test runner. Put `*.test.ts` next to the module under test. `tsc --noEmit` excludes those files so `bun:test` types stay out of the app compile.
 
-If you add a test framework, document setup and commands in this file and in `package.json` scripts.
+```bash
+bun test
+bun test src/utils/auto-record-policy.test.ts
+```
 
 Rust tests:
 
@@ -72,6 +75,18 @@ cargo test
 cargo test <pattern>
 cargo test --lib
 ```
+
+## Shipping app updates
+
+After squash-merging an app PR into `main`, ship it through GitHub Releases so the installed app can update itself. Skip docs-only PRs.
+
+1. Include a version bump in that PR (or a follow-up `chore/release-*` PR) in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
+2. After merge, tag `v<version>` from `main` or run `gh workflow run Release -f tag_name=v<version>`.
+3. Wait until the Release workflow uploads `latest.json`. Do not local-install NSIS.
+
+Local NSIS reinstall is only when the updater pubkey or signing key changes, because the already-installed app cannot verify a new key. The 0.1.9-beta pubkey cutover needs one signed NSIS install; later versions update in-app.
+
+Keep `enableAutoUpdate` on. Never point the updater at the official FloorPoV releases.
 
 ## Code Style
 

@@ -8,6 +8,10 @@ use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::recording::metadata::{
+    normalize_manual_marker_name, update_manual_marker_name_in_sidecar,
+};
+
 use super::metadata::{persist_recording_metadata_snapshot, RecordingMetadataAccumulator};
 use super::parse::{extract_combat_trigger_event, extract_log_timestamp, LogTimestamp};
 use super::{
@@ -44,43 +48,57 @@ pub async fn start_combat_watch(
         return Ok(());
     }
 
+    let wow_folder_path = Path::new(&wow_folder);
+    if !wow_folder_is_valid(wow_folder_path) {
+        return Err(format!(
+            "WoW folder is invalid: '{wow_folder}'. Select the retail client folder or its Logs directory."
+        ));
+    }
+
     let logs_directory = build_combat_log_directory_path(&wow_folder);
-    let log_path = find_latest_combat_log_path(&wow_folder)?.ok_or_else(|| {
+    std::fs::create_dir_all(&logs_directory).map_err(|error| {
         format!(
-            "WoW combat log file not found at '{}'. Expected a file like '{}'.",
-            wow_folder,
-            logs_directory.join("WoWCombatLog*.txt").to_string_lossy()
+            "Failed to prepare combat log directory '{}': {error}",
+            logs_directory.display()
         )
     })?;
 
-    let initial_offset = std::fs::metadata(&log_path)
-        .map_err(|error| error.to_string())?
-        .len();
+    let log_path = find_latest_combat_log_path(&wow_folder)?;
+    let initial_offset = match &log_path {
+        Some(path) => std::fs::metadata(path)
+            .map_err(|error| error.to_string())?
+            .len(),
+        None => 0,
+    };
 
     let app_handle_clone = app_handle.clone();
     let logs_directory_clone = logs_directory.clone();
     let log_path_clone = log_path.clone();
     let start_time = Instant::now();
     let metadata_accumulator = Arc::new(Mutex::new(RecordingMetadataAccumulator::default()));
-    if let Err(error) = seed_metadata_context_from_log_tail(&log_path, &metadata_accumulator) {
-        emit_combat_watch_status(
-            &app_handle,
-            "warn",
-            &format!("Combat context seed failed: {error}"),
-            Some(&log_path),
-        );
-    } else {
-        let seeded_zone = metadata_accumulator
-            .lock()
-            .ok()
-            .and_then(|accumulator| accumulator.current_context_zone_name());
-        if let Some(zone_name) = seeded_zone {
+    if let Some(existing_log_path) = &log_path {
+        if let Err(error) =
+            seed_metadata_context_from_log_tail(existing_log_path, &metadata_accumulator)
+        {
             emit_combat_watch_status(
                 &app_handle,
-                "info",
-                &format!("Context seeded: {zone_name}"),
-                Some(&log_path),
+                "warn",
+                &format!("Combat context seed failed: {error}"),
+                Some(existing_log_path),
             );
+        } else {
+            let seeded_zone = metadata_accumulator
+                .lock()
+                .ok()
+                .and_then(|accumulator| accumulator.current_context_zone_name());
+            if let Some(zone_name) = seeded_zone {
+                emit_combat_watch_status(
+                    &app_handle,
+                    "info",
+                    &format!("Context seeded: {zone_name}"),
+                    Some(existing_log_path),
+                );
+            }
         }
     }
     let metadata_accumulator_clone = Arc::clone(&metadata_accumulator);
@@ -113,12 +131,21 @@ pub async fn start_combat_watch(
         }
     }
 
-    emit_combat_watch_status(
-        &app_handle,
-        "info",
-        "Combatlog watcher active!",
-        Some(&log_path),
-    );
+    if let Some(existing_log_path) = &log_path {
+        emit_combat_watch_status(
+            &app_handle,
+            "info",
+            "Combatlog watcher active!",
+            Some(existing_log_path),
+        );
+    } else {
+        emit_combat_watch_status(
+            &app_handle,
+            "info",
+            "Combatlog watcher waiting for WoWCombatLog*.txt",
+            None,
+        );
+    }
 
     Ok(())
 }
@@ -245,14 +272,7 @@ fn persist_watch_metadata_if_configured(watch_state: &WatchState) {
 
 #[tauri::command]
 pub fn validate_wow_folder(path: String) -> bool {
-    if path.trim().is_empty() {
-        return false;
-    }
-
-    match find_latest_combat_log_path(&path) {
-        Ok(log_path) => log_path.is_some(),
-        Err(_) => false,
-    }
+    wow_folder_is_valid(Path::new(path.trim()))
 }
 
 #[tauri::command]
@@ -290,14 +310,93 @@ pub async fn emit_manual_marker(app_handle: AppHandle) -> Result<(), String> {
                 event_type: EVENT_MANUAL_MARKER.to_string(),
                 source: None,
                 target: None,
+                extra_spell_name: None,
+                amount: None,
+                ability_name: None,
+                name: None,
             };
             emit_combat_event(&app_handle, &event);
+            persist_watch_metadata_if_configured(watch_state);
         }
 
         return Ok(());
     }
 
     Err("Combat watch not running".to_string())
+}
+
+/// Names the manual marker at `timestamp_seconds`, or clears the name when `name` is absent.
+///
+/// A marker from the session that is still recording lives in the accumulator, which owns the
+/// sidecar while the watch runs. Markers from an older recording are edited in the sidecar
+/// directly, so `file_path` is required for that case.
+#[tauri::command]
+pub fn update_manual_marker_name(
+    file_path: Option<String>,
+    timestamp_seconds: f64,
+    occurrence: Option<u32>,
+    name: Option<String>,
+) -> Result<(), String> {
+    let normalized_name = normalize_manual_marker_name(name);
+    let occurrence = occurrence.unwrap_or(0) as usize;
+
+    if update_live_manual_marker_name(timestamp_seconds, occurrence, normalized_name.clone())? {
+        return Ok(());
+    }
+
+    let recording_path = file_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Recording path is required to name a marker".to_string())?;
+
+    update_manual_marker_name_in_sidecar(
+        Path::new(recording_path),
+        timestamp_seconds,
+        occurrence,
+        normalized_name,
+    )
+}
+
+fn update_live_manual_marker_name(
+    timestamp_seconds: f64,
+    occurrence: usize,
+    name: Option<String>,
+) -> Result<bool, String> {
+    let state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
+    let Some(watch_state) = state.as_ref() else {
+        return Ok(false);
+    };
+
+    let marker_was_named = {
+        let mut metadata_accumulator = watch_state
+            .metadata_accumulator
+            .lock()
+            .map_err(|error| error.to_string())?;
+        if !metadata_accumulator.is_recording_session_active() {
+            return Ok(false);
+        }
+
+        metadata_accumulator.set_manual_marker_name(timestamp_seconds, occurrence, name)
+    };
+
+    if !marker_was_named {
+        return Ok(false);
+    }
+
+    if let Some(recording_output_path) = watch_state.recording_output_path.as_deref() {
+        persist_recording_metadata_snapshot(
+            recording_output_path,
+            &watch_state.metadata_accumulator,
+        )?;
+    } else {
+        tracing::warn!(
+            timestamp_seconds,
+            "Named a live manual marker with no recording output path, name is not persisted yet"
+        );
+    }
+
+    Ok(true)
 }
 
 fn emit_combat_event(app_handle: &AppHandle, event: &CombatEvent) {
@@ -337,10 +436,40 @@ fn emit_combat_watch_status(
     }
 }
 
+fn directory_name_eq(path: &Path, expected: &str) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| value.eq_ignore_ascii_case(expected))
+        .unwrap_or(false)
+}
+
+fn wow_folder_is_valid(path: &Path) -> bool {
+    if path.as_os_str().is_empty() || !path.is_dir() {
+        return false;
+    }
+
+    if directory_name_eq(path, "Logs") {
+        return true;
+    }
+
+    const WOW_CLIENT_DIRECTORY_NAMES: &[&str] =
+        &["_retail_", "_classic_", "_classic_era_", "_ptr_", "_beta_"];
+    if WOW_CLIENT_DIRECTORY_NAMES
+        .iter()
+        .any(|name| directory_name_eq(path, name))
+    {
+        return true;
+    }
+
+    path.join("Wow.exe").is_file()
+        || path.join("WowClassic.exe").is_file()
+        || path.join("Logs").is_dir()
+}
+
 async fn watch_combat_log(
     app_handle: AppHandle,
     logs_directory: PathBuf,
-    initial_log_path: PathBuf,
+    initial_log_path: Option<PathBuf>,
     initial_offset: u64,
     start_time: Instant,
     metadata_accumulator: Arc<Mutex<RecordingMetadataAccumulator>>,
@@ -370,26 +499,26 @@ async fn watch_combat_log(
 
                 if let Some(latest_log_path) = find_latest_combat_log_in_directory(&logs_directory)?
                 {
-                    if latest_log_path != current_log_path {
-                        current_log_path = latest_log_path.clone();
-                        file_offset = 0;
-                        // emit_combat_watch_status(
-                        //     &app_handle,
-                        //     "info",
-                        //     "Switched watched combat log file",
-                        //     Some(&latest_log_path),
-                        // );
-                    }
+                    apply_latest_combat_log_path(
+                        &app_handle,
+                        &mut current_log_path,
+                        &mut file_offset,
+                        latest_log_path,
+                        start_time,
+                        &metadata_accumulator,
+                    )?;
                 }
 
-                if let Err(error) = read_and_emit_new_events(
-                    &app_handle,
-                    &current_log_path,
-                    &mut file_offset,
-                    start_time,
-                    &metadata_accumulator,
-                ) {
-                    tracing::warn!("Failed to parse combat log update: {error}");
+                if let Some(log_path) = current_log_path.as_ref() {
+                    if let Err(error) = read_and_emit_new_events(
+                        &app_handle,
+                        log_path,
+                        &mut file_offset,
+                        start_time,
+                        &metadata_accumulator,
+                    ) {
+                        tracing::warn!("Failed to parse combat log update: {error}");
+                    }
                 }
             }
             Err(error) => {
@@ -398,6 +527,62 @@ async fn watch_combat_log(
         }
     }
 
+    Ok(())
+}
+
+fn apply_latest_combat_log_path(
+    app_handle: &AppHandle,
+    current_log_path: &mut Option<PathBuf>,
+    file_offset: &mut u64,
+    latest_log_path: PathBuf,
+    start_time: Instant,
+    metadata_accumulator: &Arc<Mutex<RecordingMetadataAccumulator>>,
+) -> Result<(), String> {
+    let switched = match current_log_path.as_ref() {
+        None => true,
+        Some(current) => current != &latest_log_path,
+    };
+    if !switched {
+        return Ok(());
+    }
+
+    if let Some(old_log_path) = current_log_path.as_ref() {
+        if let Err(error) = read_and_emit_new_events(
+            app_handle,
+            old_log_path,
+            file_offset,
+            start_time,
+            metadata_accumulator,
+        ) {
+            tracing::warn!(
+                old_log = %old_log_path.display(),
+                "Failed to drain combat log before switching files: {error}"
+            );
+        }
+
+        let abandoned_end = {
+            let mut accumulator = metadata_accumulator
+                .lock()
+                .map_err(|error| error.to_string())?;
+            accumulator.take_abandoned_auto_session_end_trigger()
+        };
+        if let Some(trigger_event) = abandoned_end {
+            tracing::info!(
+                mode = %trigger_event.mode,
+                "Combat log rotated while an auto session was still active; emitting end trigger"
+            );
+            emit_combat_trigger_event(app_handle, &trigger_event);
+        }
+    }
+
+    *current_log_path = Some(latest_log_path.clone());
+    *file_offset = 0;
+    emit_combat_watch_status(
+        app_handle,
+        "info",
+        "Combatlog watcher active!",
+        Some(&latest_log_path),
+    );
     Ok(())
 }
 
@@ -475,4 +660,57 @@ fn read_and_emit_new_events(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{find_latest_combat_log_in_directory, wow_folder_is_valid};
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        let directory = std::env::temp_dir().join(format!("floorpov-{label}-{unique}"));
+        fs::create_dir_all(&directory).expect("temp directory");
+        directory
+    }
+
+    #[test]
+    fn accepts_retail_folder_without_combat_log() {
+        let root = temp_dir("retail");
+        let retail = root.join("_retail_");
+        fs::create_dir(&retail).expect("retail directory");
+
+        assert!(wow_folder_is_valid(&retail));
+        assert_eq!(
+            find_latest_combat_log_in_directory(&retail.join("Logs")).unwrap(),
+            None
+        );
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn accepts_logs_folder_without_combat_log() {
+        let root = temp_dir("logs");
+        let logs = root.join("Logs");
+        fs::create_dir(&logs).expect("logs directory");
+
+        assert!(wow_folder_is_valid(&logs));
+        assert_eq!(find_latest_combat_log_in_directory(&logs).unwrap(), None);
+
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn rejects_empty_or_missing_folder() {
+        assert!(!wow_folder_is_valid(std::path::Path::new("")));
+        let missing = std::env::temp_dir().join("floorpov-missing-wow-folder");
+        let _ = fs::remove_dir_all(&missing);
+        assert!(!wow_folder_is_valid(&missing));
+    }
 }

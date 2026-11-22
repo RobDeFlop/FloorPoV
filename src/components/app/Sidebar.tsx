@@ -332,7 +332,11 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           >
             <span className="inline-flex items-start gap-1.5">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-300" aria-hidden="true" />
-              <span>Recording failed. Try again: {lastError}</span>
+              <span>
+                {isRecording
+                  ? `Could not stop recording: ${lastError}`
+                  : `Recording failed. Try again: ${lastError}`}
+              </span>
             </span>
           </p>
         )}
