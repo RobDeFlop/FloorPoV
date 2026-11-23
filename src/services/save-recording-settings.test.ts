@@ -8,18 +8,21 @@ test("keeps the saved folder on playback failure and grants access on retry", as
     set: async () => { steps.push("set"); },
     save: async () => { steps.push("save"); },
   };
-  const allowPlayback = async (folder: string) => {
-    steps.push(`allow ${folder}`);
-    if (folder === "unavailable") throw new Error("Access denied");
-  };
-  for (const [outputFolder, result] of [
-    ["unavailable", SettingsSaveResult.PlaybackUnavailable],
-    ["accessible", SettingsSaveResult.Saved],
-  ] as const) {
-    expect(await saveRecordingSettings(store, { ...DEFAULT_SETTINGS, outputFolder }, true, allowPlayback))
-      .toBe(result);
-  }
-  expect(steps).toEqual(["set", "save", "allow unavailable", "set", "save", "allow accessible"]);
+  const originalSettings = { ...DEFAULT_SETTINGS, outputFolder: "C:/Recordings" };
+  const retrySettings = { ...originalSettings, outputFolder: "D:/Videos" };
+  const allowPlayback = mock(async (_folder: string) => { steps.push("allow"); })
+    .mockImplementationOnce(async () => {
+      steps.push("allow");
+      throw new Error("Access denied");
+    });
+
+  expect(await saveRecordingSettings(store, originalSettings, true, allowPlayback))
+    .toBe(SettingsSaveResult.PlaybackUnavailable);
+  expect(await saveRecordingSettings(store, retrySettings, true, allowPlayback))
+    .toBe(SettingsSaveResult.Saved);
+
+  expect(allowPlayback.mock.calls).toEqual([[originalSettings.outputFolder], [retrySettings.outputFolder]]);
+  expect(steps).toEqual(["set", "save", "allow", "set", "save", "allow"]);
 });
 
 test("does not attempt playback access if saving fails", async () => {
