@@ -940,9 +940,6 @@ export function VideoPlayer() {
               <span className="text-xs font-mono text-white">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <span className="hidden text-[10px] uppercase tracking-[0.12em] text-neutral-500 sm:inline">
-                Space play/pause · J/L ±10s
-              </span>
             </div>
 
             <div
