@@ -53,8 +53,3 @@ export function captureVideoFrameDataUrl(video: HTMLVideoElement): string {
     throw new Error("Could not read the current video frame.");
   }
 }
-
-export function screenshotFileNameFromPath(savedPath: string): string {
-  const normalizedPath = savedPath.replace(/\\/g, "/");
-  return normalizedPath.split("/").pop() || savedPath;
-}
