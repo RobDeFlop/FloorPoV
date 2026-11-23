@@ -1,15 +1,16 @@
 import { KeyCode } from "../types/key-code";
 
-export type PlaybackShortcutAction =
-  | "toggle-play"
-  | "seek-back"
-  | "seek-forward"
-  | "seek-back-fine"
-  | "seek-forward-fine"
-  | "seek-back-coarse"
-  | "seek-forward-coarse"
-  | "seek-start"
-  | "seek-end";
+export enum PlaybackShortcutAction {
+  TogglePlay = "toggle-play",
+  SeekBack = "seek-back",
+  SeekForward = "seek-forward",
+  SeekBackFine = "seek-back-fine",
+  SeekForwardFine = "seek-forward-fine",
+  SeekBackCoarse = "seek-back-coarse",
+  SeekForwardCoarse = "seek-forward-coarse",
+  SeekStart = "seek-start",
+  SeekEnd = "seek-end",
+}
 
 interface PlaybackShortcutEvent {
   key: string;
@@ -92,11 +93,11 @@ export function resolvePlaybackShortcut(
   }
 
   if (event.key.toLowerCase() === KeyCode.J) {
-    return "seek-back";
+    return PlaybackShortcutAction.SeekBack;
   }
 
   if (event.key.toLowerCase() === KeyCode.L) {
-    return "seek-forward";
+    return PlaybackShortcutAction.SeekForward;
   }
 
   if (!context.isPlayerFocused) {
@@ -104,24 +105,24 @@ export function resolvePlaybackShortcut(
   }
 
   if (event.key === KeyCode.ArrowLeft) {
-    return event.shiftKey ? "seek-back-coarse" : "seek-back-fine";
+    return event.shiftKey ? PlaybackShortcutAction.SeekBackCoarse : PlaybackShortcutAction.SeekBackFine;
   }
 
   if (event.key === KeyCode.ArrowRight) {
-    return event.shiftKey ? "seek-forward-coarse" : "seek-forward-fine";
+    return event.shiftKey ? PlaybackShortcutAction.SeekForwardCoarse : PlaybackShortcutAction.SeekForwardFine;
   }
 
   if (event.key === KeyCode.Home) {
-    return "seek-start";
+    return PlaybackShortcutAction.SeekStart;
   }
 
   if (event.key === KeyCode.End) {
-    return "seek-end";
+    return PlaybackShortcutAction.SeekEnd;
   }
 
   if (event.key !== KeyCode.Space || event.repeat) {
     return null;
   }
 
-  return "toggle-play";
+  return PlaybackShortcutAction.TogglePlay;
 }

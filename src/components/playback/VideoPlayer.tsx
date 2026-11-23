@@ -43,6 +43,7 @@ import {
   documentHasOpenModalDialog,
   isEditableKeyboardTarget,
   isPlayerKeyboardFocus,
+  PlaybackShortcutAction,
   resolvePlaybackShortcut,
 } from "../../utils/playback-shortcuts";
 import { smoothTransition } from "../../lib/motion";
@@ -514,28 +515,28 @@ export function VideoPlayer() {
 
       event.preventDefault();
 
-      if (action === "toggle-play") {
+      if (action === PlaybackShortcutAction.TogglePlay) {
         togglePlay();
         return;
       }
 
-      if (action === "seek-start") {
+      if (action === PlaybackShortcutAction.SeekStart) {
         seek(0);
         return;
       }
 
-      if (action === "seek-end") {
+      if (action === PlaybackShortcutAction.SeekEnd) {
         seek(duration);
         return;
       }
 
       const seekDeltaSeconds = {
-        "seek-back": -SKIP_SEEK_SECONDS,
-        "seek-forward": SKIP_SEEK_SECONDS,
-        "seek-back-fine": -FINE_SEEK_SECONDS,
-        "seek-forward-fine": FINE_SEEK_SECONDS,
-        "seek-back-coarse": -COARSE_SEEK_SECONDS,
-        "seek-forward-coarse": COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBack]: -SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForward]: SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackFine]: -FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardFine]: FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackCoarse]: -COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardCoarse]: COARSE_SEEK_SECONDS,
       }[action];
 
       skipPlaybackBySeconds(seekDeltaSeconds);
