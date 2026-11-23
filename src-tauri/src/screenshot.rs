@@ -16,23 +16,43 @@ const MAX_SCREENSHOT_BYTES: usize = 25 * 1024 * 1024;
 const DEFAULT_STEM: &str = "screenshot";
 
 #[tauri::command]
-pub fn save_playback_screenshot(
+pub async fn save_playback_screenshot(
     app_handle: AppHandle,
     output_folder: String,
     recording_path: String,
     timestamp_seconds: f64,
     file_stem: Option<String>,
 ) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        save_playback_frame(
+            &app_handle,
+            &output_folder,
+            &recording_path,
+            timestamp_seconds,
+            file_stem.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| format!("Screenshot task failed: {error}"))?
+}
+
+fn save_playback_frame(
+    app_handle: &AppHandle,
+    output_folder: &str,
+    recording_path: &str,
+    timestamp_seconds: f64,
+    file_stem: Option<&str>,
+) -> Result<String, String> {
     let recording_file = PathBuf::from(recording_path.trim());
     validate_recording_path(&recording_file)?;
     validate_timestamp(timestamp_seconds)?;
 
-    let screenshots_dir = screenshots_dir(&output_folder)?;
+    let screenshots_dir = screenshots_dir(output_folder)?;
     std::fs::create_dir_all(&screenshots_dir)
         .map_err(|error| format!("Could not create the screenshots folder: {error}"))?;
 
     let clock_stamp = chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string();
-    let stem = sanitize_screenshot_stem(file_stem.as_deref().unwrap_or(DEFAULT_STEM));
+    let stem = sanitize_screenshot_stem(file_stem.unwrap_or(DEFAULT_STEM));
     let file_name = format!("{stem}_{clock_stamp}.png");
     if Path::new(&file_name).components().count() != 1 {
         return Err("Invalid screenshot file name.".to_string());
@@ -43,7 +63,7 @@ pub fn save_playback_screenshot(
         return Err("Screenshot path escaped the screenshots folder.".to_string());
     }
 
-    let ffmpeg_binary_path = resolve_ffmpeg_binary_path(&app_handle)?;
+    let ffmpeg_binary_path = resolve_ffmpeg_binary_path(app_handle)?;
     extract_frame_with_ffmpeg(
         &ffmpeg_binary_path,
         &recording_file,

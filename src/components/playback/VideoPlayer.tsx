@@ -34,10 +34,7 @@ import { EVENT_SEEK_OFFSET_SECONDS, isVideoSeekBarEvent, type GameEvent } from "
 import { getErrorMessage } from "../../services/tauri";
 import { formatTime } from "../../utils/format";
 import { saveRecordingNote } from "../../utils/recording-notes";
-import {
-  screenshotFileNameFromPath,
-  screenshotFileStemFromPath,
-} from "../../utils/playback-screenshot";
+import { screenshotFileStemFromPath } from "../../utils/playback-screenshot";
 import {
   documentHasOpenModalDialog,
   isEditableKeyboardTarget,
@@ -291,7 +288,7 @@ export function VideoPlayer() {
       });
       setScreenshotNotice({
         kind: "success",
-        message: `Saved ${screenshotFileNameFromPath(savedPath)}`,
+        message: `Saved to ${savedPath}`,
       });
     } catch (error) {
       setScreenshotNotice({
@@ -933,7 +930,7 @@ export function VideoPlayer() {
           ) : (
             <Camera className="mt-0.5 h-4 w-4 shrink-0" />
           )}
-          <p className="min-w-0 flex-1 text-xs leading-5">{screenshotNotice.message}</p>
+          <p className="min-w-0 flex-1 break-all text-xs leading-5">{screenshotNotice.message}</p>
           {screenshotNotice.kind === "error" && (
             <button
               type="button"
