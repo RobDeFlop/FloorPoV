@@ -117,6 +117,10 @@ The GitHub release workflow builds the Windows NSIS installer and updater artifa
 
 Bug reports, feature requests, and pull requests are welcome. Please check the [open issues](https://github.com/RobDeFlop/FloorPoV/issues) before starting work and follow the repository's [contribution guide](CONTRIBUTING.md) and [coding guidelines](docs/coding-guidelines.md).
 
+## Credits
+
+[@MarcosLorejan](https://github.com/MarcosLorejan) developed improvements to recording, playback and analyzing features in [his FloorPoV fork](https://github.com/MarcosLorejan/FloorPoV/tree/b14735ffced226151bc3c08aad14048e990593a6). [PR #15](https://github.com/RobDeFlop/FloorPoV/pull/15/commits) lists his original commits. [PR #17](https://github.com/RobDeFlop/FloorPoV/pull/17) integrated that work into FloorPoV for version 0.2.0.
+
 ## License
 
 FloorPoV is licensed under the [GNU General Public License v3.0](LICENSE).
