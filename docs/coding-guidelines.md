@@ -23,6 +23,8 @@ Before finishing a copy change, read the surrounding text as a whole and check t
 
 ## TypeScript and React Naming
 
+Use an enum for operation outcomes shared across modules. Compare enum members rather than string literals.
+
 Prefer:
 
 - `unsubscribe` instead of `fn`

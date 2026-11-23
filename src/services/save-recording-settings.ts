@@ -2,7 +2,10 @@ import type { Store } from "@tauri-apps/plugin-store";
 import type { RecordingSettings } from "../types/settings";
 import { allowRecordingsFolderForPlayback } from "../utils/recording-playback";
 
-export type SettingsSaveResult = "saved" | "playback-unavailable";
+export enum SettingsSaveResult {
+  Saved = "saved",
+  PlaybackUnavailable = "playback-unavailable",
+}
 
 export async function saveRecordingSettings(
   store: Pick<Store, "set" | "save">,
@@ -18,9 +21,9 @@ export async function saveRecordingSettings(
       await allowPlayback(settings.outputFolder);
     } catch (error) {
       console.error("Failed to allow saved recordings folder for playback:", error);
-      return "playback-unavailable";
+      return SettingsSaveResult.PlaybackUnavailable;
     }
   }
 
-  return "saved";
+  return SettingsSaveResult.Saved;
 }

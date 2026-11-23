@@ -22,6 +22,7 @@ import {
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { installAvailableAppUpdate } from "../../services/app-updater";
+import { SettingsSaveResult } from "../../services/save-recording-settings";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { FormField } from "../ui/FormField";
@@ -434,7 +435,7 @@ export function Settings({
     try {
       const result = await updateSettings(formData);
       setHasChanges(false);
-      if (result === "playback-unavailable") {
+      if (result === SettingsSaveResult.PlaybackUnavailable) {
         if (navigationRequest) {
           setIsLeaveDialogOpen(false);
           onNavigationHandled();
@@ -1166,8 +1167,7 @@ export function Settings({
               <span role="alert" className="text-xs text-rose-300">{saveError}</span>
             ) : playbackUnavailable ? (
               <span role="alert" className="text-xs text-amber-200">
-                The output folder was saved, but playback access failed.
-                Retry or choose another folder.
+                FloorPoV could not access the folder.
               </span>
             ) : (
               <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
@@ -1187,7 +1187,7 @@ export function Settings({
                 onClick={() => void handleSave()}
                 disabled={!hasChanges && !playbackUnavailable}
               >
-                {playbackUnavailable && !hasChanges ? "Retry playback access" : "Save changes"}
+                {playbackUnavailable && !hasChanges ? "Retry" : "Save changes"}
               </Button>
             </div>
           </div>

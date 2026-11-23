@@ -4,7 +4,7 @@ import { Store } from '@tauri-apps/plugin-store';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { allowRecordingsFolderForPlayback } from '../utils/recording-playback';
 import { applyAppTheme, normalizeAppTheme, persistAppTheme } from '../utils/theme';
-import { saveRecordingSettings, type SettingsSaveResult } from "../services/save-recording-settings";
+import { saveRecordingSettings, SettingsSaveResult } from "../services/save-recording-settings";
 
 interface SettingsContextType {
   playbackUnavailable: boolean;
@@ -184,7 +184,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         playbackUnavailable || settings.outputFolder !== nextSettings.outputFolder,
       );
       setSettings(nextSettings);
-      setPlaybackUnavailable(result === "playback-unavailable");
+      setPlaybackUnavailable(result === SettingsSaveResult.PlaybackUnavailable);
       return result;
     } catch (error) {
       console.error('Failed to save settings:', error);

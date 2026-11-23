@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { DEFAULT_SETTINGS } from "../types/settings";
-import { saveRecordingSettings } from "./save-recording-settings";
+import { saveRecordingSettings, SettingsSaveResult } from "./save-recording-settings";
 
 test("keeps the saved folder on playback failure and grants access on retry", async () => {
   const steps: string[] = [];
@@ -13,9 +13,9 @@ test("keeps the saved folder on playback failure and grants access on retry", as
     if (folder === "unavailable") throw new Error("Access denied");
   };
   for (const [outputFolder, result] of [
-    ["unavailable", "playback-unavailable"],
-    ["accessible", "saved"],
-  ]) {
+    ["unavailable", SettingsSaveResult.PlaybackUnavailable],
+    ["accessible", SettingsSaveResult.Saved],
+  ] as const) {
     expect(await saveRecordingSettings(store, { ...DEFAULT_SETTINGS, outputFolder }, true, allowPlayback))
       .toBe(result);
   }
@@ -33,6 +33,6 @@ test("does not attempt playback access if saving fails", async () => {
 test("saving unrelated settings does not request playback access", async () => {
   const store = { set: async () => {}, save: async () => {} };
   const allowPlayback = mock(async () => {});
-  expect(await saveRecordingSettings(store, DEFAULT_SETTINGS, false, allowPlayback)).toBe("saved");
+  expect(await saveRecordingSettings(store, DEFAULT_SETTINGS, false, allowPlayback)).toBe(SettingsSaveResult.Saved);
   expect(allowPlayback).not.toHaveBeenCalled();
 });
