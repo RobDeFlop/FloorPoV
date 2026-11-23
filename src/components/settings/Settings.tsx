@@ -220,7 +220,7 @@ export function Settings({
   onNavigationHandled,
   onNavigateWithoutGuard,
 }: SettingsProps) {
-  const { settings, updateSettings } = useSettings();
+  const { settings, playbackUnavailable, updateSettings } = useSettings();
   const { isRecording, isSelectedWindowAlive } = useRecording();
   const [formData, setFormData] = useState<RecordingSettings>(settings);
   const [folderSize, setFolderSize] = useState<number>(0);
@@ -296,7 +296,7 @@ export function Settings({
   }, [hasChanges, onDirtyChange]);
 
   useEffect(() => {
-    if (!navigationRequest) {
+    if (!navigationRequest || isLeaveDialogOpen) {
       return;
     }
 
@@ -306,7 +306,7 @@ export function Settings({
     }
 
     onNavigateWithoutGuard(navigationRequest);
-  }, [hasChanges, navigationRequest, onNavigateWithoutGuard]);
+  }, [hasChanges, isLeaveDialogOpen, navigationRequest, onNavigateWithoutGuard]);
 
   useEffect(() => {
     applyAppTheme(formData.appTheme, document.documentElement);
@@ -432,8 +432,15 @@ export function Settings({
     setIsSaving(true);
     setSaveError(null);
     try {
-      await updateSettings(formData);
+      const result = await updateSettings(formData);
       setHasChanges(false);
+      if (result === "playback-unavailable") {
+        if (navigationRequest) {
+          setIsLeaveDialogOpen(false);
+          onNavigationHandled();
+        }
+        return false;
+      }
       return true;
     } catch {
       setSaveError("Could not save settings. Try again.");
@@ -1155,8 +1162,13 @@ export function Settings({
 
         <div className="shrink-0 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3 pr-2">
-            {saveError && hasChanges && !isLeaveDialogOpen ? (
+            {saveError && (hasChanges || playbackUnavailable) && !isLeaveDialogOpen ? (
               <span role="alert" className="text-xs text-rose-300">{saveError}</span>
+            ) : playbackUnavailable ? (
+              <span role="alert" className="text-xs text-amber-200">
+                The output folder was saved, but playback access failed.
+                Retry or choose another folder.
+              </span>
             ) : (
               <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
                 {isSaving ? "Saving changes…" : hasChanges ? "Changes are not saved" : "All changes saved"}
@@ -1173,9 +1185,9 @@ export function Settings({
               <Button
                 variant="primary"
                 onClick={() => void handleSave()}
-                disabled={!hasChanges}
+                disabled={!hasChanges && !playbackUnavailable}
               >
-                Save changes
+                {playbackUnavailable && !hasChanges ? "Retry playback access" : "Save changes"}
               </Button>
             </div>
           </div>

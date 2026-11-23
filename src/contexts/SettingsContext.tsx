@@ -4,11 +4,13 @@ import { Store } from '@tauri-apps/plugin-store';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { allowRecordingsFolderForPlayback } from '../utils/recording-playback';
 import { applyAppTheme, normalizeAppTheme, persistAppTheme } from '../utils/theme';
+import { saveRecordingSettings, type SettingsSaveResult } from "../services/save-recording-settings";
 
 interface SettingsContextType {
+  playbackUnavailable: boolean;
   settings: RecordingSettings;
   isLoading: boolean;
-  updateSettings: (newSettings: RecordingSettings) => Promise<void>;
+  updateSettings: (newSettings: RecordingSettings) => Promise<SettingsSaveResult>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -29,6 +31,7 @@ function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null 
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
+  const [playbackUnavailable, setPlaybackUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
 
@@ -175,17 +178,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      if (settings.outputFolder !== nextSettings.outputFolder) {
-        try {
-          await allowRecordingsFolderForPlayback(nextSettings.outputFolder);
-        } catch (error) {
-          console.error('Failed to allow recordings folder for playback:', error);
-        }
-      }
-
-      await store.set('recording-settings', nextSettings);
-      await store.save();
+      const result = await saveRecordingSettings(
+        store,
+        nextSettings,
+        playbackUnavailable || settings.outputFolder !== nextSettings.outputFolder,
+      );
       setSettings(nextSettings);
+      setPlaybackUnavailable(result === "playback-unavailable");
+      return result;
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;
@@ -193,7 +193,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SettingsContext.Provider value={{ settings, isLoading, updateSettings }}>
+    <SettingsContext.Provider value={{ settings, isLoading, playbackUnavailable, updateSettings }}>
       {children}
     </SettingsContext.Provider>
   );
