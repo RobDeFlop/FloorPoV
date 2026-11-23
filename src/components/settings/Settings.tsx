@@ -104,7 +104,6 @@ const FIELD_IDS = {
   enableAutoRecording: "settings-enable-auto-recording",
   minAutoRaidRecordingSeconds: "settings-min-auto-raid-recording-seconds",
   enableAutoUpdate: "settings-enable-auto-update",
-  startMinimized: "settings-start-minimized",
   showFullscreenEventsPanel: "settings-show-fullscreen-events-panel",
   appTheme: "settings-app-theme",
 };
@@ -1037,18 +1036,6 @@ export function Settings({
                   Dark is the default. Light retints surfaces and text across the app.
                 </p>
               </div>
-              <SettingsToggleField
-                id={FIELD_IDS.startMinimized}
-                checked={formData.startMinimized}
-                onChange={(checked) => {
-                  setFormData({
-                    ...formData,
-                    startMinimized: checked,
-                  });
-                }}
-                label="Start Minimized to Tray"
-                description="Launch in the tray. The X button hides the window; quit from the tray icon."
-              />
               <SettingsToggleField
                 id={FIELD_IDS.showFullscreenEventsPanel}
                 checked={formData.showFullscreenEventsPanel}

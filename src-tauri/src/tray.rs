@@ -74,27 +74,6 @@ pub(crate) fn request_quit(app_handle: &AppHandle) {
     app_handle.exit(0);
 }
 
-pub(crate) fn should_start_minimized(app_handle: &AppHandle) -> bool {
-    let Ok(app_data_dir) = app_handle.path().app_data_dir() else {
-        return true;
-    };
-
-    let settings_path = app_data_dir.join("settings.json");
-    let Ok(contents) = std::fs::read_to_string(&settings_path) else {
-        return true;
-    };
-
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&contents) else {
-        return true;
-    };
-
-    value
-        .get("recording-settings")
-        .and_then(|settings| settings.get("startMinimized"))
-        .and_then(|flag| flag.as_bool())
-        .unwrap_or(true)
-}
-
 pub(crate) fn install_tray(app: &App) -> Result<(), String> {
     let show_item = MenuItem::with_id(app, "show", "Show FloorPoV", true, None::<&str>)
         .map_err(|error| format!("Failed to create tray Show item: {error}"))?;
