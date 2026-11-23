@@ -14,6 +14,14 @@ Track requests and specs in GitHub Issues. Use `gh` from the repository root.
 When a skill asks to publish a spec, create an issue rather than a pull request.
 When it asks to fetch a ticket, read the issue and its comments.
 
+## After merging a pull request
+
+1. Run `gh pr view <pr> --json state,baseRefName,body` and confirm the PR is `MERGED` into the intended branch.
+2. Close only issues the PR explicitly resolves (for example, `Fixes #123`, `Closes #123`, or `Resolves #123`). Leave issues mentioned only as `Refs #123` open.
+3. For each resolved issue that is still open, run `gh issue close <issue> --reason completed --comment "Fixed in #<pr>, merged into <branch>."`. Verify that the issue is closed.
+
+Apply this checklist on release branches without waiting for `main`. GitHub's automatic issue closure only works on merges into the default branch.
+
 ## Wayfinding operations
 
 Before creating a map or child issue, run `gh label list --search 'wayfinder:'`.
