@@ -213,13 +213,8 @@ fn activate_watch(
         begin_watch_recording_session(&mut watch_state, output_path);
     }
 
-    if let Some(existing_log_path) = &log_path {
-        emit_combat_watch_status(
-            app_handle,
-            "info",
-            "Combatlog watcher active!",
-            Some(existing_log_path),
-        );
+    if log_path.is_some() {
+        emit_combat_watch_status(app_handle, "info", "Combatlog watcher active!", None);
     } else {
         emit_combat_watch_status(
             app_handle,
@@ -659,12 +654,7 @@ fn apply_latest_combat_log_path(
 
     *current_log_path = Some(latest_log_path.clone());
     *file_offset = 0;
-    emit_combat_watch_status(
-        app_handle,
-        "info",
-        "Combatlog watcher active!",
-        Some(&latest_log_path),
-    );
+    emit_combat_watch_status(app_handle, "info", "Combatlog watcher active!", None);
     Ok(())
 }
 
