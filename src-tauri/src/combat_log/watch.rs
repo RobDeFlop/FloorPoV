@@ -27,8 +27,29 @@ struct WatchState {
     metadata_accumulator: Arc<Mutex<RecordingMetadataAccumulator>>,
 }
 
-static WATCH_STATE: LazyLock<Arc<Mutex<Option<WatchState>>>> =
-    LazyLock::new(|| Arc::new(Mutex::new(None)));
+#[derive(Default)]
+struct WatchLifecycle {
+    generation: u64,
+    running: Option<WatchState>,
+}
+
+impl WatchLifecycle {
+    fn stop(&mut self) -> Option<WatchState> {
+        self.generation = self.generation.wrapping_add(1);
+        self.running.take()
+    }
+}
+
+static WATCH_STATE: LazyLock<Mutex<WatchLifecycle>> = LazyLock::new(Mutex::default);
+
+struct PreparedWatch {
+    logs_directory: PathBuf,
+    log_path: Option<PathBuf>,
+    initial_offset: u64,
+    start_time: Instant,
+    metadata_accumulator: Arc<Mutex<RecordingMetadataAccumulator>>,
+    seed_status: Option<(&'static str, String)>,
+}
 
 #[tauri::command]
 pub async fn start_combat_watch(
@@ -36,26 +57,68 @@ pub async fn start_combat_watch(
     wow_folder: String,
     recording_output_path: Option<String>,
 ) -> Result<(), String> {
-    let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
+    let generation = WATCH_STATE
+        .lock()
+        .map_err(|error| error.to_string())?
+        .generation;
+    let output_path = normalized_output_recording_path(recording_output_path.as_deref());
+    tokio::task::spawn_blocking(move || {
+        start_watch(
+            &WATCH_STATE,
+            generation,
+            || prepare_watch(&wow_folder),
+            |running| {
+                if let Some(output_path) = output_path.clone() {
+                    begin_watch_recording_session(running, output_path);
+                }
+                emit_combat_watch_status(&app_handle, "info", "Combatlog watcher active!", None);
+            },
+            |prepared| activate_watch(&app_handle, prepared, output_path.clone()),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
 
-    if let Some(watch_state) = state.as_mut() {
-        if let Some(output_path) =
-            normalized_output_recording_path(recording_output_path.as_deref())
-        {
-            begin_watch_recording_session(watch_state, output_path);
+fn start_watch<T>(
+    lifecycle: &Mutex<WatchLifecycle>,
+    generation: u64,
+    prepare: impl FnOnce() -> Result<T, String>,
+    reuse: impl FnOnce(&mut WatchState),
+    activate: impl FnOnce(T) -> WatchState,
+) -> Result<(), String> {
+    {
+        let mut state = lifecycle.lock().map_err(|error| error.to_string())?;
+        if state.generation != generation {
+            return Err("Combat watch startup was stopped".into());
         }
-        emit_combat_watch_status(&app_handle, "info", "Combatlog watcher active!", None);
-        return Ok(());
+        if let Some(running) = &mut state.running {
+            reuse(running);
+            return Ok(());
+        }
     }
+    let prepared = prepare()?;
+    let mut state = lifecycle.lock().map_err(|error| error.to_string())?;
+    if state.generation != generation {
+        return Err("Combat watch startup was stopped".into());
+    }
+    if let Some(running) = &mut state.running {
+        reuse(running);
+    } else {
+        state.running = Some(activate(prepared));
+    }
+    Ok(())
+}
 
-    let wow_folder_path = Path::new(&wow_folder);
+fn prepare_watch(wow_folder: &str) -> Result<PreparedWatch, String> {
+    let wow_folder_path = Path::new(wow_folder);
     if !wow_folder_is_valid(wow_folder_path) {
         return Err(format!(
             "WoW folder is invalid: '{wow_folder}'. Select the retail client folder or its Logs directory."
         ));
     }
 
-    let logs_directory = build_combat_log_directory_path(&wow_folder);
+    let logs_directory = build_combat_log_directory_path(wow_folder);
     std::fs::create_dir_all(&logs_directory).map_err(|error| {
         format!(
             "Failed to prepare combat log directory '{}': {error}",
@@ -63,7 +126,7 @@ pub async fn start_combat_watch(
         )
     })?;
 
-    let log_path = find_latest_combat_log_path(&wow_folder)?;
+    let log_path = find_latest_combat_log_path(wow_folder)?;
     let initial_offset = match &log_path {
         Some(path) => std::fs::metadata(path)
             .map_err(|error| error.to_string())?
@@ -71,42 +134,53 @@ pub async fn start_combat_watch(
         None => 0,
     };
 
-    let app_handle_clone = app_handle.clone();
-    let logs_directory_clone = logs_directory.clone();
-    let log_path_clone = log_path.clone();
     let start_time = Instant::now();
     let metadata_accumulator = Arc::new(Mutex::new(RecordingMetadataAccumulator::default()));
-    if let Some(existing_log_path) = &log_path {
-        if let Err(error) =
-            seed_metadata_context_from_log_tail(existing_log_path, &metadata_accumulator)
-        {
-            emit_combat_watch_status(
-                &app_handle,
-                "warn",
-                &format!("Combat context seed failed: {error}"),
-                Some(existing_log_path),
-            );
-        } else {
-            let seeded_zone = metadata_accumulator
-                .lock()
-                .ok()
-                .and_then(|accumulator| accumulator.current_context_zone_name());
-            if let Some(zone_name) = seeded_zone {
-                emit_combat_watch_status(
-                    &app_handle,
-                    "info",
-                    &format!("Context seeded: {zone_name}"),
-                    Some(existing_log_path),
-                );
+    let seed_status =
+        log_path.as_ref().and_then(|path| {
+            match seed_metadata_context_from_log_tail(path, &metadata_accumulator) {
+                Err(error) => Some(("warn", format!("Combat context seed failed: {error}"))),
+                Ok(()) => metadata_accumulator
+                    .lock()
+                    .ok()?
+                    .current_context_zone_name()
+                    .map(|name| ("info", format!("Context seeded: {name}"))),
             }
-        }
+        });
+    Ok(PreparedWatch {
+        logs_directory,
+        log_path,
+        initial_offset,
+        start_time,
+        metadata_accumulator,
+        seed_status,
+    })
+}
+
+fn activate_watch(
+    app_handle: &AppHandle,
+    prepared: PreparedWatch,
+    recording_output_path: Option<PathBuf>,
+) -> WatchState {
+    let PreparedWatch {
+        logs_directory,
+        log_path,
+        initial_offset,
+        start_time,
+        metadata_accumulator,
+        seed_status,
+    } = prepared;
+    if let Some((level, message)) = seed_status {
+        emit_combat_watch_status(app_handle, level, &message, log_path.as_deref());
     }
+    let app_handle_clone = app_handle.clone();
+    let log_path_clone = log_path.clone();
     let metadata_accumulator_clone = Arc::clone(&metadata_accumulator);
 
     let handle = tokio::spawn(async move {
         if let Err(error) = watch_combat_log(
             app_handle_clone,
-            logs_directory_clone,
+            logs_directory,
             log_path_clone,
             initial_offset,
             start_time,
@@ -118,36 +192,33 @@ pub async fn start_combat_watch(
         }
     });
 
-    *state = Some(WatchState {
+    let mut watch_state = WatchState {
         handle: Some(handle),
         start_time,
-        recording_output_path: normalized_output_recording_path(recording_output_path.as_deref()),
+        recording_output_path: None,
         metadata_accumulator,
-    });
-
-    if let Some(watch_state) = state.as_mut() {
-        if let Some(output_path) = watch_state.recording_output_path.clone() {
-            begin_watch_recording_session(watch_state, output_path);
-        }
+    };
+    if let Some(output_path) = recording_output_path {
+        begin_watch_recording_session(&mut watch_state, output_path);
     }
 
     if let Some(existing_log_path) = &log_path {
         emit_combat_watch_status(
-            &app_handle,
+            app_handle,
             "info",
             "Combatlog watcher active!",
             Some(existing_log_path),
         );
     } else {
         emit_combat_watch_status(
-            &app_handle,
+            app_handle,
             "info",
             "Combatlog watcher waiting for WoWCombatLog*.txt",
             None,
         );
     }
 
-    Ok(())
+    watch_state
 }
 
 fn normalized_output_recording_path(recording_output_path: Option<&str>) -> Option<PathBuf> {
@@ -161,7 +232,7 @@ fn normalized_output_recording_path(recording_output_path: Option<&str>) -> Opti
 pub async fn stop_combat_watch(app_handle: AppHandle) -> Result<(), String> {
     let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
 
-    if let Some(watch_state) = state.take() {
+    if let Some(watch_state) = state.stop() {
         if let Some(handle) = watch_state.handle.as_ref() {
             handle.abort();
         }
@@ -179,7 +250,7 @@ pub fn set_combat_watch_recording_output(
     recording_output_path: Option<String>,
 ) -> Result<(), String> {
     let mut state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
-    let Some(watch_state) = state.as_mut() else {
+    let Some(watch_state) = state.running.as_mut() else {
         return Err("Combat watch not running".to_string());
     };
 
@@ -279,7 +350,7 @@ pub fn validate_wow_folder(path: String) -> bool {
 pub async fn emit_manual_marker(app_handle: AppHandle) -> Result<(), String> {
     let state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
 
-    if let Some(watch_state) = state.as_ref() {
+    if let Some(watch_state) = state.running.as_ref() {
         let elapsed = watch_state.start_time.elapsed().as_secs_f64();
         let mut should_emit_event = false;
         let mut event_timestamp = elapsed;
@@ -364,7 +435,7 @@ fn update_live_manual_marker_name(
     name: Option<String>,
 ) -> Result<bool, String> {
     let state = WATCH_STATE.lock().map_err(|error| error.to_string())?;
-    let Some(watch_state) = state.as_ref() else {
+    let Some(watch_state) = state.running.as_ref() else {
         return Ok(false);
     };
 
@@ -677,6 +748,104 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("floorpov-{label}-{unique}"));
         fs::create_dir_all(&directory).expect("temp directory");
         directory
+    }
+
+    fn running_watch() -> super::WatchState {
+        super::WatchState {
+            handle: None,
+            start_time: std::time::Instant::now(),
+            recording_output_path: None,
+            metadata_accumulator: Default::default(),
+        }
+    }
+
+    #[test]
+    fn stop_invalidates_slow_preparation_without_waiting() {
+        let lifecycle = std::sync::Mutex::new(super::WatchLifecycle::default());
+        std::thread::scope(|scope| {
+            let (entered, preparing) = std::sync::mpsc::channel();
+            let (release, delayed) = std::sync::mpsc::channel();
+            let pending = scope.spawn(|| {
+                super::start_watch(
+                    &lifecycle,
+                    0,
+                    move || {
+                        entered.send(()).unwrap();
+                        delayed
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .expect("stop must not wait for storage");
+                        Ok(())
+                    },
+                    |_| panic!("stale start reused replacement"),
+                    |_| panic!("stale start activated"),
+                )
+            });
+            preparing.recv().unwrap();
+            assert!(lifecycle.lock().unwrap().stop().is_none());
+            super::start_watch(
+                &lifecycle,
+                1,
+                || Ok(()),
+                |_| unreachable!(),
+                |_| running_watch(),
+            )
+            .unwrap();
+            release.send(()).unwrap();
+            assert!(pending.join().unwrap().is_err());
+            assert!(lifecycle.lock().unwrap().running.is_some());
+        });
+    }
+
+    #[test]
+    fn directory_failure_allows_overlapping_retries_to_activate_only_once() {
+        let lifecycle = std::sync::Mutex::new(super::WatchLifecycle::default());
+        let root = temp_dir("watch-retry");
+        let retail = root.join("_retail_");
+        fs::create_dir(&retail).unwrap();
+        fs::write(retail.join("Logs"), b"not a directory").unwrap();
+        let prepare = || super::prepare_watch(retail.to_str().unwrap());
+        let error = super::start_watch(
+            &lifecycle,
+            0,
+            prepare,
+            |_| unreachable!(),
+            |_| unreachable!(),
+        )
+        .unwrap_err();
+        assert!(error.contains("Failed to prepare combat log directory"));
+        fs::remove_file(retail.join("Logs")).unwrap();
+        std::thread::scope(|scope| {
+            let (entered, preparing) = std::sync::mpsc::channel();
+            let (release, delayed) = std::sync::mpsc::channel();
+            let pending = scope.spawn(|| {
+                super::start_watch(
+                    &lifecycle,
+                    0,
+                    move || {
+                        entered.send(()).unwrap();
+                        delayed
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        prepare()
+                    },
+                    |_| (),
+                    |_| panic!("duplicate activation"),
+                )
+            });
+            preparing.recv().unwrap();
+            super::start_watch(
+                &lifecycle,
+                0,
+                prepare,
+                |_| unreachable!(),
+                |_| running_watch(),
+            )
+            .unwrap();
+            release.send(()).unwrap();
+            pending.join().unwrap().unwrap();
+        });
+        assert!(lifecycle.lock().unwrap().running.is_some());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
