@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileInput, LoaderCircle } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
 import { getErrorMessage } from "../../services/tauri";
@@ -55,7 +56,7 @@ export function ImportCombatLogControl() {
     cancelButtonRef.current?.focus();
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === KeyCode.Escape) {
         event.preventDefault();
         closeModeDialog(null);
       }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createPortal } from "react-dom";
 import { Check, ListVideo, Pencil, Trash2, X } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useMarker } from "../../contexts/MarkerContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
@@ -111,7 +112,7 @@ function ManualMarkerNameForm({
           aria-label="Marker name"
           onChange={(changeEvent) => setDraftName(changeEvent.target.value)}
           onKeyDown={(keyEvent) => {
-            if (keyEvent.key !== "Escape") {
+            if (keyEvent.key !== KeyCode.Escape) {
               return;
             }
 

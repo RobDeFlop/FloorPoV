@@ -39,6 +39,12 @@ Allowed professional abbreviations when context is clear:
 
 Avoid abbreviations that make readers guess intent.
 
+## Keyboard handlers
+
+Compare `KeyboardEvent.key` against the shared `KeyCode` enum in `src/types/key-code.ts`.
+Add new shortcut keys there. For case-insensitive letter shortcuts, compare `event.key.toLowerCase()`
+against the lowercase enum value. Keep display labels separate from event values.
+
 ## Rust Naming
 
 Prefer clear names for long-lived variables and public-facing APIs.

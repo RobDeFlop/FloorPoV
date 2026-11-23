@@ -1,5 +1,6 @@
 import { Clapperboard } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { KeyCode } from "../../types/key-code";
 import { MEDIA_SECTION_RESIZE_DELTA } from "../../types/settings";
 import { PageHeader } from "./PageHeader";
 import { useVideo } from "../../contexts/VideoContext";
@@ -87,13 +88,13 @@ export function HomePage() {
   };
 
   const handleMediaResizeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "ArrowUp") {
+    if (event.key === KeyCode.ArrowUp) {
       event.preventDefault();
       adjustMediaSectionHeight(-MEDIA_SECTION_RESIZE_DELTA);
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    if (event.key === KeyCode.ArrowDown) {
       event.preventDefault();
       adjustMediaSectionHeight(MEDIA_SECTION_RESIZE_DELTA);
     }

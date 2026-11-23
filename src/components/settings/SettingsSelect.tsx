@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
 } from "react";
+import { KeyCode } from "../../types/key-code";
 
 export interface SettingsSelectOption {
   value: string;
@@ -189,12 +190,12 @@ export function SettingsSelect({
       return;
     }
 
-    if (event.key === "Tab") {
+    if (event.key === KeyCode.Tab) {
       setIsOpen(false);
       return;
     }
 
-    if (event.key === "Escape") {
+    if (event.key === KeyCode.Escape) {
       if (isOpen) {
         event.preventDefault();
         setIsOpen(false);
@@ -202,7 +203,7 @@ export function SettingsSelect({
       return;
     }
 
-    if (event.key === "Enter" || event.key === " ") {
+    if (event.key === KeyCode.Enter || event.key === KeyCode.Space) {
       event.preventDefault();
       if (isOpen) {
         selectOption(activeIndex);
@@ -212,22 +213,22 @@ export function SettingsSelect({
       return;
     }
 
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (event.key === KeyCode.ArrowDown || event.key === KeyCode.ArrowUp) {
       event.preventDefault();
       if (!isOpen) {
         openListbox();
       } else {
-        moveActiveOption(event.key === "ArrowDown" ? 1 : -1);
+        moveActiveOption(event.key === KeyCode.ArrowDown ? 1 : -1);
       }
       return;
     }
 
-    if (event.key === "Home" || event.key === "End") {
+    if (event.key === KeyCode.Home || event.key === KeyCode.End) {
       event.preventDefault();
       if (!isOpen) {
         openListbox();
       } else {
-        setActiveIndex(event.key === "Home" ? enabledIndices[0] : enabledIndices[enabledIndices.length - 1]);
+        setActiveIndex(event.key === KeyCode.Home ? enabledIndices[0] : enabledIndices[enabledIndices.length - 1]);
       }
     }
   };

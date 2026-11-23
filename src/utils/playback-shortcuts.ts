@@ -1,3 +1,5 @@
+import { KeyCode } from "../types/key-code";
+
 export type PlaybackShortcutAction =
   | "toggle-play"
   | "seek-back"
@@ -89,11 +91,11 @@ export function resolvePlaybackShortcut(
     return null;
   }
 
-  if (event.key === "j" || event.key === "J") {
+  if (event.key.toLowerCase() === KeyCode.J) {
     return "seek-back";
   }
 
-  if (event.key === "l" || event.key === "L") {
+  if (event.key.toLowerCase() === KeyCode.L) {
     return "seek-forward";
   }
 
@@ -101,23 +103,23 @@ export function resolvePlaybackShortcut(
     return null;
   }
 
-  if (event.key === "ArrowLeft") {
+  if (event.key === KeyCode.ArrowLeft) {
     return event.shiftKey ? "seek-back-coarse" : "seek-back-fine";
   }
 
-  if (event.key === "ArrowRight") {
+  if (event.key === KeyCode.ArrowRight) {
     return event.shiftKey ? "seek-forward-coarse" : "seek-forward-fine";
   }
 
-  if (event.key === "Home") {
+  if (event.key === KeyCode.Home) {
     return "seek-start";
   }
 
-  if (event.key === "End") {
+  if (event.key === KeyCode.End) {
     return "seek-end";
   }
 
-  if (event.key !== " " || event.repeat) {
+  if (event.key !== KeyCode.Space || event.repeat) {
     return null;
   }
 
