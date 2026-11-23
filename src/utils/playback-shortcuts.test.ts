@@ -101,6 +101,7 @@ describe("resolvePlaybackShortcut", () => {
     isEditableTarget: false,
     isModalDialogOpen: false,
     isPlayerFocused: false,
+    isFullscreen: false,
   };
   const playerFocused = { ...idleContext, isPlayerFocused: true };
 
@@ -139,6 +140,12 @@ describe("resolvePlaybackShortcut", () => {
 
   test("ignores held Space so play/pause does not chatter", () => {
     expect(resolvePlaybackShortcut(shortcutEvent(" ", { repeat: true }), playerFocused)).toBe(null);
+  });
+
+  test("plain fullscreen arrows seek five seconds without Shift", () => {
+    const fullscreen = { ...playerFocused, isFullscreen: true };
+    expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), fullscreen)).toBe("seek-back-coarse");
+    expect(resolvePlaybackShortcut(shortcutEvent("ArrowRight"), fullscreen)).toBe("seek-forward-coarse");
   });
 
   test("seeks with arrows and Home/End only when the player is focused", () => {

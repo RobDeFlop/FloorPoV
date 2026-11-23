@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -56,7 +56,7 @@ const PLAYBACK_SHORTCUT_HELP_ID = "playback-shortcut-help";
 const PLAYBACK_SHORTCUTS = [
   { keys: "Space", action: "Play / pause" },
   { keys: "J / L", action: "Seek 10 seconds back / forward" },
-  { keys: "← / →", action: "Seek 1 second when the player is focused" },
+  { keys: "← / →", action: "Seek 1 second inline or 5 seconds in fullscreen" },
   { keys: "Shift + ← / →", action: "Seek 5 seconds when the player is focused" },
   { keys: "Home / End", action: "Jump to start / end when the player is focused" },
   { keys: "S", action: "Save a screenshot of the current frame" },
@@ -78,6 +78,7 @@ export function VideoPlayer() {
     toggleFullscreen,
     exitFullscreen,
     fullscreenPhase,
+    fullscreenError,
     togglePlay,
     pause,
     setVolume,
@@ -221,9 +222,23 @@ export function VideoPlayer() {
     }
   }, [addEvent, isSavingNote, loadedFilePath, noteEditorTimestamp]);
   const canShowFullscreenEvents = isImmersiveMode && showVideo && settings.showFullscreenEventsPanel;
-  const toggleImmersiveMode = () => {
+  const fullscreenTriggerRef = useRef<HTMLElement | null>(null);
+  const toggleImmersiveMode = useCallback(() => {
+    if (!isImmersiveMode && document.activeElement instanceof HTMLElement) {
+      fullscreenTriggerRef.current = document.activeElement;
+    }
     void toggleFullscreen();
-  };
+  }, [isImmersiveMode, toggleFullscreen]);
+
+  useLayoutEffect(() => {
+    if (isImmersiveMode) {
+      immersiveSurfaceRef.current?.focus({ preventScroll: true });
+    } else if (fullscreenTriggerRef.current) {
+      const trigger = fullscreenTriggerRef.current;
+      (trigger.isConnected ? trigger : immersiveSurfaceRef.current)?.focus({ preventScroll: true });
+      fullscreenTriggerRef.current = null;
+    }
+  }, [isImmersiveMode]);
   const toggleFullscreenEventsPanel = () => {
     setIsFullscreenEventsOpen((currentValue) => !currentValue);
   };
@@ -385,8 +400,28 @@ export function VideoPlayer() {
       return;
     }
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
+    const handleFullscreenKey = (event: KeyboardEvent) => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+      if (event.key === "Tab" && !event.defaultPrevented) {
+        const root = dialog ?? immersiveSurfaceRef.current;
+        if (!root) return;
+        // Tab must see the newly revealed controls before the browser moves focus.
+        if (!showControls && !dialog) flushSync(resetControlsHideTimer);
+        const controls = Array.from(
+          root.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]"),
+        ).filter((control) =>
+          control.tabIndex >= 0 && !control.matches(":disabled") && !control.closest("[inert]") &&
+          control.getClientRects().length > 0 && getComputedStyle(control).visibility === "visible"
+        );
+        const index = controls.findIndex((control) => control === document.activeElement);
+        const next = event.shiftKey
+          ? controls[index - 1] ?? controls[controls.length - 1]
+          : controls[index + 1] ?? controls[0];
+        event.preventDefault();
+        (next ?? root).focus();
+        return;
+      }
+      if (event.key !== "Escape" || dialog || event.defaultPrevented) {
         return;
       }
 
@@ -405,11 +440,11 @@ export function VideoPlayer() {
       void exitFullscreen();
     };
 
-    window.addEventListener("keydown", handleEscape);
+    window.addEventListener("keydown", handleFullscreenKey);
     return () => {
-      window.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("keydown", handleFullscreenKey);
     };
-  }, [exitFullscreen, isFullscreenEventsOpen, isImmersiveMode, isNoteEditorOpen, showShortcutHelp, showSpeedMenu]);
+  }, [showControls, resetControlsHideTimer, exitFullscreen, isFullscreenEventsOpen, isImmersiveMode, isNoteEditorOpen, showShortcutHelp, showSpeedMenu]);
 
   useEffect(() => {
     if (isImmersiveMode) {
@@ -492,7 +527,7 @@ export function VideoPlayer() {
         }
         if (event.key.toLowerCase() === "f") {
           event.preventDefault();
-          void toggleFullscreen();
+          toggleImmersiveMode();
           return;
         }
       }
@@ -500,6 +535,7 @@ export function VideoPlayer() {
       const action = resolvePlaybackShortcut(event, {
         isEditableTarget: isEditableKeyboardTarget(event.target),
         isModalDialogOpen: documentHasOpenModalDialog(),
+        isFullscreen: isImmersiveMode,
         isPlayerFocused: isPlayerKeyboardFocus(
           immersiveSurfaceRef.current,
           event.target,
@@ -544,7 +580,7 @@ export function VideoPlayer() {
     return () => {
       window.removeEventListener("keydown", handlePlaybackShortcut);
     };
-  }, [handleVolumeToggle, toggleFullscreen, capturePlaybackScreenshot, duration, openNoteEditor, seek, showVideo, skipPlaybackBySeconds, togglePlay]);
+  }, [handleVolumeToggle, isImmersiveMode, toggleImmersiveMode, capturePlaybackScreenshot, duration, openNoteEditor, seek, showVideo, skipPlaybackBySeconds, togglePlay]);
 
   useEffect(() => {
     if (!showVideo) {
@@ -918,6 +954,12 @@ export function VideoPlayer() {
         </div>
       )}
 
+      {fullscreenError && (
+        <p role="alert" className="absolute left-3 right-3 top-3 z-30 rounded-sm bg-red-950 px-3 py-2 text-xs text-red-100">
+          {fullscreenError}
+        </p>
+      )}
+
       {screenshotNotice && (
         <div
           className={
@@ -1010,6 +1052,10 @@ export function VideoPlayer() {
                   className="group relative h-2 w-20 cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                   onClick={handleVolumeClick}
                   onKeyDown={(event) => {
+                    if (isImmersiveMode && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+                      return;
+                    }
+
                     if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
                       event.preventDefault();
                       setVolume(Math.max(0, volume - 0.05));
@@ -1070,6 +1116,10 @@ export function VideoPlayer() {
               onPointerLeave={handleProgressPointerLeave}
               onKeyDown={(event) => {
                 if (duration <= 0) {
+                  return;
+                }
+
+                if (isImmersiveMode && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
                   return;
                 }
 

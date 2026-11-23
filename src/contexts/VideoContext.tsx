@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { VIDEO_LOADING_TIMEOUT_MS, VOLUME_MAX, VOLUME_MIN } from "../types/settings";
 import type { CompareSeekMode, CompareVideoSlot } from "../utils/compare-playback";
@@ -35,6 +35,7 @@ interface VideoContextType {
   setVideoLoading: (loading: boolean) => void;
   isFullscreen: boolean;
   fullscreenPhase: FullscreenPhase;
+  fullscreenError: string | null;
   toggleFullscreen: () => Promise<void>;
   exitFullscreen: () => Promise<void>;
 }
@@ -58,6 +59,8 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   const [fullscreenPhase, setFullscreenPhaseState] = useState<FullscreenPhase>("windowed");
   const fullscreenPhaseRef = useRef<FullscreenPhase>("windowed");
   const fullscreenTransitionRef = useRef<Promise<void> | null>(null);
+  const [fullscreenError, setFullscreenError] = useState<string | null>(null);
+  const needsPlacementRestoreRef = useRef(false);
   const closeAfterFullscreenExitRef = useRef(false);
   const isFullscreen = fullscreenPhase !== "windowed";
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
@@ -157,74 +160,87 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     setFullscreenPhaseState(phase);
   }, []);
 
-  const exitFullscreen = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
+  const restorePlaybackWindow = useCallback(async () => {
     try {
-      await fullscreenTransitionRef.current;
-    } catch {
-      return;
-    }
-
-    if (fullscreenPhaseRef.current !== "fullscreen") {
-      return;
-    }
-
-    setFullscreenPhase("exiting");
-    const transition = invoke<void>("exit_playback_fullscreen");
-    fullscreenTransitionRef.current = transition;
-
-    try {
-      await transition;
+      await invoke<void>("exit_playback_fullscreen");
+      needsPlacementRestoreRef.current = false;
       setFullscreenPhase("windowed");
     } catch (error) {
-      setFullscreenPhase("fullscreen");
       console.error("Fullscreen exit failed:", error);
-    } finally {
-      if (fullscreenTransitionRef.current === transition) {
-        fullscreenTransitionRef.current = null;
+      setFullscreenError("Could not restore the playback window.");
+      needsPlacementRestoreRef.current = true;
+      // Playback fullscreen uses Win32 monitor bounds, not Tauri's fullscreen flag.
+      try {
+        const appWindow = getCurrentWindow();
+        const [monitor, position, size] = await Promise.all([
+          currentMonitor(), appWindow.outerPosition(), appWindow.outerSize(),
+        ]);
+        if (!monitor) throw new Error("No current monitor");
+        const coversMonitor = (
+          position.x === monitor.position.x && position.y === monitor.position.y &&
+          size.width === monitor.size.width && size.height === monitor.size.height
+        );
+        setFullscreenPhase(coversMonitor ? "fullscreen" : "windowed");
+      } catch (queryError) {
+        console.error("Could not check playback window bounds:", queryError);
+        // Keep Exit available so the user can retry the native restore.
+        setFullscreenPhase("fullscreen");
       }
     }
   }, [setFullscreenPhase]);
 
-  const toggleFullscreen = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
+  const exitFullscreen = useCallback(async () => {
+    if (!isTauri()) return;
+    await fullscreenTransitionRef.current;
+    if (fullscreenPhaseRef.current !== "fullscreen") return;
 
-    if (fullscreenPhaseRef.current === "fullscreen") {
-      await exitFullscreen();
-      return;
-    }
-
-    if (fullscreenPhaseRef.current !== "windowed") {
-      return;
-    }
-
-    setFullscreenPhase("entering");
-    const transition = invoke<void>("enter_playback_fullscreen");
+    setFullscreenError(null);
+    setFullscreenPhase("exiting");
+    const transition = restorePlaybackWindow();
     fullscreenTransitionRef.current = transition;
-
     try {
       await transition;
-      setFullscreenPhase("fullscreen");
-    } catch (error) {
-      console.error("Fullscreen entry failed:", error);
-      try {
-        await invoke<void>("exit_playback_fullscreen");
-        setFullscreenPhase("windowed");
-      } catch (rollbackError) {
-        setFullscreenPhase("fullscreen");
-        console.error("Fullscreen entry rollback failed:", rollbackError);
-      }
     } finally {
       if (fullscreenTransitionRef.current === transition) {
         fullscreenTransitionRef.current = null;
       }
     }
-  }, [exitFullscreen, setFullscreenPhase]);
+  }, [restorePlaybackWindow, setFullscreenPhase]);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (!isTauri()) return;
+    if (fullscreenPhaseRef.current === "fullscreen") {
+      await exitFullscreen();
+      return;
+    }
+    if (fullscreenPhaseRef.current !== "windowed") return;
+
+    setFullscreenError(null);
+    setFullscreenPhase("entering");
+    const transition = (async () => {
+      try {
+        // A failed frame refresh can leave a saved native placement in a windowed UI.
+        if (needsPlacementRestoreRef.current) {
+          await invoke<void>("exit_playback_fullscreen");
+          needsPlacementRestoreRef.current = false;
+        }
+        await invoke<void>("enter_playback_fullscreen");
+        setFullscreenPhase("fullscreen");
+      } catch (error) {
+        console.error("Fullscreen entry failed:", error);
+        setFullscreenError("Could not enter fullscreen.");
+        await restorePlaybackWindow();
+      }
+    })();
+    fullscreenTransitionRef.current = transition;
+    try {
+      await transition;
+    } finally {
+      if (fullscreenTransitionRef.current === transition) {
+        fullscreenTransitionRef.current = null;
+      }
+    }
+  }, [exitFullscreen, restorePlaybackWindow, setFullscreenPhase]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -446,6 +462,7 @@ export function VideoProvider({ children }: { children: ReactNode }) {
         setVideoLoading,
         isFullscreen,
         fullscreenPhase,
+        fullscreenError,
         toggleFullscreen,
         exitFullscreen,
       }}
