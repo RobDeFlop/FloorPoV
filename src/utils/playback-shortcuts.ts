@@ -1,13 +1,16 @@
-export type PlaybackShortcutAction =
-  | "toggle-play"
-  | "seek-back"
-  | "seek-forward"
-  | "seek-back-fine"
-  | "seek-forward-fine"
-  | "seek-back-coarse"
-  | "seek-forward-coarse"
-  | "seek-start"
-  | "seek-end";
+import { KeyCode } from "../types/key-code";
+
+export enum PlaybackShortcutAction {
+  TogglePlay = "toggle-play",
+  SeekBack = "seek-back",
+  SeekForward = "seek-forward",
+  SeekBackFine = "seek-back-fine",
+  SeekForwardFine = "seek-forward-fine",
+  SeekBackCoarse = "seek-back-coarse",
+  SeekForwardCoarse = "seek-forward-coarse",
+  SeekStart = "seek-start",
+  SeekEnd = "seek-end",
+}
 
 interface PlaybackShortcutEvent {
   key: string;
@@ -89,37 +92,37 @@ export function resolvePlaybackShortcut(
     return null;
   }
 
-  if (event.key === "j" || event.key === "J") {
-    return "seek-back";
+  if (event.key.toLowerCase() === KeyCode.J) {
+    return PlaybackShortcutAction.SeekBack;
   }
 
-  if (event.key === "l" || event.key === "L") {
-    return "seek-forward";
+  if (event.key.toLowerCase() === KeyCode.L) {
+    return PlaybackShortcutAction.SeekForward;
   }
 
   if (!context.isPlayerFocused) {
     return null;
   }
 
-  if (event.key === "ArrowLeft") {
-    return event.shiftKey ? "seek-back-coarse" : "seek-back-fine";
+  if (event.key === KeyCode.ArrowLeft) {
+    return event.shiftKey ? PlaybackShortcutAction.SeekBackCoarse : PlaybackShortcutAction.SeekBackFine;
   }
 
-  if (event.key === "ArrowRight") {
-    return event.shiftKey ? "seek-forward-coarse" : "seek-forward-fine";
+  if (event.key === KeyCode.ArrowRight) {
+    return event.shiftKey ? PlaybackShortcutAction.SeekForwardCoarse : PlaybackShortcutAction.SeekForwardFine;
   }
 
-  if (event.key === "Home") {
-    return "seek-start";
+  if (event.key === KeyCode.Home) {
+    return PlaybackShortcutAction.SeekStart;
   }
 
-  if (event.key === "End") {
-    return "seek-end";
+  if (event.key === KeyCode.End) {
+    return PlaybackShortcutAction.SeekEnd;
   }
 
-  if (event.key !== " " || event.repeat) {
+  if (event.key !== KeyCode.Space || event.repeat) {
     return null;
   }
 
-  return "toggle-play";
+  return PlaybackShortcutAction.TogglePlay;
 }

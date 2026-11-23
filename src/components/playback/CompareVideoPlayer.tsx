@@ -13,6 +13,7 @@ import {
   VolumeX,
   XCircle,
 } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useVideo } from "../../contexts/VideoContext";
 import { VOLUME_MIN } from "../../types/settings";
 import {
@@ -133,25 +134,25 @@ function CompareTimeline({ label, currentTime, duration, onSeek }: CompareTimeli
 
         const seekStep = event.shiftKey ? COMPARE_COARSE_SEEK_SECONDS : COMPARE_FINE_SEEK_SECONDS;
 
-        if (event.key === "ArrowLeft") {
+        if (event.key === KeyCode.ArrowLeft) {
           event.preventDefault();
           onSeek(currentTime - seekStep);
           return;
         }
 
-        if (event.key === "ArrowRight") {
+        if (event.key === KeyCode.ArrowRight) {
           event.preventDefault();
           onSeek(currentTime + seekStep);
           return;
         }
 
-        if (event.key === "Home") {
+        if (event.key === KeyCode.Home) {
           event.preventDefault();
           onSeek(0);
           return;
         }
 
-        if (event.key === "End") {
+        if (event.key === KeyCode.End) {
           event.preventDefault();
           onSeek(duration);
         }
@@ -196,25 +197,25 @@ function CompareVolumeSlider({ label, volume, onVolumeChange }: CompareVolumeSli
         onVolumeChange((event.clientX - trackRect.left) / trackRect.width);
       }}
       onKeyDown={(event) => {
-        if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+        if (event.key === KeyCode.ArrowLeft || event.key === KeyCode.ArrowDown) {
           event.preventDefault();
           onVolumeChange(volume - COMPARE_VOLUME_STEP);
           return;
         }
 
-        if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+        if (event.key === KeyCode.ArrowRight || event.key === KeyCode.ArrowUp) {
           event.preventDefault();
           onVolumeChange(volume + COMPARE_VOLUME_STEP);
           return;
         }
 
-        if (event.key === "Home") {
+        if (event.key === KeyCode.Home) {
           event.preventDefault();
           onVolumeChange(0);
           return;
         }
 
-        if (event.key === "End") {
+        if (event.key === KeyCode.End) {
           event.preventDefault();
           onVolumeChange(1);
         }
@@ -531,13 +532,13 @@ export function CompareVideoPlayer() {
         return;
       }
 
-      if (event.key === "j" || event.key === "J") {
+      if (event.key.toLowerCase() === KeyCode.J) {
         event.preventDefault();
         skipBySeconds(-COMPARE_SKIP_SECONDS);
         return;
       }
 
-      if (event.key === "l" || event.key === "L") {
+      if (event.key.toLowerCase() === KeyCode.L) {
         event.preventDefault();
         skipBySeconds(COMPARE_SKIP_SECONDS);
       }
@@ -551,7 +552,7 @@ export function CompareVideoPlayer() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) {
+      if (event.key !== KeyCode.Escape || event.defaultPrevented) {
         return;
       }
 

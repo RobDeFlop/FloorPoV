@@ -1,0 +1,18 @@
+export enum KeyCode {
+  ArrowDown = "ArrowDown",
+  ArrowLeft = "ArrowLeft",
+  ArrowRight = "ArrowRight",
+  ArrowUp = "ArrowUp",
+  End = "End",
+  Enter = "Enter",
+  Escape = "Escape",
+  Home = "Home",
+  Space = " ",
+  Tab = "Tab",
+  F = "f",
+  J = "j",
+  L = "l",
+  M = "m",
+  N = "n",
+  S = "s",
+}

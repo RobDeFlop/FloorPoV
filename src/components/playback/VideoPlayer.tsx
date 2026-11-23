@@ -20,6 +20,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useVideo } from "../../contexts/VideoContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useMarker } from "../../contexts/MarkerContext";
@@ -42,6 +43,7 @@ import {
   documentHasOpenModalDialog,
   isEditableKeyboardTarget,
   isPlayerKeyboardFocus,
+  PlaybackShortcutAction,
   resolvePlaybackShortcut,
 } from "../../utils/playback-shortcuts";
 import { smoothTransition } from "../../lib/motion";
@@ -358,7 +360,7 @@ export function VideoPlayer() {
     };
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
+      if (event.key !== KeyCode.Escape) {
         return;
       }
 
@@ -386,7 +388,7 @@ export function VideoPlayer() {
     }
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
+      if (event.key !== KeyCode.Escape) {
         return;
       }
 
@@ -462,7 +464,7 @@ export function VideoPlayer() {
         !event.metaKey &&
         !isEditableKeyboardTarget(event.target) &&
         !documentHasOpenModalDialog() &&
-        (event.key === "s" || event.key === "S")
+        event.key.toLowerCase() === KeyCode.S
       ) {
         event.preventDefault();
         void capturePlaybackScreenshot();
@@ -476,7 +478,7 @@ export function VideoPlayer() {
         !event.metaKey &&
         !isEditableKeyboardTarget(event.target) &&
         !documentHasOpenModalDialog() &&
-        (event.key === "n" || event.key === "N")
+        event.key.toLowerCase() === KeyCode.N
       ) {
         event.preventDefault();
         openNoteEditor();
@@ -485,12 +487,12 @@ export function VideoPlayer() {
 
       if (!event.defaultPrevented && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey &&
           !isEditableKeyboardTarget(event.target) && !documentHasOpenModalDialog()) {
-        if (event.key.toLowerCase() === "m") {
+        if (event.key.toLowerCase() === KeyCode.M) {
           event.preventDefault();
           handleVolumeToggle();
           return;
         }
-        if (event.key.toLowerCase() === "f") {
+        if (event.key.toLowerCase() === KeyCode.F) {
           event.preventDefault();
           void toggleFullscreen();
           return;
@@ -513,28 +515,28 @@ export function VideoPlayer() {
 
       event.preventDefault();
 
-      if (action === "toggle-play") {
+      if (action === PlaybackShortcutAction.TogglePlay) {
         togglePlay();
         return;
       }
 
-      if (action === "seek-start") {
+      if (action === PlaybackShortcutAction.SeekStart) {
         seek(0);
         return;
       }
 
-      if (action === "seek-end") {
+      if (action === PlaybackShortcutAction.SeekEnd) {
         seek(duration);
         return;
       }
 
       const seekDeltaSeconds = {
-        "seek-back": -SKIP_SEEK_SECONDS,
-        "seek-forward": SKIP_SEEK_SECONDS,
-        "seek-back-fine": -FINE_SEEK_SECONDS,
-        "seek-forward-fine": FINE_SEEK_SECONDS,
-        "seek-back-coarse": -COARSE_SEEK_SECONDS,
-        "seek-forward-coarse": COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBack]: -SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForward]: SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackFine]: -FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardFine]: FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackCoarse]: -COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardCoarse]: COARSE_SEEK_SECONDS,
       }[action];
 
       skipPlaybackBySeconds(seekDeltaSeconds);
@@ -1010,25 +1012,25 @@ export function VideoPlayer() {
                   className="group relative h-2 w-20 cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                   onClick={handleVolumeClick}
                   onKeyDown={(event) => {
-                    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+                    if (event.key === KeyCode.ArrowLeft || event.key === KeyCode.ArrowDown) {
                       event.preventDefault();
                       setVolume(Math.max(0, volume - 0.05));
                       return;
                     }
 
-                    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                    if (event.key === KeyCode.ArrowRight || event.key === KeyCode.ArrowUp) {
                       event.preventDefault();
                       setVolume(Math.min(1, volume + 0.05));
                       return;
                     }
 
-                    if (event.key === "Home") {
+                    if (event.key === KeyCode.Home) {
                       event.preventDefault();
                       setVolume(0);
                       return;
                     }
 
-                    if (event.key === "End") {
+                    if (event.key === KeyCode.End) {
                       event.preventDefault();
                       setVolume(1);
                     }
@@ -1075,25 +1077,25 @@ export function VideoPlayer() {
 
                 const seekStep = event.shiftKey ? COARSE_SEEK_SECONDS : FINE_SEEK_SECONDS;
 
-                if (event.key === "ArrowLeft") {
+                if (event.key === KeyCode.ArrowLeft) {
                   event.preventDefault();
                   seek(Math.max(0, currentTime - seekStep));
                   return;
                 }
 
-                if (event.key === "ArrowRight") {
+                if (event.key === KeyCode.ArrowRight) {
                   event.preventDefault();
                   seek(Math.min(duration, currentTime + seekStep));
                   return;
                 }
 
-                if (event.key === "Home") {
+                if (event.key === KeyCode.Home) {
                   event.preventDefault();
                   seek(0);
                   return;
                 }
 
-                if (event.key === "End") {
+                if (event.key === KeyCode.End) {
                   event.preventDefault();
                   seek(duration);
                 }

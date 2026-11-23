@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileInput, LoaderCircle } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
 import { getErrorMessage } from "../../services/tauri";
@@ -11,16 +12,18 @@ import {
   type ImportCombatLogResult,
   type RecordingMetadata,
 } from "../../types/events";
+import { createCombatLogImport } from "../../utils/combat-log-import";
 import { ControlIconButton } from "./ControlIconButton";
 
 interface ImportModeDialogState {
-  combatLogPath: string;
+  resolve: (mode: ImportCombatLogMode | null) => void;
 }
 
 export function ImportCombatLogControl() {
   const { loadedFilePath, duration } = useVideo();
   const { isRecording, loadPlaybackMetadata, bumpPlaybackMetadataEpoch } = useRecording();
   const [isImporting, setIsImporting] = useState(false);
+  const [runImport] = useState(() => createCombatLogImport(setIsImporting));
   const [modeDialog, setModeDialog] = useState<ImportModeDialogState | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ tone: "error" | "success"; text: string } | null>(
     null,
@@ -28,17 +31,22 @@ export function ImportCombatLogControl() {
   const cancelButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    if (!isImporting && previouslyFocusedElementRef.current) {
+      if (document.activeElement === document.body) {
+        previouslyFocusedElementRef.current.focus();
+      }
+      previouslyFocusedElementRef.current = null;
+    }
+  }, [isImporting]);
+
   const hasVideoDuration = Number.isFinite(duration) && duration > 0;
   const canImport = Boolean(loadedFilePath) && hasVideoDuration && !isRecording && !isImporting;
 
-  const closeModeDialog = useCallback(() => {
+  const closeModeDialog = useCallback((mode: ImportCombatLogMode | null) => {
+    modeDialog?.resolve(mode);
     setModeDialog(null);
-    const previouslyFocusedElement = previouslyFocusedElementRef.current;
-    previouslyFocusedElementRef.current = null;
-    window.requestAnimationFrame(() => {
-      previouslyFocusedElement?.focus();
-    });
-  }, []);
+  }, [modeDialog]);
 
   useEffect(() => {
     if (!modeDialog) {
@@ -48,9 +56,9 @@ export function ImportCombatLogControl() {
     cancelButtonRef.current?.focus();
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isImporting) {
+      if (event.key === KeyCode.Escape) {
         event.preventDefault();
-        closeModeDialog();
+        closeModeDialog(null);
       }
     };
 
@@ -58,101 +66,71 @@ export function ImportCombatLogControl() {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [closeModeDialog, isImporting, modeDialog]);
-
-  const importCombatLog = useCallback(
-    async (combatLogPath: string, mode: ImportCombatLogMode) => {
-      if (!loadedFilePath || isImporting || !hasVideoDuration) {
-        return;
-      }
-
-      setIsImporting(true);
-      setStatusMessage(null);
-
-      try {
-        const result = await invoke<ImportCombatLogResult>("import_combat_log_onto_recording", {
-          recordingPath: loadedFilePath,
-          combatLogPath,
-          mode,
-          videoDurationSeconds: duration,
-        });
-
-        await loadPlaybackMetadata(loadedFilePath);
-        bumpPlaybackMetadataEpoch();
-
-        const backupHint = result.backupPath
-          ? " Previous metadata was saved as a .meta.json.bak sidecar."
-          : "";
-        const modeHint =
-          result.mode === "merge"
-            ? " New events were merged into the existing sidecar."
-            : " Combat events were replaced. Manual markers were kept.";
-        setStatusMessage({
-          tone: "success",
-          text: `Imported ${result.importedEventCount.toLocaleString()} combat events.${modeHint}${backupHint}`,
-        });
-        closeModeDialog();
-      } catch (error) {
-        setStatusMessage({
-          tone: "error",
-          text: getErrorMessage(error),
-        });
-      } finally {
-        setIsImporting(false);
-      }
-    },
-    [
-      bumpPlaybackMetadataEpoch,
-      closeModeDialog,
-      duration,
-      hasVideoDuration,
-      isImporting,
-      loadPlaybackMetadata,
-      loadedFilePath,
-    ],
-  );
+  }, [closeModeDialog, modeDialog]);
 
   const handleSelectCombatLog = async () => {
     if (!canImport || !loadedFilePath) {
       return;
     }
 
-    setStatusMessage(null);
-
     try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: "Combat Logs", extensions: ["txt", "log"] }],
+      await runImport({
+        pickFile: async () => {
+          setStatusMessage(null);
+          previouslyFocusedElementRef.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          try {
+            return await open({
+              multiple: false,
+              directory: false,
+              filters: [{ name: "Combat Logs", extensions: ["txt", "log"] }],
+            });
+          } catch (error) {
+            console.error("Failed to open combat log picker:", error);
+            throw new Error("Could not open the combat log file picker.");
+          }
+        },
+        chooseMode: async () => {
+          let metadata: RecordingMetadata | null = null;
+          try {
+            metadata = await invoke<RecordingMetadata | null>("get_recording_metadata", {
+              filePath: loadedFilePath,
+            });
+          } catch (error) {
+            console.warn("Failed to read existing recording metadata before import.", error);
+          }
+
+          if (!recordingMetadataHasCombatContent(metadata)) {
+            return "overwrite";
+          }
+          return new Promise<ImportCombatLogMode | null>((resolve) => setModeDialog({ resolve }));
+        },
+        importFile: async (combatLogPath, mode) => {
+          const result = await invoke<ImportCombatLogResult>("import_combat_log_onto_recording", {
+            recordingPath: loadedFilePath,
+            combatLogPath,
+            mode,
+            videoDurationSeconds: duration,
+          });
+
+          await loadPlaybackMetadata(loadedFilePath);
+          bumpPlaybackMetadataEpoch();
+
+          const backupHint = result.backupPath
+            ? " Previous metadata was saved as a .meta.json.bak sidecar."
+            : "";
+          const modeHint =
+            result.mode === "merge"
+              ? " New events were merged into the existing sidecar."
+              : " Combat events were replaced. Manual markers were kept.";
+          setStatusMessage({
+            tone: "success",
+            text: `Imported ${result.importedEventCount.toLocaleString()} combat events.${modeHint}${backupHint}`,
+          });
+        },
       });
-
-      if (typeof selected !== "string" || !selected.trim()) {
-        return;
-      }
-
-      let metadata: RecordingMetadata | null = null;
-      try {
-        metadata = await invoke<RecordingMetadata | null>("get_recording_metadata", {
-          filePath: loadedFilePath,
-        });
-      } catch (error) {
-        console.warn("Failed to read existing recording metadata before import.", error);
-      }
-
-      if (recordingMetadataHasCombatContent(metadata)) {
-        previouslyFocusedElementRef.current =
-          document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        setModeDialog({ combatLogPath: selected });
-        return;
-      }
-
-      await importCombatLog(selected, "overwrite");
     } catch (error) {
-      console.error("Failed to open combat log picker:", error);
-      setStatusMessage({
-        tone: "error",
-        text: "Could not open the combat log file picker.",
-      });
+      setStatusMessage({ tone: "error", text: getErrorMessage(error) });
     }
   };
 
@@ -221,31 +199,24 @@ export function ImportCombatLogControl() {
               <button
                 ref={cancelButtonRef}
                 type="button"
-                onClick={closeModeDialog}
-                disabled={isImporting}
+                onClick={() => closeModeDialog(null)}
                 className="inline-flex h-8 items-center rounded-sm border border-white/20 bg-black/20 px-3 text-xs text-neutral-200 transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  void importCombatLog(modeDialog.combatLogPath, "merge");
-                }}
-                disabled={isImporting}
+                onClick={() => closeModeDialog("merge")}
                 className="inline-flex h-8 items-center rounded-sm border border-white/20 bg-black/20 px-3 text-xs text-neutral-100 transition-colors hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isImporting ? "Importing..." : "Merge"}
+                Merge
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  void importCombatLog(modeDialog.combatLogPath, "overwrite");
-                }}
-                disabled={isImporting}
+                onClick={() => closeModeDialog("overwrite")}
                 className="inline-flex h-8 items-center rounded-sm border border-amber-300/35 bg-amber-500/14 px-3 text-xs font-semibold text-amber-100 transition-colors hover:bg-amber-500/22 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isImporting ? "Importing..." : "Overwrite"}
+                Overwrite
               </button>
             </div>
           </div>

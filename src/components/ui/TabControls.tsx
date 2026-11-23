@@ -1,4 +1,5 @@
 import { type ComponentType, type ReactElement, useId, useRef } from "react";
+import { KeyCode } from "../../types/key-code";
 
 export interface TabControlItem<TValue extends string> {
   value: TValue;
@@ -23,19 +24,19 @@ export function getNextTabIndex(
     return null;
   }
 
-  if (key === "ArrowRight" || key === "ArrowDown") {
+  if (key === KeyCode.ArrowRight || key === KeyCode.ArrowDown) {
     return (currentIndex + 1) % itemCount;
   }
 
-  if (key === "ArrowLeft" || key === "ArrowUp") {
+  if (key === KeyCode.ArrowLeft || key === KeyCode.ArrowUp) {
     return (currentIndex - 1 + itemCount) % itemCount;
   }
 
-  if (key === "Home") {
+  if (key === KeyCode.Home) {
     return 0;
   }
 
-  if (key === "End") {
+  if (key === KeyCode.End) {
     return itemCount - 1;
   }
 

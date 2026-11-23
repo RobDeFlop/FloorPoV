@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { KeyCode } from "../types/key-code";
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -45,13 +46,13 @@ export function useModalFocus({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === KeyCode.Escape) {
         event.preventDefault();
         onEscapeRef.current();
         return;
       }
 
-      if (event.key !== "Tab" || !dialogRef.current) {
+      if (event.key !== KeyCode.Tab || !dialogRef.current) {
         return;
       }
 
