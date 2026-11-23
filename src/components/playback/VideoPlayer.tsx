@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -94,27 +94,18 @@ export function VideoPlayer() {
   const reduceMotion = useReducedMotion();
   const prefersReducedMotion = reduceMotion !== false;
 
-  const inlineSurfaceHostRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const shortcutHelpRef = useRef<HTMLDivElement>(null);
   const immersiveSurfaceRef = useRef<HTMLDivElement>(null);
   const fullscreenEventsTabRef = useRef<HTMLButtonElement>(null);
-  const previousImmersiveModeRef = useRef(false);
-  const tweenSurfaceUntilRef = useRef(0);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
-  const [isImmersiveLayerActive, setIsImmersiveLayerActive] = useState(false);
   const [isFullscreenEventsOpen, setIsFullscreenEventsOpen] = useState(false);
-  const [inlineSurfaceRect, setInlineSurfaceRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [videoNativeSize, setVideoNativeSize] = useState({ width: 0, height: 0 });
   const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1);
-  const [viewportSize, setViewportSize] = useState(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
   const [immersiveViewportSize, setImmersiveViewportSize] = useState({ width: 0, height: 0 });
   const [hoveredSeekBarEvent, setHoveredSeekBarEvent] = useState<GameEvent | null>(null);
   const [seekBarTooltipX, setSeekBarTooltipX] = useState(0);
@@ -227,17 +218,6 @@ export function VideoPlayer() {
     setIsFullscreenEventsOpen((currentValue) => !currentValue);
   };
 
-  const hasInlineSurfaceRect = inlineSurfaceRect.width > 0 && inlineSurfaceRect.height > 0;
-  const surfacePosition = isImmersiveMode
-    ? { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
-    : hasInlineSurfaceRect
-      ? inlineSurfaceRect
-      : null;
-  const shouldTweenSurface =
-    !prefersReducedMotion &&
-    (previousImmersiveModeRef.current !== isImmersiveMode ||
-      performance.now() < tweenSurfaceUntilRef.current);
-
   const handleVolumeToggle = useCallback(() => {
     if (volume === 0) {
       setVolume(volumeBeforeMute > 0 ? volumeBeforeMute : 1);
@@ -336,9 +316,9 @@ export function VideoPlayer() {
     isImmersiveMode && immersiveVideoStyle?.width
       ? { width: immersiveVideoStyle.width }
       : undefined;
-  const playerSurfaceClassName = isImmersiveLayerActive
-    ? "theme-on-media fixed z-[200] flex items-center justify-center overflow-hidden bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45"
-    : "theme-on-media fixed z-40 overflow-hidden bg-neutral-950/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45";
+  const playerSurfaceClassName = isImmersiveMode
+    ? "theme-on-media fixed inset-0 m-0 h-full w-full border-0 p-0 flex items-center justify-center overflow-hidden bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45"
+    : "theme-on-media relative h-full w-full overflow-hidden bg-neutral-950/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45";
 
   useEffect(() => {
     if (!showSpeedMenu && !showShortcutHelp) {
@@ -410,37 +390,16 @@ export function VideoPlayer() {
     };
   }, [exitFullscreen, isFullscreenEventsOpen, isImmersiveMode, isNoteEditorOpen, showShortcutHelp, showSpeedMenu]);
 
-  useEffect(() => {
-    if (isImmersiveMode) {
-      setIsImmersiveLayerActive(true);
-      return;
-    }
+  useLayoutEffect(() => {
+    const surface = immersiveSurfaceRef.current;
+    if (!isImmersiveMode || !surface) return;
 
-    if (prefersReducedMotion) {
-      setIsImmersiveLayerActive(false);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setIsImmersiveLayerActive(false);
-    }, smoothTransition.duration * 1000);
-
+    // The top layer escapes the panel's clipping without reparenting the video.
+    surface.showPopover();
     return () => {
-      window.clearTimeout(timeoutId);
+      if (surface.matches(":popover-open")) surface.hidePopover();
     };
-  }, [isImmersiveMode, prefersReducedMotion]);
-
-  useEffect(() => {
-    if (previousImmersiveModeRef.current === isImmersiveMode) {
-      return;
-    }
-
-    if (!prefersReducedMotion) {
-      tweenSurfaceUntilRef.current = performance.now() + smoothTransition.duration * 1000;
-    }
-
-    previousImmersiveModeRef.current = isImmersiveMode;
-  }, [isImmersiveMode, prefersReducedMotion]);
+  }, [isImmersiveMode]);
 
   useEffect(() => {
     if (!canShowFullscreenEvents) {
@@ -594,69 +553,8 @@ export function VideoPlayer() {
   }, [screenshotNotice]);
 
   useEffect(() => {
-    const updateInlineSurfaceRect = () => {
-      const hostRect = inlineSurfaceHostRef.current?.getBoundingClientRect();
-      if (!hostRect) {
-        setInlineSurfaceRect({ left: 0, top: 0, width: 0, height: 0 });
-        return;
-      }
-
-      const nextRect = {
-        left: Math.round(hostRect.left),
-        top: Math.round(hostRect.top),
-        width: Math.max(0, Math.round(hostRect.width)),
-        height: Math.max(0, Math.round(hostRect.height)),
-      };
-
-      setInlineSurfaceRect((currentRect) => {
-        if (
-          currentRect.left === nextRect.left &&
-          currentRect.top === nextRect.top &&
-          currentRect.width === nextRect.width &&
-          currentRect.height === nextRect.height
-        ) {
-          return currentRect;
-        }
-
-        return nextRect;
-      });
-    };
-
-    updateInlineSurfaceRect();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateInlineSurfaceRect);
-      window.addEventListener("scroll", updateInlineSurfaceRect, true);
-      return () => {
-        window.removeEventListener("resize", updateInlineSurfaceRect);
-        window.removeEventListener("scroll", updateInlineSurfaceRect, true);
-      };
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateInlineSurfaceRect();
-    });
-
-    if (inlineSurfaceHostRef.current) {
-      resizeObserver.observe(inlineSurfaceHostRef.current);
-    }
-
-    window.addEventListener("resize", updateInlineSurfaceRect);
-    window.addEventListener("scroll", updateInlineSurfaceRect, true);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", updateInlineSurfaceRect);
-      window.removeEventListener("scroll", updateInlineSurfaceRect, true);
-    };
-  }, []);
-
-  useEffect(() => {
     const handleResize = () => {
       setDevicePixelRatio(window.devicePixelRatio || 1);
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
     };
 
     window.addEventListener("resize", handleResize);
@@ -791,8 +689,9 @@ export function VideoPlayer() {
   };
 
   const playerSurface = (
-    <motion.div
+    <div
       ref={immersiveSurfaceRef}
+      popover={isImmersiveMode ? "manual" : undefined}
       onPointerMove={resetControlsHideTimer}
       onFocusCapture={resetControlsHideTimer}
       onKeyDownCapture={resetControlsHideTimer}
@@ -800,19 +699,6 @@ export function VideoPlayer() {
       tabIndex={showVideo ? 0 : undefined}
       role={showVideo ? "region" : undefined}
       aria-label={showVideo ? "Video player" : undefined}
-      initial={false}
-      animate={
-        surfacePosition
-          ? {
-              left: surfacePosition.left,
-              top: surfacePosition.top,
-              width: surfacePosition.width,
-              height: surfacePosition.height,
-            }
-          : undefined
-      }
-      style={surfacePosition ? undefined : { visibility: "hidden" }}
-      transition={shouldTweenSurface ? smoothTransition : { duration: 0 }}
       aria-busy={isVideoLoading}
     >
       {showVideo && (
@@ -1315,12 +1201,12 @@ export function VideoPlayer() {
           </motion.div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 
   return (
-    <div ref={inlineSurfaceHostRef} className="relative h-full w-full">
-      {createPortal(playerSurface, document.body)}
+    <>
+      {playerSurface}
       {isNoteEditorOpen
         ? createPortal(
             <NoteEditorDialog
@@ -1340,9 +1226,9 @@ export function VideoPlayer() {
                 setNoteError(null);
               }}
             />,
-            document.body,
+            (isImmersiveMode && immersiveSurfaceRef.current) || document.body,
           )
         : null}
-    </div>
+    </>
   );
 }
