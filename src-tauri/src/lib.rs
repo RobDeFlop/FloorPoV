@@ -65,19 +65,10 @@ pub fn run() {
                 .ok_or_else(|| "Main application window was not created".to_string())?;
             main_window.set_icon(tauri::include_image!("./icons/128x128.png"))?;
 
-            let tray_ready = match tray::install_tray(app) {
-                Ok(()) => true,
-                Err(error) => {
-                    tracing::error!("Failed to install the system tray: {error}");
-                    false
-                }
-            };
-
-            if tray_ready && tray::should_start_minimized(app.handle()) {
-                tray::hide_main_window(app.handle());
-            } else {
-                tray::show_main_window(app.handle());
+            if let Err(error) = tray::install_tray(app) {
+                tracing::error!("Failed to install the system tray: {error}");
             }
+            tray::show_main_window(app.handle());
 
             let output_folder = match settings::resolve_startup_recordings_folder(app.handle()) {
                 Ok(path) => path,
