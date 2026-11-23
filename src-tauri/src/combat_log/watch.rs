@@ -48,7 +48,12 @@ struct PreparedWatch {
     initial_offset: u64,
     start_time: Instant,
     metadata_accumulator: Arc<Mutex<RecordingMetadataAccumulator>>,
-    seed_status: Option<(&'static str, String)>,
+    seed_status: Option<SeedStatus>,
+}
+
+struct SeedStatus {
+    level: &'static str,
+    message: String,
 }
 
 #[tauri::command]
@@ -139,12 +144,18 @@ fn prepare_watch(wow_folder: &str) -> Result<PreparedWatch, String> {
     let seed_status =
         log_path.as_ref().and_then(|path| {
             match seed_metadata_context_from_log_tail(path, &metadata_accumulator) {
-                Err(error) => Some(("warn", format!("Combat context seed failed: {error}"))),
+                Err(error) => Some(SeedStatus {
+                    level: "warn",
+                    message: format!("Combat context seed failed: {error}"),
+                }),
                 Ok(()) => metadata_accumulator
                     .lock()
                     .ok()?
                     .current_context_zone_name()
-                    .map(|name| ("info", format!("Context seeded: {name}"))),
+                    .map(|name| SeedStatus {
+                        level: "info",
+                        message: format!("Context seeded: {name}"),
+                    }),
             }
         });
     Ok(PreparedWatch {
@@ -170,7 +181,7 @@ fn activate_watch(
         metadata_accumulator,
         seed_status,
     } = prepared;
-    if let Some((level, message)) = seed_status {
+    if let Some(SeedStatus { level, message }) = seed_status {
         emit_combat_watch_status(app_handle, level, &message, log_path.as_deref());
     }
     let app_handle_clone = app_handle.clone();
