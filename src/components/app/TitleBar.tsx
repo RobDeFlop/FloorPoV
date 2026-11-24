@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import floorpovIcon from "../../assets/floorpov-icon-master.png";
 
@@ -18,11 +17,8 @@ export function TitleBar() {
   };
 
   const handleClose = () => {
-    invoke("hide_to_tray").catch((error) => {
-      console.error("Failed to hide to tray:", error);
-      appWindow.hide().catch((hideError) => {
-        console.error("Failed to hide window:", hideError);
-      });
+    appWindow.close().catch((error) => {
+      console.error("Failed to request window close:", error);
     });
   };
 
@@ -87,8 +83,8 @@ export function TitleBar() {
           type="button"
           onClick={handleClose}
           className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
-          title="Close to tray"
-          aria-label="Hide window to tray"
+          title="Close"
+          aria-label="Close window"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor">
             <path d="M1 1L9 9M9 1L1 9" strokeWidth="1.2" />

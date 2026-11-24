@@ -10,12 +10,13 @@ mod window_capture;
 use std::path::Path;
 
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 pub(crate) use ffmpeg::resolve_ffmpeg_binary_path;
 pub use model::RecordingState;
+pub(crate) use model::SharedRecordingState;
 pub(crate) use model::CREATE_NO_WINDOW;
-use model::{CaptureInput, RecordingSessionConfig};
+use model::{CaptureInput, RecordingCompletion, RecordingSessionConfig};
 
 fn sanitize_for_filename(input: &str) -> String {
     let mut result = String::new();
@@ -79,9 +80,7 @@ pub async fn start_recording(
 ) -> Result<model::RecordingStartedPayload, String> {
     {
         let recording_state = state.read().await;
-        if recording_state.is_recording || recording_state.is_stopping {
-            return Err("Recording already in progress".to_string());
-        }
+        ensure_recording_can_start(&recording_state)?;
     }
 
     std::fs::create_dir_all(&output_folder)
@@ -164,17 +163,17 @@ pub async fn start_recording(
     );
 
     let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (completion_tx, completion_rx) = watch::channel(None);
 
     {
         let mut recording_state = state.write().await;
-        if recording_state.is_recording || recording_state.is_stopping {
-            return Err("Recording already in progress".to_string());
-        }
+        ensure_recording_can_start(&recording_state)?;
 
         recording_state.is_recording = true;
         recording_state.is_stopping = false;
         recording_state.current_output_path = Some(output_path_str.clone());
         recording_state.stop_tx = Some(stop_tx);
+        recording_state.completion = Some(completion_rx);
     }
 
     session::spawn_ffmpeg_recording_task(
@@ -194,6 +193,7 @@ pub async fn start_recording(
             enable_diagnostics: recording_settings.enable_recording_diagnostics,
         },
         stop_rx,
+        completion_tx,
     );
 
     Ok(model::RecordingStartedPayload {
@@ -219,20 +219,155 @@ pub async fn stop_recording(
             .clone()
             .ok_or_else(|| "No output path found".to_string())?;
 
-        if recording_state.is_stopping {
-            return Ok(output_path);
-        }
-
-        recording_state.is_stopping = true;
-
-        (output_path, recording_state.stop_tx.take())
+        (output_path, recording_state.take_stop_signal())
     };
 
     if let Some(stop_tx) = stop_tx {
-        if let Err(error) = stop_tx.send(()).await {
-            tracing::warn!("Failed to send stop signal to recording task: {error}");
-        }
+        signal_stop(stop_tx).await;
     }
 
     Ok(output_path)
+}
+
+async fn signal_stop(stop_tx: mpsc::Sender<()>) {
+    if let Err(error) = stop_tx.send(()).await {
+        tracing::warn!("Failed to send stop signal to recording task: {error}");
+    }
+}
+
+fn ensure_recording_can_start(state: &RecordingState) -> Result<(), String> {
+    if state.starts_blocked_for_quit {
+        return Err("Cannot start recording while closing FloorPoV".to_string());
+    }
+    if state.is_recording || state.is_stopping {
+        return Err("Recording already in progress".to_string());
+    }
+    Ok(())
+}
+
+pub(crate) enum RecordingOnQuit {
+    Idle,
+    Capturing(RecordingCompletion),
+    Saving(RecordingCompletion),
+}
+
+pub(crate) async fn prepare_for_window_quit(state: &SharedRecordingState) -> RecordingOnQuit {
+    let mut state = state.write().await;
+    // Take the snapshot under the same lock as start_recording so a new session
+    // cannot start between observing an idle recorder and exiting the app.
+    state.starts_blocked_for_quit = true;
+    match state.completion.clone() {
+        None => RecordingOnQuit::Idle,
+        Some(completion) if state.is_stopping => RecordingOnQuit::Saving(completion),
+        Some(completion) => RecordingOnQuit::Capturing(completion),
+    }
+}
+
+pub(crate) async fn cancel_window_quit(state: &SharedRecordingState) {
+    state.write().await.starts_blocked_for_quit = false;
+}
+
+pub(crate) async fn save_before_window_quit(
+    state: &SharedRecordingState,
+    mut completion: RecordingCompletion,
+) -> Result<(), String> {
+    let stop_tx = state.write().await.take_stop_signal();
+    if let Some(stop_tx) = stop_tx {
+        // Manual stops flush combat metadata before finalization can rename the recording.
+        if let Err(error) = crate::combat_log::watch::set_combat_watch_recording_output(None) {
+            tracing::debug!("Could not detach combat watch for window quit: {error}");
+        }
+        signal_stop(stop_tx).await;
+    }
+
+    let result = completion
+        .wait_for(Option::is_some)
+        .await
+        .map_err(|_| "Recording ended without a save result".to_string())?;
+    result
+        .as_ref()
+        .ok_or_else(|| "Missing recording save result".to_string())?
+        .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeping_the_window_open_releases_the_start_gate_without_stopping_capture() {
+        tauri::async_runtime::block_on(async {
+            let state = SharedRecordingState::default();
+            let (stop_tx, mut stop_rx) = mpsc::channel(1);
+            let (_completion_tx, completion_rx) = watch::channel(None);
+            *state.write().await = RecordingState {
+                is_recording: true,
+                stop_tx: Some(stop_tx),
+                completion: Some(completion_rx),
+                ..RecordingState::default()
+            };
+
+            assert!(matches!(
+                prepare_for_window_quit(&state).await,
+                RecordingOnQuit::Capturing(_)
+            ));
+            assert!(state.read().await.starts_blocked_for_quit);
+            cancel_window_quit(&state).await;
+
+            let recording_state = state.read().await;
+            assert!(!recording_state.starts_blocked_for_quit);
+            assert!(!recording_state.is_stopping);
+            assert_eq!(stop_rx.try_recv(), Err(mpsc::error::TryRecvError::Empty));
+        });
+    }
+
+    #[test]
+    fn closing_while_saving_waits_for_the_result_without_sending_a_second_stop() {
+        tauri::async_runtime::block_on(async {
+            for outcome in [Ok(()), Err("disk full".to_string())] {
+                let state = SharedRecordingState::default();
+                let (stop_tx, mut stop_rx) = mpsc::channel(1);
+                let (completion_tx, completion_rx) = watch::channel(None);
+                *state.write().await = RecordingState {
+                    is_recording: true,
+                    is_stopping: true,
+                    stop_tx: Some(stop_tx),
+                    completion: Some(completion_rx),
+                    ..RecordingState::default()
+                };
+
+                let RecordingOnQuit::Saving(completion) = prepare_for_window_quit(&state).await
+                else {
+                    panic!("expected saving recording");
+                };
+                let mut pending_save = Box::pin(save_before_window_quit(&state, completion));
+                assert!(
+                    std::future::poll_fn(|cx| {
+                        std::task::Poll::Ready(
+                            std::future::Future::poll(pending_save.as_mut(), cx).is_pending(),
+                        )
+                    })
+                    .await
+                );
+                assert_eq!(stop_rx.try_recv(), Err(mpsc::error::TryRecvError::Empty));
+
+                completion_tx.send_replace(Some(outcome.clone()));
+                assert_eq!(pending_save.await, outcome);
+            }
+        });
+    }
+
+    #[test]
+    fn an_idle_quit_blocks_new_recordings_until_cancelled() {
+        tauri::async_runtime::block_on(async {
+            let state = SharedRecordingState::default();
+            assert!(matches!(
+                prepare_for_window_quit(&state).await,
+                RecordingOnQuit::Idle
+            ));
+            assert!(ensure_recording_can_start(&*state.read().await).is_err());
+            cancel_window_quit(&state).await;
+            assert!(ensure_recording_can_start(&*state.read().await).is_ok());
+        });
+    }
 }

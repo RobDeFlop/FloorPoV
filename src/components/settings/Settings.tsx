@@ -104,6 +104,7 @@ const FIELD_IDS = {
   enableRecordingDiagnostics: "settings-enable-recording-diagnostics",
   enableAutoRecording: "settings-enable-auto-recording",
   minAutoRaidRecordingSeconds: "settings-min-auto-raid-recording-seconds",
+  closeToTray: "settings-close-to-tray",
   enableAutoUpdate: "settings-enable-auto-update",
   showFullscreenEventsPanel: "settings-show-fullscreen-events-panel",
   appTheme: "settings-app-theme",
@@ -1002,7 +1003,7 @@ export function Settings({
 
             <SettingsGroup
               contentId="settings-group-app"
-              description="Updates and diagnostic tools"
+              description="Appearance, window behavior, and updates"
               icon={<RefreshCw className="h-4 w-4" aria-hidden="true" />}
               open={openGroups.app}
               onOpenChange={(open) => onGroupToggle("app", open)}
@@ -1044,6 +1045,15 @@ export function Settings({
                   Dark is the default. Light retints surfaces and text across the app.
                 </p>
               </div>
+              <SettingsToggleField
+                id={FIELD_IDS.closeToTray}
+                checked={formData.closeToTray}
+                onChange={(checked) => {
+                  setFormData({ ...formData, closeToTray: checked });
+                }}
+                label="Close to tray"
+                description="Hide FloorPoV in the system tray instead of quitting when you close the window."
+              />
               <SettingsToggleField
                 id={FIELD_IDS.showFullscreenEventsPanel}
                 checked={formData.showFullscreenEventsPanel}

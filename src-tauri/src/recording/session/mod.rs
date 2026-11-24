@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use tauri::AppHandle;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use super::ffmpeg::select_video_encoder;
 use super::model::{
@@ -35,6 +35,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
     state: SharedRecordingState,
     session_config: RecordingSessionConfig,
     mut stop_rx: mpsc::Receiver<()>,
+    completion_tx: watch::Sender<Option<Result<(), String>>>,
 ) {
     thread::spawn(move || {
         let mut capture_input = session_config.capture_input;
@@ -76,6 +77,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
                         tracing::error!("{error}");
                         clear_recording_state(&state);
                         emit_recording_stopped(&app_handle);
+                        completion_tx.send_replace(Some(Err(error)));
                         return;
                     }
                 }
@@ -193,7 +195,8 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             }
         }
 
-        let finalized_successfully = if let Some(workspace) = &segment_workspace {
+        state.blocking_write().is_stopping = true;
+        let save_result = if let Some(workspace) = &segment_workspace {
             let finalize_result = finalize_segmented_recording(
                 &session_config.ffmpeg_binary_path,
                 workspace,
@@ -202,37 +205,21 @@ pub(crate) fn spawn_ffmpeg_recording_task(
                 &session_config.output_path,
             );
 
-            let was_successful = match finalize_result {
-                Ok(()) => true,
-                Err(error) => {
-                    if !segment_paths.is_empty() {
-                        tracing::error!("Failed to finalize segmented recording: {error}");
-                    } else {
-                        tracing::warn!("No recording segments were produced before stop");
-                    }
-                    false
-                }
-            };
-
             cleanup_segment_workspace(workspace);
-            was_successful
+            finalize_result
         } else {
-            match remux_to_library_mp4(
+            remux_to_library_mp4(
                 &session_config.ffmpeg_binary_path,
                 Path::new(&session_config.output_path),
-            ) {
-                Ok(()) => true,
-                Err(error) => {
-                    tracing::warn!(
-                        output_path = %session_config.output_path,
-                        "Recording stop finished without a duration-bearing library MP4: {error}"
-                    );
-                    false
-                }
-            }
+            )
         };
 
-        if finalized_successfully {
+        if let Err(error) = &save_result {
+            tracing::error!(
+                output_path = %session_config.output_path,
+                "Failed to save recording: {error}"
+            );
+        } else {
             let finalized_output_path =
                 super::metadata::rename_finalized_recording_if_named(&session_config.output_path);
             emit_recording_finalized(&app_handle, &finalized_output_path);
@@ -241,5 +228,6 @@ pub(crate) fn spawn_ffmpeg_recording_task(
         emit_recording_warning_cleared(&app_handle);
         clear_recording_state(&state);
         emit_recording_stopped(&app_handle);
+        completion_tx.send_replace(Some(save_result));
     });
 }

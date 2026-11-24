@@ -1,3 +1,4 @@
+mod app_close;
 mod combat_log;
 mod hotkey;
 mod playback_window;
@@ -55,8 +56,10 @@ pub fn run() {
         .manage(tray::AppExitState::new())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                tray::hide_main_window(window.app_handle());
+                if window.label() == "main" {
+                    api.prevent_close();
+                    app_close::request_main_window_close(window.app_handle());
+                }
             }
         })
         .setup(|app| {
@@ -143,7 +146,6 @@ pub fn run() {
             wcl_upload::get_wcl_live_upload_state,
             hotkey::register_marker_hotkey,
             hotkey::unregister_marker_hotkey,
-            tray::hide_to_tray,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
