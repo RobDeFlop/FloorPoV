@@ -11,8 +11,9 @@ FloorPoV records World of Warcraft gameplay and places important combat events o
 
 This project is currently in beta and supports Windows 10 and Windows 11.
 
-![Video analysis screenshot](https://i.imgur.com/SEQw9I9.jpeg)
-![Log analysis screenshot](https://i.imgur.com/UwLeCqT.png)
+![Video analysis of The Coiled Altar with raid footage, timeline markers, and a timestamped event list](docs/screenshots/video-analysis.webp)
+
+![Log analysis of the same encounter with event counts and timestamps for deaths and Bloodlust](docs/screenshots/log-analysis.webp)
 
 ## Features
 
