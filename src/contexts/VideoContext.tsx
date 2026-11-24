@@ -41,9 +41,9 @@ interface VideoContextType {
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
-interface WindowHiddenToTray {
+type WindowHiddenToTray = {
   placementRestored: boolean;
-}
+};
 
 type FullscreenPhase = "windowed" | "entering" | "fullscreen" | "exiting";
 
