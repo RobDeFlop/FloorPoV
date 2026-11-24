@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import floorpovIcon from "../../assets/floorpov-icon-master.png";
 
 export function TitleBar() {
   const appWindow = getCurrentWindow();
+  const [isRequestingClose, setIsRequestingClose] = useState(false);
+  const [closeFailed, setCloseFailed] = useState(false);
 
   const handleMinimize = () => {
     appWindow.minimize();
@@ -16,10 +19,18 @@ export function TitleBar() {
     }
   };
 
-  const handleClose = () => {
-    appWindow.close().catch((error) => {
+  const handleClose = async () => {
+    if (isRequestingClose) return;
+    setIsRequestingClose(true);
+    setCloseFailed(false);
+    try {
+      await appWindow.close();
+    } catch (error) {
       console.error("Failed to request window close:", error);
-    });
+      setCloseFailed(true);
+    } finally {
+      setIsRequestingClose(false);
+    }
   };
 
   const handleDragStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -79,9 +90,15 @@ export function TitleBar() {
             <rect x="0.5" y="0.5" width="9" height="9" />
           </svg>
         </button>
+        {closeFailed && (
+          <p className="self-center px-2 text-xs text-rose-300" role="alert">
+            Could not close the window. Try again.
+          </p>
+        )}
         <button
           type="button"
           onClick={handleClose}
+          disabled={isRequestingClose}
           className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
           title="Close"
           aria-label="Close window"

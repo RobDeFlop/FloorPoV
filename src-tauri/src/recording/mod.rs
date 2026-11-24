@@ -274,8 +274,16 @@ pub(crate) async fn save_before_window_quit(
     let stop_tx = state.write().await.take_stop_signal();
     if let Some(stop_tx) = stop_tx {
         // Manual stops flush combat metadata before finalization can rename the recording.
-        if let Err(error) = crate::combat_log::watch::set_combat_watch_recording_output(None) {
-            tracing::debug!("Could not detach combat watch for window quit: {error}");
+        match tauri::async_runtime::spawn_blocking(|| {
+            crate::combat_log::watch::set_combat_watch_recording_output(None)
+        })
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::debug!("Could not detach combat watch for window quit: {error}")
+            }
+            Err(error) => tracing::error!("Combat metadata flush task failed: {error}"),
         }
         signal_stop(stop_tx).await;
     }

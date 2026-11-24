@@ -2,6 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager};
@@ -20,7 +21,13 @@ impl AppExitState {
     }
 }
 
-pub(crate) fn hide_main_window(app_handle: &AppHandle, is_windowed: bool) {
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowHiddenToTray {
+    placement_restored: bool,
+}
+
+pub(crate) fn hide_main_window(app_handle: &AppHandle, placement_restored: bool) {
     let Some(window) = app_handle.get_webview_window("main") else {
         tracing::warn!("Cannot hide to tray because the main window is missing");
         return;
@@ -34,7 +41,8 @@ pub(crate) fn hide_main_window(app_handle: &AppHandle, is_windowed: bool) {
         tracing::warn!("Failed to hide FloorPoV from the taskbar: {error}");
     }
 
-    if let Err(error) = app_handle.emit("window-hidden-to-tray", is_windowed) {
+    let payload = WindowHiddenToTray { placement_restored };
+    if let Err(error) = app_handle.emit("window-hidden-to-tray", payload) {
         tracing::warn!("Failed to emit window-hidden-to-tray: {error}");
     }
 }

@@ -41,6 +41,10 @@ interface VideoContextType {
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
+interface WindowHiddenToTray {
+  placementRestored: boolean;
+}
+
 type FullscreenPhase = "windowed" | "entering" | "fullscreen" | "exiting";
 
 export function VideoProvider({ children }: { children: ReactNode }) {
@@ -358,9 +362,9 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, [isPlaying]);
 
   useEffect(() => {
-    const unlistenHiddenToTray = listen<boolean>("window-hidden-to-tray", async (event) => {
+    const unlistenHiddenToTray = listen<WindowHiddenToTray>("window-hidden-to-tray", async (event) => {
       videoRef.current?.pause();
-      if (event.payload) {
+      if (event.payload.placementRestored) {
         // The native close handler already restored the window's placement.
         await fullscreenTransitionRef.current;
         needsPlacementRestoreRef.current = false;

@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{
-    DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
+    DialogExt, MessageDialogBuilder, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 use tokio::sync::oneshot;
 
@@ -30,9 +30,26 @@ pub(crate) fn request_main_window_close(app: &AppHandle) {
 
 async fn close_main_window(app: AppHandle) {
     // Read the saved preference, not the settings form or the store's unsaved cache.
-    if crate::settings::read_saved_close_to_tray(&app) {
-        schedule_window_close(&app, CloseAction::Hide);
-        return;
+    let settings_app = app.clone();
+    match tauri::async_runtime::spawn_blocking(move || {
+        crate::settings::read_saved_close_to_tray(&settings_app)
+    })
+    .await
+    {
+        Ok(true) => {
+            schedule_window_close(&app, CloseAction::Hide);
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::error!("Could not check close-to-tray preference: {error}");
+            show_close_error(
+                app,
+                "Could not close FloorPoV. Try closing the window again.",
+                "Window not closed",
+            );
+            return;
+        }
     }
 
     let state = app.state::<SharedRecordingState>();
@@ -57,34 +74,43 @@ async fn close_main_window(app: AppHandle) {
         Err(error) => {
             tracing::error!("Cannot quit after recording save failed: {error}");
             cancel_quit(&app).await;
-            let mut dialog = app
-                .dialog()
-                .message("Could not save the recording. FloorPoV will stay open.")
-                .title("Recording not saved")
-                .kind(MessageDialogKind::Error);
-            if let Some(window) = app.get_webview_window("main") {
-                dialog = dialog.parent(&window);
-            }
-            dialog.show(move |_| release_close_request(&app));
+            show_close_error(
+                app,
+                "Could not save the recording. FloorPoV will stay open.",
+                "Recording not saved",
+            );
         }
     }
 }
 
+fn window_close_dialog(app: &AppHandle, message: &str) -> MessageDialogBuilder<tauri::Wry> {
+    let dialog = app.dialog().message(message);
+    match app.get_webview_window("main") {
+        Some(window) => dialog.parent(&window),
+        None => dialog,
+    }
+}
+
+fn show_close_error(app: AppHandle, message: &str, title: &str) {
+    window_close_dialog(&app, message)
+        .title(title)
+        .kind(MessageDialogKind::Error)
+        .show(move |_| release_close_request(&app));
+}
+
 async fn confirm_stop_and_quit(app: &AppHandle) -> bool {
     let (answer_tx, answer_rx) = oneshot::channel();
-    let mut dialog = app
-        .dialog()
-        .message("A recording is in progress. Stop and save it before quitting?")
-        .title("Recording in progress")
-        .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            STOP_AND_QUIT.to_string(),
-            "Keep recording".to_string(),
-        ));
-    if let Some(window) = app.get_webview_window("main") {
-        dialog = dialog.parent(&window);
-    }
-    dialog.show_with_result(move |answer| {
+    window_close_dialog(
+        app,
+        "A recording is in progress. Stop and save it before quitting?",
+    )
+    .title("Recording in progress")
+    .kind(MessageDialogKind::Warning)
+    .buttons(MessageDialogButtons::OkCancelCustom(
+        STOP_AND_QUIT.to_string(),
+        "Keep recording".to_string(),
+    ))
+    .show_with_result(move |answer| {
         if answer_tx.send(answer).is_err() {
             tracing::debug!("Window close no longer awaiting confirmation");
         }
@@ -101,10 +127,10 @@ enum CloseAction {
 fn schedule_window_close(app: &AppHandle, action: CloseAction) {
     let handle = app.clone();
     if let Err(error) = app.run_on_main_thread(move || {
-        let is_windowed = restore_playback_window(&handle);
+        let placement_restored = restore_playback_window(&handle);
         match action {
             CloseAction::Hide => {
-                tray::hide_main_window(&handle, is_windowed);
+                tray::hide_main_window(&handle, placement_restored);
                 release_close_request(&handle);
             }
             CloseAction::Quit => tray::request_quit(&handle),
