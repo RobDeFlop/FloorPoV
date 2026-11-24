@@ -5,11 +5,9 @@ import { EventTooltip } from "./EventTooltip";
 import { EventMarker } from "./EventMarker";
 import { useVideo } from "../../contexts/VideoContext";
 import { useMarker } from "../../contexts/MarkerContext";
-import { GameEvent, RecordingEncounterMetadata } from "../../types/events";
+import { EVENT_SEEK_OFFSET_SECONDS, GameEvent, RecordingEncounterMetadata } from "../../types/events";
 import { formatTime } from "../../utils/format";
 import { AnimatedTooltip } from "../ui/AnimatedTooltip";
-
-const EVENT_SEEK_OFFSET_SECONDS = 5;
 
 interface EncounterTooltipProps {
   encounter: RecordingEncounterMetadata;
@@ -77,7 +75,7 @@ export function GameEvents() {
     <div className="game-events-container bg-(--surface-2) border-t border-white/10 px-4 py-3">
       <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.12em] text-neutral-400">
         <Activity className="h-3.5 w-3.5 text-neutral-300" />
-        Game Events
+        Game events
       </div>
       <div className="timeline-bar relative h-6 rounded-sm border border-white/10 bg-neutral-800 px-1">
         {encounters.map((encounter, index) => {

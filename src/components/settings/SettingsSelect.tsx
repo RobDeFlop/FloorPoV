@@ -1,5 +1,16 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
+import { createPortal } from "react-dom";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactElement,
+} from "react";
+import { KeyCode } from "../../types/key-code";
 
 export interface SettingsSelectOption {
   value: string;
@@ -17,6 +28,10 @@ interface SettingsSelectProps {
   onChange: (value: string) => void;
 }
 
+const LISTBOX_GAP = 4;
+const LISTBOX_MAX_HEIGHT = 240;
+const VIEWPORT_PADDING = 8;
+
 export function SettingsSelect({
   id,
   value,
@@ -25,60 +40,32 @@ export function SettingsSelect({
   disabled = false,
   ariaDescribedBy,
   onChange,
-}: SettingsSelectProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState<number>(-1);
+}: SettingsSelectProps): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const listRef = useRef<HTMLUListElement>(null);
-  const optionRefs = useRef<Array<HTMLLIElement | null>>([]);
-  const listboxId = useId();
-
-  const selectedOption = useMemo(() => {
-    return options.find((option) => option.value === value);
-  }, [options, value]);
-
-  const firstEnabledIndex = useMemo(() => {
-    return options.findIndex((option) => !option.disabled);
-  }, [options]);
-
-  const getNextEnabledIndex = (startIndex: number, direction: 1 | -1): number => {
-    if (options.length === 0) {
-      return -1;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listboxRef = useRef<HTMLDivElement>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [listboxStyle, setListboxStyle] = useState<CSSProperties>({
+    position: "fixed",
+    visibility: "hidden",
+  });
+  const listboxId = `${id}-listbox`;
+  const enabledIndices = options.reduce<number[]>((indices, option, index) => {
+    if (!option.disabled) {
+      indices.push(index);
     }
+    return indices;
+  }, []);
+  const selectedIndex = options.findIndex((option) => option.value === value);
+  const selectedOption = options[selectedIndex];
+  const displayLabel = selectedOption?.label ?? placeholder ?? "Select an option";
 
-    let index = startIndex;
-    for (let step = 0; step < options.length; step += 1) {
-      index = (index + direction + options.length) % options.length;
-      if (!options[index].disabled) {
-        return index;
-      }
+  useEffect(() => {
+    if (disabled && isOpen) {
+      setIsOpen(false);
     }
-
-    return -1;
-  };
-
-  const closeList = () => {
-    setIsOpen(false);
-    setActiveIndex(-1);
-  };
-
-  const openList = (preferredIndex?: number) => {
-    if (disabled) {
-      return;
-    }
-
-    const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
-    const initialIndex =
-      preferredIndex !== undefined
-        ? preferredIndex
-        : selectedIndex >= 0
-          ? selectedIndex
-          : firstEnabledIndex;
-
-    setIsOpen(true);
-    setActiveIndex(initialIndex);
-  };
+  }, [disabled, isOpen]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -86,178 +73,224 @@ export function SettingsSelect({
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
-        closeList();
+      const target = event.target as Node;
+      if (
+        !containerRef.current?.contains(target) &&
+        !listboxRef.current?.contains(target)
+      ) {
+        setIsOpen(false);
       }
     };
 
-    window.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [isOpen]);
+
+  const updateListboxPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const listbox = listboxRef.current;
+    if (!trigger || !listbox) {
+      return;
+    }
+
+    const triggerRect = trigger.getBoundingClientRect();
+    const listboxHeight = Math.min(listbox.scrollHeight, LISTBOX_MAX_HEIGHT);
+    const spaceBelow = window.innerHeight - triggerRect.bottom - LISTBOX_GAP - VIEWPORT_PADDING;
+    const spaceAbove = triggerRect.top - LISTBOX_GAP - VIEWPORT_PADDING;
+    const openAbove = spaceBelow < listboxHeight && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(0, openAbove ? spaceAbove : spaceBelow);
+    const left = Math.min(
+      Math.max(VIEWPORT_PADDING, triggerRect.left),
+      Math.max(VIEWPORT_PADDING, window.innerWidth - triggerRect.width - VIEWPORT_PADDING),
+    );
+
+    setListboxStyle({
+      position: "fixed",
+      left,
+      width: triggerRect.width,
+      maxHeight: Math.min(LISTBOX_MAX_HEIGHT, availableHeight),
+      ...(openAbove
+        ? { bottom: window.innerHeight - triggerRect.top + LISTBOX_GAP }
+        : { top: triggerRect.bottom + LISTBOX_GAP }),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (isOpen) {
+      updateListboxPosition();
+    }
+  }, [isOpen, options, updateListboxPosition]);
 
   useEffect(() => {
     if (!isOpen) {
       return;
     }
 
-    listRef.current?.focus();
-  }, [isOpen]);
+    const handleViewportChange = (event: Event) => {
+      if (event.target instanceof Node && listboxRef.current?.contains(event.target)) {
+        return;
+      }
+      updateListboxPosition();
+    };
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [isOpen, updateListboxPosition]);
 
   useEffect(() => {
-    if (!isOpen || activeIndex < 0) {
+    if (!isOpen) {
+      setActiveIndex(selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : enabledIndices[0] ?? -1);
       return;
     }
 
-    optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, isOpen]);
+    if (activeIndex < 0 || options[activeIndex]?.disabled) {
+      setActiveIndex(selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : enabledIndices[0] ?? -1);
+    }
+  }, [activeIndex, enabledIndices, isOpen, options, selectedIndex]);
 
-  const handleListKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeList();
-      buttonRef.current?.focus();
+  useEffect(() => {
+    if (isOpen && activeIndex >= 0) {
+      document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex, id, isOpen]);
+
+  const openListbox = () => {
+    if (disabled || enabledIndices.length === 0) {
       return;
     }
 
-    if (event.key === "Tab") {
-      closeList();
-      return;
-    }
-
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      setActiveIndex((current) => getNextEnabledIndex(current >= 0 ? current : -1, 1));
-      return;
-    }
-
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      const startIndex = activeIndex >= 0 ? activeIndex : options.length;
-      setActiveIndex(getNextEnabledIndex(startIndex, -1));
-      return;
-    }
-
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      if (activeIndex >= 0 && !options[activeIndex]?.disabled) {
-        onChange(options[activeIndex].value);
-      }
-      closeList();
-      buttonRef.current?.focus();
-    }
+    setActiveIndex(selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : enabledIndices[0]);
+    setIsOpen(true);
   };
 
-  const handleButtonKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+  const selectOption = (index: number) => {
+    const option = options[index];
+    if (disabled || !option || option.disabled) {
+      return;
+    }
+
+    onChange(option.value);
+    setIsOpen(false);
+  };
+
+  const moveActiveOption = (direction: 1 | -1) => {
+    const currentPosition = enabledIndices.indexOf(activeIndex);
+    const nextPosition = currentPosition < 0
+      ? direction === 1 ? 0 : enabledIndices.length - 1
+      : (currentPosition + direction + enabledIndices.length) % enabledIndices.length;
+    setActiveIndex(enabledIndices[nextPosition]);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (disabled) {
       return;
     }
 
-    if (event.key === "ArrowDown") {
-      event.preventDefault();
-      const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
-      const nextIndex = getNextEnabledIndex(selectedIndex >= 0 ? selectedIndex : -1, 1);
-      openList(nextIndex);
+    if (event.key === KeyCode.Tab) {
+      setIsOpen(false);
       return;
     }
 
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
-      const nextIndex = getNextEnabledIndex(
-        selectedIndex >= 0 ? selectedIndex : options.length,
-        -1,
-      );
-      openList(nextIndex);
+    if (event.key === KeyCode.Escape) {
+      if (isOpen) {
+        event.preventDefault();
+        setIsOpen(false);
+      }
       return;
     }
 
-    if (event.key === "Enter" || event.key === " ") {
+    if (event.key === KeyCode.Enter || event.key === KeyCode.Space) {
       event.preventDefault();
-      openList();
+      if (isOpen) {
+        selectOption(activeIndex);
+      } else {
+        openListbox();
+      }
+      return;
+    }
+
+    if (event.key === KeyCode.ArrowDown || event.key === KeyCode.ArrowUp) {
+      event.preventDefault();
+      if (!isOpen) {
+        openListbox();
+      } else {
+        moveActiveOption(event.key === KeyCode.ArrowDown ? 1 : -1);
+      }
+      return;
+    }
+
+    if (event.key === KeyCode.Home || event.key === KeyCode.End) {
+      event.preventDefault();
+      if (!isOpen) {
+        openListbox();
+      } else {
+        setActiveIndex(event.key === KeyCode.Home ? enabledIndices[0] : enabledIndices[enabledIndices.length - 1]);
+      }
     }
   };
-
-  const displayLabel = selectedOption?.label ?? placeholder ?? "Select an option";
 
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         id={id}
-        ref={buttonRef}
         type="button"
-        className="w-full rounded-sm border border-white/20 bg-black/20 px-3 py-2 pr-9 text-left text-sm text-neutral-100 transition-colors focus:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black/10 disabled:text-neutral-500"
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        aria-controls={`${listboxId}-listbox`}
+        aria-controls={listboxId}
         aria-describedby={ariaDescribedBy}
-        onClick={() => (isOpen ? closeList() : openList())}
-        onKeyDown={handleButtonKeyDown}
-        disabled={disabled}
+        aria-activedescendant={isOpen && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined}
+        disabled={disabled || enabledIndices.length === 0}
+        onClick={() => (isOpen ? setIsOpen(false) : openListbox())}
+        onKeyDown={handleKeyDown}
+        className="flex w-full items-center justify-between gap-3 rounded-sm border border-white/20 bg-black/20 px-3 py-2 text-left text-sm text-neutral-100 transition-colors hover:border-white/35 hover:bg-white/6 focus:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-emerald-300)/60 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black/10 disabled:text-neutral-500"
       >
-        <span className="block truncate">{displayLabel}</span>
+        <span className={!selectedOption && placeholder ? "text-neutral-400" : "truncate"}>{displayLabel}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-neutral-400 transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
-      <ChevronDown
-        className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-transform ${
-          isOpen ? "rotate-180 text-neutral-200" : "text-neutral-400"
-        }`}
-      />
 
-      {isOpen && !disabled && (
-        <ul
-          id={`${listboxId}-listbox`}
-          ref={listRef}
+      {isOpen && createPortal(
+        <div
+          ref={listboxRef}
+          id={listboxId}
           role="listbox"
-          tabIndex={-1}
-          aria-labelledby={id}
-          className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-sm border border-white/20 bg-black/70 p-1 backdrop-blur-sm shadow-(--surface-glow)"
-          onKeyDown={handleListKeyDown}
+          aria-label={displayLabel}
+          className="z-[200] overflow-y-auto rounded-sm border border-white/15 bg-(--surface-2) p-1 shadow-(--surface-glow)"
+          style={listboxStyle}
         >
           {options.map((option, index) => {
             const isSelected = option.value === value;
             const isActive = index === activeIndex;
 
             return (
-              <li
+              <div
                 key={option.value}
-                ref={(element) => {
-                  optionRefs.current[index] = element;
-                }}
+                id={`${id}-option-${index}`}
                 role="option"
                 aria-selected={isSelected}
-                className={`flex cursor-pointer items-center justify-between rounded px-2.5 py-1.5 text-sm transition-colors ${
+                aria-disabled={option.disabled || undefined}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectOption(index)}
+                className={`flex items-center justify-between gap-3 rounded-sm px-3 py-2 text-sm transition-colors ${
                   option.disabled
                     ? "cursor-not-allowed text-neutral-500"
                     : isActive
-                      ? "bg-white/12 text-neutral-100"
-                      : isSelected
-                        ? "bg-white/8 text-neutral-100"
-                        : "text-neutral-200 hover:bg-white/5"
+                      ? "cursor-pointer bg-emerald-500/15 text-emerald-100"
+                      : "cursor-pointer text-neutral-200 hover:bg-white/8 hover:text-neutral-100"
                 }`}
-                onMouseEnter={() => {
-                  if (!option.disabled) {
-                    setActiveIndex(index);
-                  }
-                }}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                }}
-                onClick={() => {
-                  if (option.disabled) {
-                    return;
-                  }
-                  onChange(option.value);
-                  closeList();
-                  buttonRef.current?.focus();
-                }}
               >
-                <span className="truncate pr-2">{option.label}</span>
-                {isSelected && <Check className="h-4 w-4 shrink-0 text-neutral-200" />}
-              </li>
+                <span className="min-w-0 truncate">{option.label}</span>
+                {isSelected && <Check className="h-4 w-4 shrink-0 text-emerald-300" aria-hidden="true" />}
+              </div>
             );
           })}
-        </ul>
+        </div>,
+        document.body,
       )}
     </div>
   );

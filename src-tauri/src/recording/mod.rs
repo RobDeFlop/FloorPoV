@@ -2,6 +2,7 @@ mod audio_pipeline;
 mod ffmpeg;
 pub(crate) mod metadata;
 mod model;
+mod mp4;
 mod segments;
 mod session;
 mod window_capture;
@@ -11,7 +12,9 @@ use std::path::Path;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
 
+pub(crate) use ffmpeg::resolve_ffmpeg_binary_path;
 pub use model::RecordingState;
+pub(crate) use model::CREATE_NO_WINDOW;
 use model::{CaptureInput, RecordingSessionConfig};
 
 fn sanitize_for_filename(input: &str) -> String {
@@ -36,6 +39,11 @@ fn sanitize_for_filename(input: &str) -> String {
 #[tauri::command]
 pub fn list_capture_windows() -> Result<Vec<model::CaptureWindowInfo>, String> {
     window_capture::list_capture_windows_internal()
+}
+
+#[tauri::command]
+pub fn is_wow_process_running() -> bool {
+    audio_pipeline::is_wow_process_running()
 }
 
 #[tauri::command]
@@ -78,6 +86,15 @@ pub async fn start_recording(
 
     std::fs::create_dir_all(&output_folder)
         .map_err(|error| format!("Failed to create output directory: {error}"))?;
+
+    if let Err(error) =
+        crate::settings::register_recordings_folder_scope(&app_handle, &output_folder)
+    {
+        tracing::warn!(
+            output_folder,
+            "Recording started without playback access to the output folder: {error}"
+        );
+    }
 
     let mut recording_settings = settings;
     let capture_input = window_capture::resolve_capture_input(&recording_settings)?;
@@ -126,7 +143,9 @@ pub async fn start_recording(
     let resolved_capture_target = capture_input.target_label();
 
     if recording_settings.enable_system_audio {
-        audio_pipeline::validate_system_audio_capture_available()?;
+        audio_pipeline::validate_system_audio_capture_available(
+            &recording_settings.audio_capture_mode,
+        )?;
     }
 
     tracing::info!(
@@ -138,6 +157,7 @@ pub async fn start_recording(
         capture_source = %recording_settings.capture_source,
         resolved_capture_target = %resolved_capture_target,
         include_system_audio = recording_settings.enable_system_audio,
+        audio_capture_mode = %recording_settings.audio_capture_mode,
         enable_diagnostics = recording_settings.enable_recording_diagnostics,
         effective_bitrate_bps = recording_settings.bitrate,
         "Using recording settings"
@@ -170,6 +190,7 @@ pub async fn start_recording(
             bitrate: recording_settings.bitrate,
             capture_input,
             include_system_audio: recording_settings.enable_system_audio,
+            audio_capture_mode: recording_settings.audio_capture_mode.clone(),
             enable_diagnostics: recording_settings.enable_recording_diagnostics,
         },
         stop_rx,

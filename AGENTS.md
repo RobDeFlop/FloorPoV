@@ -60,9 +60,12 @@ cargo fmt
 
 ### Tests
 
-No JS/TS test framework is configured in the repo right now.
+Frontend unit tests use the built-in Bun test runner. Put `*.test.ts` next to the module under test. `tsc --noEmit` excludes those files so `bun:test` types stay out of the app compile.
 
-If you add a test framework, document setup and commands in this file and in `package.json` scripts.
+```bash
+bun test
+bun test src/utils/auto-record-policy.test.ts
+```
 
 Rust tests:
 
@@ -72,6 +75,18 @@ cargo test
 cargo test <pattern>
 cargo test --lib
 ```
+
+## Shipping app updates
+
+After squash-merging an app PR into `main`, ship it through GitHub Releases so the installed app can update itself. Skip docs-only PRs.
+
+1. Include a version bump in that PR (or a follow-up `chore/release-*` PR) in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
+2. After merge, tag `v<version>` from `main` or run `gh workflow run Release -f tag_name=v<version>`.
+3. Wait until the Release workflow uploads `latest.json`. Do not local-install NSIS.
+
+Local NSIS reinstall is only when the updater pubkey or signing key changes, because the already-installed app cannot verify a new key. The 0.1.9-beta pubkey cutover needs one signed NSIS install; later versions update in-app.
+
+Keep `enableAutoUpdate` on. Never point the updater at the official FloorPoV releases.
 
 ## Code Style
 
@@ -176,6 +191,8 @@ Writing style for docs and comments:
 - Prefer concrete language over vague claims.
 - Avoid cliches, metaphors, and hype terms.
 
+When adding or changing user-facing text in `src/`, `README.md`, or user-facing documentation, read and follow the standalone copy rules in `docs/coding-guidelines.md#user-facing-copy`.
+
 ## Project Structure
 
 ```text
@@ -198,12 +215,12 @@ See `docs/implementation-plan.md` for phased implementation planning.
 
 ### Issue tracker
 
-Issues and PRDs live in GitHub Issues. See `docs/agents/issue-tracker.md`.
+For issue operations, including maps and child tickets, follow `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-Uses the default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+When triaging issues, use the role mapping in `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context layout with root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+Before exploring the codebase, follow the single-context rules in `docs/agents/domain.md`.

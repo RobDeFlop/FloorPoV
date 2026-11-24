@@ -14,7 +14,7 @@ import {
   UploadCloud,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   WclActivityGroup,
   StartWclLiveUploadPayload,
@@ -355,28 +355,16 @@ export function WarcraftLogsUploadPage() {
     };
   }, [applyAuthStatus, email, isAuthStatusLoaded, refreshAuthStatus, useSavedLogin]);
 
-  const canStartUpload = useMemo(() => {
-    return (
-      !isUploading &&
-      !isLiveUploading &&
-      !isScanningActivities &&
-      !isAuthBusy &&
-      logFilePath.trim().length > 0 &&
-      hasAuthenticatedSession
-    );
-  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isScanningActivities, isUploading, logFilePath]);
-
-  const canLogin = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasLoginInput;
-  }, [hasLoginInput, isAuthBusy, isLiveUploading, isUploading]);
-
-  const canLoadGuilds = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
-  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading]);
-
-  const canStartLiveUpload = useMemo(() => {
-    return !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
-  }, [hasAuthenticatedSession, isAuthBusy, isLiveUploading, isUploading]);
+  const canStartUpload =
+    !isUploading &&
+    !isLiveUploading &&
+    !isScanningActivities &&
+    !isAuthBusy &&
+    logFilePath.trim().length > 0 &&
+    hasAuthenticatedSession;
+  const canLogin = !isUploading && !isLiveUploading && !isAuthBusy && hasLoginInput;
+  const canLoadGuilds = !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
+  const canStartLiveUpload = !isUploading && !isLiveUploading && !isAuthBusy && hasAuthenticatedSession;
 
   const progressBarTheme = errorMessage ? "bg-rose-400/90" : "bg-emerald-400/85";
 
@@ -492,8 +480,8 @@ export function WarcraftLogsUploadPage() {
         tone: "success",
         message:
           guildCount > 0
-            ? `Login successful. Loaded ${guildCount} guild${guildCount === 1 ? "" : "s"}.`
-            : "Login successful. No guilds found for this account.",
+            ? `Logged in. Loaded ${guildCount} guild${guildCount === 1 ? "" : "s"}.`
+            : "Logged in. No guilds found for this account.",
       });
     } catch (error) {
       const message = getErrorMessage(error);
@@ -501,8 +489,8 @@ export function WarcraftLogsUploadPage() {
       setLoginFeedback({
         tone: "error",
         message: didLoginSucceed
-          ? `Login succeeded, but loading guilds failed: ${message}`
-          : `Login failed: ${message}`,
+          ? `Logged in, but loading guilds failed: ${message}`
+          : `Could not log in: ${message}`,
       });
     } finally {
       setIsLoadingGuilds(false);
@@ -592,7 +580,7 @@ export function WarcraftLogsUploadPage() {
         directory: false,
         multiple: false,
         defaultPath: settings.wowFolder || undefined,
-        filters: [{ name: "Combat Logs", extensions: ["txt"] }],
+        filters: [{ name: "Combat logs", extensions: ["txt"] }],
       });
 
       if (selected && typeof selected === "string") {
@@ -773,10 +761,10 @@ export function WarcraftLogsUploadPage() {
         <div>
           <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
             <UploadCloud className="h-4 w-4 text-neutral-300" />
-            WarcraftLogs Upload
+            WarcraftLogs upload
           </h1>
           <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
-            Set up credentials, upload logs, and run live logging
+            Upload combat logs to WarcraftLogs or upload live as you play.
           </p>
         </div>
       </div>
@@ -785,7 +773,7 @@ export function WarcraftLogsUploadPage() {
         <div className="w-full space-y-4">
           <SettingsSection title="Account" icon={<ShieldCheck className="h-4 w-4" />}>
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-              <FormField id={FIELD_IDS.email} label="WarcraftLogs Email">
+              <FormField id={FIELD_IDS.email} label="WarcraftLogs email">
                 <Input
                   id={FIELD_IDS.email}
                   type="email"
@@ -801,7 +789,7 @@ export function WarcraftLogsUploadPage() {
 
               <FormField
                 id={FIELD_IDS.password}
-                label="WarcraftLogs Password"
+                label="WarcraftLogs password"
               >
                 <Input
                   id={FIELD_IDS.password}
@@ -822,7 +810,7 @@ export function WarcraftLogsUploadPage() {
                   disabled={!canLogin}
                   className="w-full lg:w-auto"
                 >
-                  {isLoggingIn ? "Logging in..." : "Login"}
+                  {isLoggingIn ? "Logging in..." : "Log in"}
                 </Button>
               </div>
             </div>
@@ -923,7 +911,7 @@ export function WarcraftLogsUploadPage() {
               )}
           </SettingsSection>
 
-          <SettingsSection title="Upload Setup" icon={<FileText className="h-4 w-4" />}>
+          <SettingsSection title="Upload setup" icon={<FileText className="h-4 w-4" />}>
             <div className="grid gap-4 lg:grid-cols-3">
               <div>
                 <label htmlFor={FIELD_IDS.region} className="mb-2 block text-sm text-neutral-300">
@@ -986,7 +974,7 @@ export function WarcraftLogsUploadPage() {
                     onChange={setSelectedGuildId}
                   />
                   <Button variant="secondary" onClick={handleRefreshGuilds} disabled={!canLoadGuilds}>
-                    {isLoadingGuilds ? "Loading guilds..." : "Refresh Guilds"}
+                    {isLoadingGuilds ? "Loading guilds..." : "Refresh guilds"}
                   </Button>
                 </div>
                 <p className="mt-2 text-xs text-neutral-500">
@@ -997,12 +985,12 @@ export function WarcraftLogsUploadPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Combat Log" icon={<UploadCloud className="h-4 w-4" />}>
+          <SettingsSection title="Combat log" icon={<UploadCloud className="h-4 w-4" />}>
             <div className="space-y-3">
               <FormField
                 id={FIELD_IDS.logFilePath}
-                label="Log File"
-                description="Choose a WoWCombatLog*.txt file, or resolve the latest one from your WoW folder."
+                label="Log file"
+                description="Choose a WoWCombatLog*.txt file or use the latest log from your WoW folder."
               >
                 <Input
                   id={FIELD_IDS.logFilePath}
@@ -1020,25 +1008,25 @@ export function WarcraftLogsUploadPage() {
                   onClick={handleBrowseLogFile}
                   disabled={isUploading || isLiveUploading}
                 >
-                  Browse File
+                  Browse file
                 </Button>
                 <Button
                   variant="secondary"
                   onClick={handleResolveLatestLog}
                   disabled={isUploading || isLiveUploading || isResolvingLatestLog}
                 >
-                  {isResolvingLatestLog ? "Finding latest log..." : "Use Latest WoW Log"}
+                  {isResolvingLatestLog ? "Finding latest log..." : "Use latest WoW log"}
                 </Button>
               </div>
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Upload Control" icon={<LoaderCircle className="h-4 w-4" />}>
+          <SettingsSection title="Upload control" icon={<LoaderCircle className="h-4 w-4" />}>
             <div className="space-y-4">
               <div className="space-y-3">
                 <p className="text-xs text-neutral-400">
-                  One-shot upload sends the selected file once. Live upload tails your active combat
-                  log until stopped.
+                  Upload the selected file once, or keep uploading new combat log entries until you stop
+                  live upload.
                 </p>
                 <label className="flex items-start gap-2 text-xs text-neutral-300">
                   <input
@@ -1050,25 +1038,25 @@ export function WarcraftLogsUploadPage() {
                   />
                   <span>
                     <span className="block font-medium text-neutral-200">Include existing contents in live upload</span>
-                    <span className="block text-neutral-500">Backfill the latest WoW log before waiting for new lines.</span>
+                    <span className="block text-neutral-500">Upload existing entries from the latest WoW log before waiting for new entries.</span>
                   </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="primary" onClick={handleStartUpload} disabled={!canStartUpload}>
-                    {isUploading ? "Uploading..." : "Start Upload"}
+                    {isUploading ? "Uploading..." : "Start upload"}
                   </Button>
                   <Button variant="danger" onClick={handleCancelUpload} disabled={!isUploading}>
-                    Cancel Upload
+                    Cancel upload
                   </Button>
                   <Button
                     variant="secondary"
                     onClick={handleStartLiveUpload}
                     disabled={!canStartLiveUpload}
                   >
-                    {isLiveUploading ? "Live Upload Active" : "Start Live Upload"}
+                    {isLiveUploading ? "Live upload active" : "Start live upload"}
                   </Button>
                   <Button variant="danger" onClick={handleStopLiveUpload} disabled={!isLiveUploading}>
-                    Stop Live Upload
+                    Stop live upload
                   </Button>
                 </div>
               </div>
@@ -1076,9 +1064,17 @@ export function WarcraftLogsUploadPage() {
               <div className="rounded-sm border border-white/10 bg-black/20 p-3">
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-neutral-400">
-                    Upload Status
+                    Upload status
                   </p>
-                  <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
+                  <div
+                    className="h-2 overflow-hidden rounded-full bg-neutral-800"
+                    role="progressbar"
+                    aria-label="WarcraftLogs upload progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.min(100, Math.max(progressPercent, 0))}
+                    aria-valuetext={`${progressPercent}% complete`}
+                  >
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${progressBarTheme}`}
                       style={{ width: `${Math.min(100, Math.max(progressPercent, 0))}%` }}
@@ -1086,12 +1082,14 @@ export function WarcraftLogsUploadPage() {
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="text-neutral-300">{progressStatus ?? "Idle"}</span>
+                    <span className="text-neutral-300" role="status" aria-live="polite">
+                      {progressStatus ?? "Idle"}
+                    </span>
                     <span className="font-mono text-neutral-400">{progressPercent}%</span>
                   </div>
 
                   {errorMessage && (
-                    <p className="inline-flex items-center gap-1.5 rounded-sm border border-rose-300/30 bg-rose-500/12 px-2 py-1 text-xs text-rose-200">
+                    <p className="inline-flex items-center gap-1.5 rounded-sm border border-rose-300/30 bg-rose-500/12 px-2 py-1 text-xs text-rose-200" role="alert">
                       <XCircle className="h-3.5 w-3.5 text-rose-300" />
                       {errorMessage}
                     </p>
@@ -1101,7 +1099,7 @@ export function WarcraftLogsUploadPage() {
                     <div className="rounded-sm border border-emerald-300/30 bg-emerald-500/12 p-3 text-xs text-emerald-100">
                       <p className="mb-3 inline-flex items-center gap-1.5 font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" />
-                        WarcraftLogs Report
+                        WarcraftLogs report
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <a
@@ -1111,7 +1109,7 @@ export function WarcraftLogsUploadPage() {
                           title={reportUrl}
                           className="inline-flex items-center gap-1.5 rounded-sm border border-emerald-300/35 bg-emerald-500/20 px-3 py-1.5 font-medium text-emerald-100 transition-colors hover:bg-emerald-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
                         >
-                          Open Report
+                          Open report
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
                         <Button variant="secondary" size="sm" onClick={handleCopyReportUrl}>
@@ -1128,7 +1126,7 @@ export function WarcraftLogsUploadPage() {
             </div>
           </SettingsSection>
 
-          <SettingsSection title="Activity Console" icon={<Terminal className="h-4 w-4" />}>
+          <SettingsSection title="Activity console" icon={<Terminal className="h-4 w-4" />}>
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <button
@@ -1141,7 +1139,7 @@ export function WarcraftLogsUploadPage() {
                   ) : (
                     <ChevronDown className="h-3.5 w-3.5" />
                   )}
-                  {isConsoleExpanded ? "Hide Console" : "Show Console"}
+                  {isConsoleExpanded ? "Hide console" : "Show console"}
                 </button>
 
                 <div className="flex flex-wrap gap-2">
@@ -1153,7 +1151,7 @@ export function WarcraftLogsUploadPage() {
                   >
                     <span className="inline-flex items-center gap-1.5">
                       <Copy className="h-3.5 w-3.5" />
-                      Copy Logs
+                      Copy logs
                     </span>
                   </Button>
                   <Button
@@ -1162,7 +1160,7 @@ export function WarcraftLogsUploadPage() {
                     onClick={clearProgress}
                     disabled={progressLines.length === 0 || isUploading || isLiveUploading}
                   >
-                    Clear Console
+                    Clear console
                   </Button>
                 </div>
               </div>

@@ -154,6 +154,67 @@ pub(crate) fn select_video_encoder(
     ("libx264".to_string(), Some(preset.to_string()))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AmfEncoderTune {
+    pub(crate) usage: &'static str,
+    pub(crate) quality: &'static str,
+    pub(crate) gop: u32,
+}
+
+pub(crate) fn amf_encoder_tune(video_quality: &str, output_frame_rate: u32) -> AmfEncoderTune {
+    let (usage, quality) = match video_quality {
+        "ultra" => ("transcoding", "quality"),
+        "high" => ("transcoding", "balanced"),
+        "medium" => ("lowlatency", "balanced"),
+        _ => ("lowlatency", "speed"),
+    };
+
+    AmfEncoderTune {
+        usage,
+        quality,
+        gop: output_frame_rate.max(1),
+    }
+}
+
+pub(crate) fn append_video_encoder_output_args(
+    command: &mut Command,
+    encoder: &str,
+    encoder_preset: Option<&str>,
+    video_quality: &str,
+    output_frame_rate: u32,
+    bitrate: u32,
+) {
+    let bitrate_string = bitrate.to_string();
+    let buffer_size_string = bitrate.saturating_mul(2).to_string();
+
+    command.arg("-c:v").arg(encoder);
+
+    if encoder == "h264_amf" {
+        let tune = amf_encoder_tune(video_quality, output_frame_rate);
+        command
+            .arg("-usage")
+            .arg(tune.usage)
+            .arg("-quality")
+            .arg(tune.quality)
+            .arg("-rc")
+            .arg("cbr")
+            .arg("-g")
+            .arg(tune.gop.to_string())
+            .arg("-bf")
+            .arg("0");
+    } else if let Some(preset) = encoder_preset {
+        command.arg("-preset").arg(preset);
+    }
+
+    command
+        .arg("-b:v")
+        .arg(&bitrate_string)
+        .arg("-maxrate")
+        .arg(&bitrate_string)
+        .arg("-bufsize")
+        .arg(&buffer_size_string);
+}
+
 pub(crate) fn parse_ffmpeg_speed(line: &str) -> Option<f64> {
     let speed_index = line.find("speed=")?;
     let speed_slice = &line[speed_index + 6..];
@@ -267,4 +328,31 @@ pub(crate) fn resolve_video_filter(
     }
 
     format!("fps={output_frame_rate},format=yuv420p")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::amf_encoder_tune;
+
+    #[test]
+    fn high_quality_amf_uses_balanced_transcoding() {
+        let tune = amf_encoder_tune("high", 60);
+        assert_eq!(tune.usage, "transcoding");
+        assert_eq!(tune.quality, "balanced");
+        assert_eq!(tune.gop, 60);
+    }
+
+    #[test]
+    fn ultra_quality_amf_uses_quality_preset_and_one_second_gop() {
+        let tune = amf_encoder_tune("ultra", 30);
+        assert_eq!(tune.usage, "transcoding");
+        assert_eq!(tune.quality, "quality");
+        assert_eq!(tune.gop, 30);
+    }
+
+    #[test]
+    fn amf_gop_never_zero() {
+        let tune = amf_encoder_tune("high", 0);
+        assert_eq!(tune.gop, 1);
+    }
 }

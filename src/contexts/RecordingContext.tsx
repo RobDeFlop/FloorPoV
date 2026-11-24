@@ -14,6 +14,13 @@ import {
   RecordingMetadata,
 } from "../types/events";
 import { RecordingStartedPayload, CleanupResult, RecordingCommandSettings, RecordingOrigin, AutoTriggerMode } from "../types/recording";
+import {
+  AUTO_STOP_GRACE_MS,
+  WOW_PROCESS_GONE_POLL_MS,
+  nextMissingWowCheckCount,
+  resolveAutoRecordTriggerAction,
+  shouldStopAutoRecordForMissingWow,
+} from "../utils/auto-record-policy";
 
 interface RecordingContextType {
   isRecording: boolean;
@@ -25,12 +32,12 @@ interface RecordingContextType {
   recordingDuration: number;
   appStatusDetail: string | null;
   isSelectedWindowAlive: boolean;
+  playbackMetadataEpoch: number;
   loadPlaybackMetadata: (filePath: string) => Promise<void>;
+  bumpPlaybackMetadataEpoch: () => void;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
 }
-
-const AUTO_STOP_GRACE_MS = 5000;
 
 const RecordingContext = createContext<RecordingContextType | undefined>(undefined);
 
@@ -54,14 +61,21 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const [combatWatchDetail, setCombatWatchDetail] = useState<string | null>(null);
   const [autoRecordingConfigDetail, setAutoRecordingConfigDetail] = useState<string | null>(null);
   const [isSelectedWindowAlive, setIsSelectedWindowAlive] = useState(true);
+  const [playbackMetadataEpoch, setPlaybackMetadataEpoch] = useState(0);
   const appStatusDetail = windowGoneDetail ?? combatWatchDetail ?? autoRecordingConfigDetail;
   const { settings, updateSettings } = useSettings();
-  const { addEvent, setEvents, clearEvents } = useMarker();
+  const { addEvent, setEvents, setEncounters, setPlayers, clearEvents } = useMarker();
   const operationInFlightRef = useRef(false);
   const isRecordingRef = useRef(false);
   const recordingOriginRef = useRef<RecordingOrigin | null>(null);
   const pendingAutoStopTimeoutRef = useRef<number | null>(null);
   const pendingAutoStopModeRef = useRef<AutoTriggerMode | null>(null);
+  const pendingAutoStartModeRef = useRef<AutoTriggerMode | null>(null);
+  const activeAutoTriggerModeRef = useRef<AutoTriggerMode | null>(null);
+  const startRecordingInternalRef = useRef<
+    (origin: RecordingOrigin, autoTriggerMode?: AutoTriggerMode | null) => Promise<void>
+  >(async () => {});
+  const stopRecordingInternalRef = useRef<(isManualStop: boolean) => Promise<void>>(async () => {});
 
   const clearPendingAutoStop = useCallback(() => {
     if (pendingAutoStopTimeoutRef.current !== null) {
@@ -79,6 +93,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     recordingOriginRef.current = recordingOrigin;
   }, [recordingOrigin]);
 
+  useEffect(() => {
+    activeAutoTriggerModeRef.current = activeAutoTriggerMode;
+  }, [activeAutoTriggerMode]);
+
   const ensureCombatWatchRunning = useCallback(async () => {
     const wowFolder = settings.wowFolder.trim();
     if (!wowFolder) {
@@ -93,7 +111,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     });
     if (!wowFolderIsValid) {
       if (settings.enableAutoRecording) {
-        setAutoRecordingConfigDetail("Auto recording: no WoWCombatLog*.txt found.");
+        setAutoRecordingConfigDetail("Auto recording: WoW folder is invalid.");
       }
       return false;
     }
@@ -264,52 +282,54 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
     const unlistenCombatTrigger = listen<CombatTriggerEvent>("combat-trigger", (event) => {
       const trigger = event.payload;
-      if (!settings.enableAutoRecording) {
-        return;
-      }
+      const action = resolveAutoRecordTriggerAction(
+        {
+          enableAutoRecording: settings.enableAutoRecording,
+          isRecording: isRecordingRef.current,
+          recordingOrigin: recordingOriginRef.current,
+          activeAutoTriggerMode: activeAutoTriggerModeRef.current,
+          operationInFlight: operationInFlightRef.current,
+          pendingAutoStopMode: pendingAutoStopModeRef.current,
+        },
+        { triggerType: trigger.triggerType, mode: trigger.mode },
+      );
 
-      if (trigger.triggerType === "start") {
-        if (
-          pendingAutoStopTimeoutRef.current !== null &&
-          (pendingAutoStopModeRef.current === null || pendingAutoStopModeRef.current === trigger.mode)
-        ) {
+      switch (action.type) {
+        case "ignore":
+          return;
+        case "keepRecording":
           clearPendingAutoStop();
-        }
-
-        if (operationInFlightRef.current || isRecordingRef.current) {
           return;
-        }
-
-        void startRecordingInternal("auto", trigger.mode);
-        return;
-      }
-
-      if (
-        trigger.triggerType === "end" &&
-        !operationInFlightRef.current &&
-        isRecordingRef.current &&
-        recordingOriginRef.current === "auto" &&
-        activeAutoTriggerMode === trigger.mode
-      ) {
-        if (pendingAutoStopTimeoutRef.current !== null) {
+        case "start":
+          clearPendingAutoStop();
+          void startRecordingInternalRef.current("auto", action.mode);
           return;
-        }
+        case "queueStart":
+          clearPendingAutoStop();
+          pendingAutoStartModeRef.current = action.mode;
+          return;
+        case "stopThenStart":
+          clearPendingAutoStop();
+          pendingAutoStartModeRef.current = action.mode;
+          void stopRecordingInternalRef.current(false);
+          return;
+        case "scheduleStop":
+          pendingAutoStopModeRef.current = action.mode;
+          pendingAutoStopTimeoutRef.current = window.setTimeout(() => {
+            pendingAutoStopTimeoutRef.current = null;
+            pendingAutoStopModeRef.current = null;
 
-        pendingAutoStopModeRef.current = trigger.mode;
-        pendingAutoStopTimeoutRef.current = window.setTimeout(() => {
-          pendingAutoStopTimeoutRef.current = null;
-          pendingAutoStopModeRef.current = null;
+            if (
+              !isRecordingRef.current ||
+              recordingOriginRef.current !== "auto" ||
+              operationInFlightRef.current
+            ) {
+              return;
+            }
 
-          if (
-            !isRecordingRef.current ||
-            recordingOriginRef.current !== "auto" ||
-            operationInFlightRef.current
-          ) {
-            return;
-          }
-
-          void stopRecordingInternal(false);
-        }, AUTO_STOP_GRACE_MS);
+            void stopRecordingInternalRef.current(false);
+          }, AUTO_STOP_GRACE_MS);
+          return;
       }
     });
 
@@ -330,9 +350,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       unlistenCombatTrigger.then((unsubscribe) => unsubscribe());
       unlistenCombatWatchStatus.then((unsubscribe) => unsubscribe());
     };
-  }, [activeAutoTriggerMode, addEvent, clearPendingAutoStop, settings.enableAutoRecording]);
+  }, [addEvent, clearPendingAutoStop, settings.enableAutoRecording]);
 
-  const loadPlaybackMetadata = async (filePath: string) => {
+  const loadPlaybackMetadata = useCallback(async (filePath: string) => {
     if (isRecording) {
       return;
     }
@@ -340,6 +360,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     const normalizedPath = filePath.trim();
     if (!normalizedPath) {
       setEvents([]);
+      setEncounters([]);
+      setPlayers([]);
       return;
     }
 
@@ -349,11 +371,19 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       });
 
       setEvents(convertRecordingMetadataToGameEvents(metadata));
+      setEncounters(metadata?.encounters ?? []);
+      setPlayers(metadata?.players ?? []);
     } catch (error) {
       console.warn("Failed to load recording metadata. Falling back to no markers.", error);
       setEvents([]);
+      setEncounters([]);
+      setPlayers([]);
     }
-  };
+  }, [isRecording, setEncounters, setEvents, setPlayers]);
+
+  const bumpPlaybackMetadataEpoch = useCallback(() => {
+    setPlaybackMetadataEpoch((currentEpoch) => currentEpoch + 1);
+  }, []);
 
   const startRecordingInternal = useCallback(
     async (origin: RecordingOrigin, autoTriggerMode: AutoTriggerMode | null = null) => {
@@ -379,6 +409,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
           capture_window_hwnd: settings.captureWindowHwnd,
           capture_window_title: settings.captureWindowTitle,
           enable_system_audio: settings.enableSystemAudio,
+          audio_capture_mode: settings.audioCaptureMode,
           enable_recording_diagnostics: settings.enableRecordingDiagnostics,
         };
 
@@ -431,6 +462,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       settings.videoEncoderPreference,
       settings.enableRecordingDiagnostics,
       settings.enableSystemAudio,
+      settings.audioCaptureMode,
       settings.frameRate,
       settings.maxStorageGB,
       settings.outputFolder,
@@ -442,6 +474,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     async (isManualStop: boolean) => {
       if (operationInFlightRef.current) {
         return;
+      }
+
+      if (isManualStop) {
+        pendingAutoStartModeRef.current = null;
       }
 
       clearPendingAutoStop();
@@ -497,10 +533,13 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         }
 
         setIsRecording(false);
+        isRecordingRef.current = false;
         setRecordingStartTime(null);
         setRecordingWarning(null);
         setRecordingOrigin(null);
+        recordingOriginRef.current = null;
         setActiveAutoTriggerMode(null);
+        activeAutoTriggerModeRef.current = null;
 
         if (isManualStop && !settings.enableAutoRecording && isCombatWatchRunning) {
           await invoke("stop_combat_watch").catch(() => undefined);
@@ -514,6 +553,12 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       } finally {
         operationInFlightRef.current = false;
       }
+
+      const queuedAutoStartMode = pendingAutoStartModeRef.current;
+      pendingAutoStartModeRef.current = null;
+      if (queuedAutoStartMode && settings.enableAutoRecording && !isRecordingRef.current) {
+        void startRecordingInternal("auto", queuedAutoStartMode);
+      }
     },
     [
       activeAutoTriggerMode,
@@ -524,6 +569,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       recordingStartTime,
       settings.enableAutoRecording,
       settings.minAutoRaidRecordingSeconds,
+      startRecordingInternal,
     ],
   );
 
@@ -534,6 +580,60 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const stopRecording = useCallback(async () => {
     await stopRecordingInternal(true);
   }, [stopRecordingInternal]);
+
+  useEffect(() => {
+    startRecordingInternalRef.current = startRecordingInternal;
+  }, [startRecordingInternal]);
+
+  useEffect(() => {
+    stopRecordingInternalRef.current = stopRecordingInternal;
+  }, [stopRecordingInternal]);
+
+  useEffect(() => {
+    if (!isRecording || recordingOrigin !== "auto") {
+      return;
+    }
+
+    let cancelled = false;
+    let consecutiveMissingWowChecks = 0;
+
+    const checkWowProcess = async () => {
+      try {
+        const wowIsRunning = await invoke<boolean>("is_wow_process_running");
+        if (cancelled) {
+          return;
+        }
+
+        consecutiveMissingWowChecks = nextMissingWowCheckCount(
+          wowIsRunning,
+          consecutiveMissingWowChecks,
+        );
+        if (
+          !shouldStopAutoRecordForMissingWow(
+            consecutiveMissingWowChecks,
+            isRecordingRef.current,
+            recordingOriginRef.current,
+            operationInFlightRef.current,
+          )
+        ) {
+          return;
+        }
+
+        console.info("Stopping auto recording because World of Warcraft is not running");
+        void stopRecordingInternal(false);
+      } catch (error) {
+        console.warn("Failed to check whether WoW is running:", error);
+      }
+    };
+
+    void checkWowProcess();
+    const intervalId = window.setInterval(checkWowProcess, WOW_PROCESS_GONE_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isRecording, recordingOrigin, stopRecordingInternal]);
 
   useEffect(() => {
     let isDisposed = false;
@@ -610,7 +710,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         recordingDuration,
         appStatusDetail,
         isSelectedWindowAlive,
+        playbackMetadataEpoch,
         loadPlaybackMetadata,
+        bumpPlaybackMetadataEpoch,
         startRecording,
         stopRecording,
       }}

@@ -1,0 +1,16 @@
+---
+description: Ship FloorPoV updates through GitHub Releases instead of local NSIS reinstalls
+alwaysApply: true
+---
+
+# Shipping app updates
+
+After squash-merging an app change into `main`, ship a GitHub Release so the installed app updates itself. Skip docs-only PRs.
+
+1. Bump `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` in the app PR or a follow-up `chore/release-*` PR.
+2. After merge, tag `v<version>` or run `gh workflow run Release -f tag_name=v<version>`.
+3. Wait for `latest.json`. Do not local-install NSIS.
+
+Local NSIS reinstall is only when the updater pubkey or signing key changes. The 0.1.9-beta pubkey cutover needs one signed NSIS install; later versions update in-app.
+
+Keep `enableAutoUpdate` on. Never point the updater at official FloorPoV releases.

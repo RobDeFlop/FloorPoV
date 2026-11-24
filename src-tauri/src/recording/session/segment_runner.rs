@@ -18,7 +18,8 @@ use super::super::audio_pipeline::{
     run_system_audio_capture_to_queue,
 };
 use super::super::ffmpeg::{
-    append_runtime_capture_input_args, parse_ffmpeg_speed, resolve_video_filter,
+    append_runtime_capture_input_args, append_video_encoder_output_args, parse_ffmpeg_speed,
+    resolve_video_filter,
 };
 #[cfg(target_os = "windows")]
 use super::super::model::CREATE_NO_WINDOW;
@@ -211,7 +212,7 @@ struct AudioPipelineHandles {
     stats: Arc<AudioPipelineStats>,
 }
 
-fn setup_audio_pipeline(listener: TcpListener) -> AudioPipelineHandles {
+fn setup_audio_pipeline(listener: TcpListener, audio_capture_mode: String) -> AudioPipelineHandles {
     let (audio_tx, audio_rx) = std_mpsc::sync_channel::<Vec<u8>>(SYSTEM_AUDIO_QUEUE_CAPACITY);
     let (capture_stop_tx, capture_stop_rx) = std_mpsc::channel::<()>();
     let (writer_stop_tx, writer_stop_rx) = std_mpsc::channel::<()>();
@@ -251,8 +252,12 @@ fn setup_audio_pipeline(listener: TcpListener) -> AudioPipelineHandles {
 
     let capture_stats = Arc::clone(&stats);
     let capture_thread = thread::spawn(move || {
-        let capture_result =
-            run_system_audio_capture_to_queue(audio_tx, capture_stop_rx, capture_stats);
+        let capture_result = run_system_audio_capture_to_queue(
+            audio_tx,
+            capture_stop_rx,
+            capture_stats,
+            audio_capture_mode,
+        );
         tracing::info!("System audio capture thread exited");
         capture_result
     });
@@ -574,6 +579,7 @@ pub(super) fn run_ffmpeg_recording_segment(
         output_frame_rate = config.output_frame_rate,
         bitrate = config.bitrate,
         include_system_audio = config.include_system_audio,
+        audio_capture_mode = config.audio_capture_mode,
         enable_diagnostics = config.enable_diagnostics,
         video_encoder = config.video_encoder,
         "Starting FFmpeg recording segment"
@@ -593,8 +599,6 @@ pub(super) fn run_ffmpeg_recording_segment(
 
     let audio_port = audio_setup.as_ref().map(|s| s.port);
 
-    let bitrate_string = config.bitrate.to_string();
-    let buffer_size_string = config.bitrate.saturating_mul(2).to_string();
     let output_path_string = config.output_path.to_string_lossy().to_string();
 
     let mut command = Command::new(config.ffmpeg_binary_path);
@@ -674,25 +678,22 @@ pub(super) fn run_ffmpeg_recording_segment(
         command.arg("-vf").arg(&video_filter).arg("-an");
     }
 
-    command.arg("-c:v").arg(config.video_encoder);
-
-    if let Some(preset) = config.encoder_preset {
-        command.arg("-preset").arg(preset);
-    }
+    append_video_encoder_output_args(
+        &mut command,
+        config.video_encoder,
+        config.encoder_preset,
+        config.video_quality,
+        config.output_frame_rate,
+        config.bitrate,
+    );
 
     command
-        .arg("-b:v")
-        .arg(&bitrate_string)
-        .arg("-maxrate")
-        .arg(&bitrate_string)
-        .arg("-bufsize")
-        .arg(&buffer_size_string)
         .arg("-fps_mode")
         .arg("cfr")
         .arg("-max_muxing_queue_size")
         .arg("2048")
         .arg("-movflags")
-        .arg("+faststart")
+        .arg(super::super::mp4::RECORDING_MOVFLAGS)
         .arg(&output_path_string)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -713,7 +714,10 @@ pub(super) fn run_ffmpeg_recording_segment(
     let (stderr_hints, stderr_thread) = spawn_stderr_reader(&mut child, config.enable_diagnostics);
 
     let audio_handles = if let Some(setup) = audio_setup {
-        Some(setup_audio_pipeline(setup.listener))
+        Some(setup_audio_pipeline(
+            setup.listener,
+            config.audio_capture_mode.to_string(),
+        ))
     } else {
         None
     };

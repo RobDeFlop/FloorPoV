@@ -1,5 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
 import {
+  AlertTriangle,
   Bug,
   Circle,
   ExternalLink,
@@ -22,7 +23,11 @@ import { SidebarDividerBlock } from "./sidebar/SidebarDividerBlock";
 import { SidebarNavButton } from "./sidebar/SidebarNavButton";
 import { SidebarSectionLabel } from "./sidebar/SidebarSectionLabel";
 
-const gameModes = ["Mythic+", "Raid", "PvP"];
+const gameModes = [
+  { label: "Mythic+", view: "mythic-plus", icon: Swords },
+  { label: "Raid", view: "raid", icon: Shield },
+  { label: "PvP", view: "pvp", icon: Trophy },
+] as const;
 const REPOSITORY_URL = "https://github.com/RobDeFlop/FloorPoV";
 
 interface SidebarProps {
@@ -40,6 +45,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
     isRecording,
     recordingDuration,
     appStatusDetail,
+    lastError,
     isSelectedWindowAlive,
     startRecording,
     stopRecording,
@@ -147,90 +153,56 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
   }, []);
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-(--surface-1) backdrop-blur-md lg:w-56 lg:border-b-0 lg:border-r">
+    <aside className="flex max-h-[45vh] min-h-0 w-full shrink-0 flex-col overflow-y-auto border-b border-white/10 bg-(--surface-1) backdrop-blur-md md:h-full md:max-h-none md:w-56 md:min-w-56 md:border-b-0 md:border-r">
       <div className="px-3 py-3">
         <SidebarSectionLabel label="Navigation" />
-        <nav className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1" aria-label="Primary">
+        <nav className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-1" aria-label="Primary">
           <SidebarNavButton
             label="Home"
             icon={Radar}
             isActive={isMain}
-            activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-            defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+            activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
+            defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("main")}
           />
           <SidebarNavButton
             label="Settings"
             icon={SlidersHorizontal}
             isActive={isSettings}
-            activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-            defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+            activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
+            defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("settings")}
           />
         </nav>
       </div>
 
-      <nav className="flex-1 px-3 pb-3" aria-label="Game mode">
+      <nav className="flex-1 px-3 pb-3" aria-label="Game modes">
         <SidebarDividerBlock>
-          <SidebarSectionLabel label="Game Mode" />
-          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
-              {gameModes.map((mode) => {
-              const isActive = 
-                (mode === "Mythic+" && currentView === "mythic-plus") ||
-                (mode === "Raid" && currentView === "raid") ||
-                (mode === "PvP" && currentView === "pvp");
-             
-             const getGameModeIcon = () => {
-               switch (mode) {
-                 case "Mythic+":
-                   return Swords;
-                 case "Raid":
-                   return Shield;
-                 case "PvP":
-                   return Trophy;
-                 default:
-                   return () => null;
-               }
-             };
-             
-             const navigateTo = () => {
-               switch (mode) {
-                 case "Mythic+":
-                   onNavigate("mythic-plus");
-                   break;
-                 case "Raid":
-                   onNavigate("raid");
-                   break;
-                 case "PvP":
-                   onNavigate("pvp");
-                   break;
-               }
-             };
-             
-              return (
-                <SidebarNavButton
-                  key={mode}
-                  label={mode}
-                  icon={getGameModeIcon()}
-                  isActive={isActive}
-                  activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-                  defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
-                  onClick={navigateTo}
-                />
-              );
-            })}
+          <SidebarSectionLabel label="Game modes" />
+          <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-1">
+            {gameModes.map(({ label, view, icon: Icon }) => (
+              <SidebarNavButton
+                key={view}
+                label={label}
+                icon={Icon}
+                isActive={currentView === view}
+                activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
+                defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+                onClick={() => onNavigate(view)}
+              />
+            ))}
           </div>
         </SidebarDividerBlock>
 
         <SidebarDividerBlock>
-          <SidebarSectionLabel label="WarcraftLogs" />
-          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+          <SidebarSectionLabel label="Integrations" />
+          <div className="grid gap-1.5 sm:grid-cols-2 md:grid-cols-1">
             <SidebarNavButton
               label="Upload"
               icon={UploadCloud}
               isActive={isWarcraftLogs}
-              activeClassName="border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-              defaultClassName="border-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
+              activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
+              defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
               onClick={() => onNavigate("warcraftlogs")}
             />
             {isLiveUploading && (
@@ -243,7 +215,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               >
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse" />
-                  Live Log active
+                  Live log active
                 </span>
                 <span className="font-medium text-emerald-50">Stop</span>
               </button>
@@ -260,8 +232,8 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               label="Debug"
               icon={Bug}
               isActive={isDebug}
-              activeClassName="border-neutral-300/25 bg-neutral-500/10 text-neutral-200"
-              defaultClassName="border-transparent text-neutral-500 hover:border-neutral-300/15 hover:bg-white/3 hover:text-neutral-300"
+              activeClassName="border-l-2 border-l-neutral-300/70 bg-neutral-500/10 text-neutral-100"
+              defaultClassName="border-l-2 border-l-transparent text-neutral-500 hover:border-neutral-300/15 hover:bg-white/3 hover:text-neutral-300"
               onClick={() => onNavigate("debug")}
             />
           </SidebarDividerBlock>
@@ -312,7 +284,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                     isRecording ? "text-rose-200" : idleTheme === "amber" ? "text-amber-300" : "text-emerald-300"
                   }`}
                 >
-                  App Status
+                  Recording
                 </div>
               </div>
               <div className="mt-1 h-4 overflow-hidden">
@@ -353,19 +325,37 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
           </div>
         </motion.button>
 
-        <a
-          href={REPOSITORY_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="mt-3 inline-flex w-full items-center justify-between rounded-sm border border-transparent px-2.5 py-2 text-xs text-neutral-400 transition-colors hover:border-white/15 hover:bg-white/5 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--surface-1)"
-        >
-          <span className="inline-flex items-center gap-1.5">
-            <GitBranch className="h-3.5 w-3.5" />
-            GitHub
-          </span>
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
-        <p className="mt-2 text-center text-[10px] tracking-[0.08em] text-neutral-500">{appVersion}</p>
+        {lastError && (
+          <p
+            className="mt-2 rounded-sm border border-rose-300/30 bg-rose-500/10 px-2.5 py-2 text-xs leading-5 text-rose-200"
+            role="alert"
+          >
+            <span className="inline-flex items-start gap-1.5">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-300" aria-hidden="true" />
+              <span>
+                {isRecording
+                  ? `Could not stop recording: ${lastError}`
+                  : `Recording failed. Try again: ${lastError}`}
+              </span>
+            </span>
+          </p>
+        )}
+
+        <footer className="mt-3 border-t border-white/5 pt-3" aria-label="About">
+          <a
+            href={REPOSITORY_URL}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex w-full items-center justify-between rounded-sm border border-transparent px-2.5 py-2 text-xs text-neutral-400 transition-colors hover:border-white/15 hover:bg-white/5 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 focus-visible:ring-offset-2 focus-visible:ring-offset-(--surface-1)"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
+              GitHub
+            </span>
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+          <p className="mt-2 text-center text-[10px] tracking-[0.08em] text-neutral-500">{appVersion}</p>
+        </footer>
       </div>
     </aside>
   );

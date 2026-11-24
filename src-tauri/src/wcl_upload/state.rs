@@ -1,15 +1,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::wcl_upload::error::UploadError;
 use crate::wcl_upload::types::{ActiveLiveUpload, ActiveUpload, WclScanSession};
 
-lazy_static::lazy_static! {
-    pub(crate) static ref ACTIVE_UPLOAD: Mutex<Option<ActiveUpload>> = Mutex::new(None);
-    pub(crate) static ref ACTIVE_LIVE_UPLOAD: Mutex<Option<ActiveLiveUpload>> = Mutex::new(None);
-    pub(crate) static ref ACTIVE_SCAN: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
-    pub(crate) static ref PENDING_SCAN: Mutex<Option<WclScanSession>> = Mutex::new(None);
-}
+pub(crate) static ACTIVE_UPLOAD: LazyLock<Mutex<Option<ActiveUpload>>> =
+    LazyLock::new(|| Mutex::new(None));
+pub(crate) static ACTIVE_LIVE_UPLOAD: LazyLock<Mutex<Option<ActiveLiveUpload>>> =
+    LazyLock::new(|| Mutex::new(None));
+pub(crate) static ACTIVE_SCAN: LazyLock<Mutex<Option<Arc<AtomicBool>>>> =
+    LazyLock::new(|| Mutex::new(None));
+pub(crate) static PENDING_SCAN: LazyLock<Mutex<Option<WclScanSession>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 pub(crate) fn begin_scan_session() -> Result<Arc<AtomicBool>, String> {
     let mut state = ACTIVE_SCAN

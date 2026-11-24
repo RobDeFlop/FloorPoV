@@ -1,6 +1,8 @@
+import { createPortal } from "react-dom";
+import { useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, ChevronRight, LoaderCircle, X } from "lucide-react";
-import { useMemo, useState } from "react";
 import { WclActivityGroup } from "../../contexts/WclUploadContext";
+import { useModalFocus } from "../../hooks/useModalFocus";
 import { Button } from "../ui/Button";
 
 interface WclActivitySelectionModalProps {
@@ -40,19 +42,16 @@ function formatDuration(durationMs: number | null): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
+const STATUS_METADATA: Record<string, { label: string; className: string }> = {
+  kill: { label: "Kill", className: "text-emerald-300" },
+  complete: { label: "Complete", className: "text-emerald-300" },
+  wipe: { label: "Wipe", className: "text-rose-300" },
+  incomplete: { label: "Incomplete", className: "text-amber-200" },
+};
+
 function statusLabel(status: string): string {
-  switch (status) {
-    case "kill":
-      return "Kill";
-    case "wipe":
-      return "Wipe";
-    case "complete":
-      return "Complete";
-    case "incomplete":
-      return "Incomplete";
-    default:
-      return status ? status[0].toUpperCase() + status.slice(1) : "Unknown";
-  }
+  const metadata = STATUS_METADATA[status];
+  return metadata?.label ?? (status ? status[0].toUpperCase() + status.slice(1) : "Unknown");
 }
 
 function kindLabel(kind: string): string {
@@ -71,17 +70,7 @@ function kindLabel(kind: string): string {
 }
 
 function statusClass(status: string): string {
-  switch (status) {
-    case "kill":
-    case "complete":
-      return "text-emerald-300";
-    case "wipe":
-      return "text-rose-300";
-    case "incomplete":
-      return "text-amber-200";
-    default:
-      return "text-neutral-500";
-  }
+  return STATUS_METADATA[status]?.className ?? "text-neutral-400";
 }
 
 export function WclActivitySelectionModal({
@@ -109,6 +98,17 @@ export function WclActivitySelectionModal({
   const hasSupportedActivities = supportedActivities.length > 0;
   const visibleGroups = groups.filter((group) => group.kind !== "other" || showOther || !hasSupportedActivities);
   const selectedCount = selectedActivityIds.size;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelScanButtonRef = useRef<HTMLButtonElement>(null);
+  const initialFocusRef = isScanning ? cancelScanButtonRef : closeButtonRef;
+
+  useModalFocus({
+    isOpen: true,
+    dialogRef,
+    initialFocusRef,
+    onEscape: onCancel,
+  });
 
   const toggleGroup = (group: WclActivityGroup) => {
     const next = new Set(selectedActivityIds);
@@ -126,14 +126,17 @@ export function WclActivitySelectionModal({
   const selectAllSupported = () => onSelectionChange(new Set(supportedActivities.map((activity) => activity.id)));
   const clearSelection = () => onSelectionChange(new Set());
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+  return createPortal(
+    <div data-modal-root className="fixed inset-0 z-[300] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <div
+        ref={dialogRef}
         className="flex max-h-[min(780px,calc(100vh-2rem))] w-full max-w-3xl flex-col rounded-sm
           border border-white/15 bg-(--surface-2) shadow-(--surface-glow)"
         role="dialog"
         aria-modal="true"
         aria-labelledby="wcl-activity-selection-title"
+        aria-describedby="wcl-activity-selection-description"
+        tabIndex={-1}
       >
         <div className="flex items-start justify-between gap-4 border-b border-white/10 p-4">
           <div>
@@ -141,13 +144,14 @@ export function WclActivitySelectionModal({
               id="wcl-activity-selection-title"
               className="text-sm font-semibold uppercase tracking-[0.11em] text-neutral-100"
             >
-              Select Activities to Upload
+              Select activities to upload
             </h2>
-            <p className="mt-1 text-xs text-neutral-400">
+            <p id="wcl-activity-selection-description" className="mt-1 text-xs text-neutral-400">
               Choose raid pulls, whole Mythic+ runs, or PvP matches from this combat log.
             </p>
           </div>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onCancel}
             className="rounded-sm p-1 text-neutral-400 hover:bg-white/10 hover:text-neutral-100"
@@ -160,21 +164,31 @@ export function WclActivitySelectionModal({
         {isScanning ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
             <LoaderCircle className="h-8 w-8 animate-spin text-emerald-300" />
-            <p className="text-sm text-neutral-200">{scanStatus ?? "Scanning combat log..."}</p>
+            <p className="text-sm text-neutral-200" role="status" aria-live="polite">
+              {scanStatus ?? "Scanning combat log..."}
+            </p>
             <div className="w-full max-w-md">
-              <div className="h-2 overflow-hidden rounded-full bg-neutral-800">
+              <div
+                className="h-2 overflow-hidden rounded-full bg-neutral-800"
+                role="progressbar"
+                aria-label="Combat log scan progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, Math.max(0, scanPercent))}
+                aria-valuetext={`${scanPercent}% scanned`}
+              >
                 <div className="h-full bg-emerald-400 transition-all" style={{ width: `${scanPercent}%` }} />
               </div>
-              <p className="mt-2 text-xs text-neutral-500">{scanPercent}%</p>
+              <p className="mt-2 text-xs text-neutral-400">{scanPercent}%</p>
             </div>
-            <Button variant="secondary" onClick={onCancel}>Cancel Scan</Button>
+            <Button ref={cancelScanButtonRef} variant="secondary" onClick={onCancel}>Cancel scan</Button>
           </div>
         ) : scanError ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 p-10 text-center">
-            <p className="max-w-lg text-sm text-rose-200">{scanError}</p>
+            <p className="max-w-lg text-sm text-rose-200" role="alert">{scanError}</p>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={onCancel}>Close</Button>
-              <Button variant="primary" onClick={onRetry}>Scan Again</Button>
+              <Button variant="primary" onClick={onRetry}>Scan again</Button>
             </div>
           </div>
         ) : (
@@ -188,7 +202,7 @@ export function WclActivitySelectionModal({
                   onClick={selectAllSupported}
                   disabled={!hasSupportedActivities}
                 >
-                  Select All
+                  Select all
                 </Button>
                 <Button
                   variant="secondary"
@@ -196,18 +210,18 @@ export function WclActivitySelectionModal({
                   onClick={clearSelection}
                   disabled={selectedCount === 0}
                 >
-                  Clear Selection
+                  Clear selection
                 </Button>
                 {otherGroup && hasSupportedActivities && (
                   <Button variant="secondary" size="sm" onClick={() => setShowOther((current) => !current)}>
-                    {showOther ? "Hide Other" : "Show Other"}
+                    {showOther ? "Hide other" : "Show other"}
                   </Button>
                 )}
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {visibleGroups.length === 0 ? (
-                <p className="p-6 text-center text-sm text-neutral-400">No selectable activities were found.</p>
+                <p className="p-6 text-center text-sm text-neutral-400">No activities can be selected.</p>
               ) : (
                 <div className="space-y-2">
                   {visibleGroups.map((group) => {
@@ -230,6 +244,8 @@ export function WclActivitySelectionModal({
                               return next;
                             })}
                             aria-label={`${expanded ? "Collapse" : "Expand"} ${group.title}`}
+                            aria-expanded={expanded}
+                            aria-controls={`wcl-activities-${group.id}`}
                           >
                             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                           </button>
@@ -238,6 +254,8 @@ export function WclActivitySelectionModal({
                             onClick={() => toggleGroup(group)}
                             className="flex h-4 w-4 items-center justify-center rounded-sm border
                               border-white/35 text-emerald-300"
+                            role="checkbox"
+                            aria-checked={partiallySelected ? "mixed" : allSelected}
                             aria-label={`Select ${group.title}`}
                           >
                             {allSelected && <Check className="h-3 w-3" />}
@@ -249,14 +267,17 @@ export function WclActivitySelectionModal({
                             onClick={() => setExpandedGroups((current) => new Set(current).add(group.id))}
                           >
                             <span className="block truncate text-sm font-medium text-neutral-100">{group.title}</span>
-                            <span className="text-xs text-neutral-500">
+                            <span className="text-xs text-neutral-400">
                               {kindLabel(group.kind)} · {selectedChildren}/{group.activities.length} selected
                               {group.subtitle ? ` · ${group.subtitle}` : ""}
                             </span>
                           </button>
                         </div>
                         {expanded && (
-                          <div className="space-y-1 border-t border-white/10 p-2">
+                          <div
+                            id={`wcl-activities-${group.id}`}
+                            className="space-y-1 border-t border-white/10 p-2"
+                          >
                             {group.activities.map((activity) => {
                               const selected = selectedActivityIds.has(activity.id);
                               return (
@@ -265,11 +286,14 @@ export function WclActivitySelectionModal({
                                   if (selected) next.delete(activity.id); else next.add(activity.id);
                                   onSelectionChange(next);
                                 }}
+                                  role="checkbox"
+                                  aria-checked={selected}
                                   className={`grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center
                                     gap-3 rounded-sm p-2 text-left transition-colors
                                     ${selected ? "bg-emerald-500/10" : "hover:bg-white/5"}`}
                                 >
                                   <span
+                                    aria-hidden="true"
                                     className={`flex h-4 w-4 items-center justify-center rounded-sm border
                                       ${selected
                                         ? "border-emerald-300 bg-emerald-400/20 text-emerald-200"
@@ -294,7 +318,7 @@ export function WclActivitySelectionModal({
                                         {activity.subtitle}
                                       </span>
                                     )}
-                                    <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-500">
+                                    <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-neutral-400">
                                       {activity.startedAt !== null && (
                                         <span>
                                           <span className="text-neutral-400">Started</span>{" "}
@@ -332,12 +356,13 @@ export function WclActivitySelectionModal({
                 onClick={onUpload}
                 disabled={selectedCount === 0}
               >
-                Upload Selected ({selectedCount})
+                Upload selected ({selectedCount})
               </Button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

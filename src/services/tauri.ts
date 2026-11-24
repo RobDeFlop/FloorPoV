@@ -1,20 +1,4 @@
 // src/services/tauri.ts
-export interface TauriError {
-  message: string;
-  code?: number;
-}
-
-export type RecordingErrorType = 
-  | 'storage'
-  | 'ffmpeg'
-  | 'audio_capture'
-  | 'video_capture';
-
-export interface RecordingError {
-  type: RecordingErrorType;
-  message: string;
-}
-
 export function getErrorMessage(error: unknown): string {
   if (typeof error === "string") {
     return error;

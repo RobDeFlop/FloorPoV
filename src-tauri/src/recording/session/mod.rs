@@ -16,7 +16,7 @@ use super::model::{
 };
 use super::segments::{
     build_segment_output_path, cleanup_segment_workspace, create_segment_workspace,
-    finalize_segmented_recording,
+    finalize_segmented_recording, remux_to_library_mp4,
 };
 use super::window_capture::{
     evaluate_window_capture_availability, resolve_capture_dimensions,
@@ -93,6 +93,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             capture_source = runtime_capture_label(runtime_capture_mode),
             capture_target = %capture_target,
             include_system_audio = session_config.include_system_audio,
+            audio_capture_mode = %session_config.audio_capture_mode,
             enable_diagnostics = session_config.enable_diagnostics,
             video_encoder,
             "Starting FFmpeg recording"
@@ -119,6 +120,7 @@ pub(crate) fn spawn_ffmpeg_recording_task(
                 output_frame_rate: session_config.output_frame_rate,
                 bitrate: session_config.bitrate,
                 include_system_audio: session_config.include_system_audio,
+                audio_capture_mode: &session_config.audio_capture_mode,
                 enable_diagnostics: session_config.enable_diagnostics,
                 video_encoder: &video_encoder,
                 encoder_preset: encoder_preset.as_deref(),
@@ -134,14 +136,21 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             );
 
             if run_result.output_written {
-                if run_result.force_killed {
+                let probe = super::mp4::probe_mp4(&segment_output_path);
+                if run_result.force_killed && !probe.has_media_fragment() {
                     tracing::warn!(
                         segment_path = %segment_output_path.display(),
                         wall_clock_secs = run_result.wall_clock_duration.as_secs_f32(),
-                        "FFmpeg was force-killed before clean finalization; segment discarded. \
-                         Consider increasing FFMPEG_STOP_TIMEOUT if this happens on normal stops."
+                        "FFmpeg was force-killed before a media fragment was written; segment discarded"
                     );
                 } else {
+                    if run_result.force_killed {
+                        tracing::warn!(
+                            segment_path = %segment_output_path.display(),
+                            wall_clock_secs = run_result.wall_clock_duration.as_secs_f32(),
+                            "FFmpeg was force-killed, but the fragmented MP4 still has media"
+                        );
+                    }
                     segment_paths.push(segment_output_path);
                     segment_durations.push(run_result.wall_clock_duration);
                 }
@@ -208,16 +217,25 @@ pub(crate) fn spawn_ffmpeg_recording_task(
             cleanup_segment_workspace(workspace);
             was_successful
         } else {
-            let output_file = Path::new(&session_config.output_path);
-            output_file.exists()
-                && output_file
-                    .metadata()
-                    .map(|metadata| metadata.len() > 0)
-                    .unwrap_or(false)
+            match remux_to_library_mp4(
+                &session_config.ffmpeg_binary_path,
+                Path::new(&session_config.output_path),
+            ) {
+                Ok(()) => true,
+                Err(error) => {
+                    tracing::warn!(
+                        output_path = %session_config.output_path,
+                        "Recording stop finished without a duration-bearing library MP4: {error}"
+                    );
+                    false
+                }
+            }
         };
 
         if finalized_successfully {
-            emit_recording_finalized(&app_handle, &session_config.output_path);
+            let finalized_output_path =
+                super::metadata::rename_finalized_recording_if_named(&session_config.output_path);
+            emit_recording_finalized(&app_handle, &finalized_output_path);
         }
 
         emit_recording_warning_cleared(&app_handle);

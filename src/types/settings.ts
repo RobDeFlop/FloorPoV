@@ -1,8 +1,12 @@
+import { DEFAULT_APP_THEME, type AppTheme } from '../utils/theme';
+
+export type { AppTheme };
 export type VideoQuality = 'low' | 'medium' | 'high' | 'ultra';
 export type VideoEncoderPreference = 'auto' | 'h264_nvenc' | 'h264_qsv' | 'h264_amf' | 'libx264';
 export type FrameRate = 30 | 60;
 export type MarkerHotkey = 'F9' | 'F10' | 'F11' | 'F12' | 'none';
 export type CaptureSource = 'monitor' | 'window';
+export type AudioCaptureMode = 'wow' | 'desktop';
 
 export interface RecordingSettings {
   videoQuality: VideoQuality;
@@ -15,10 +19,13 @@ export interface RecordingSettings {
   wowFolder: string;
   maxStorageGB: number;
   enableSystemAudio: boolean;
+  audioCaptureMode: AudioCaptureMode;
   enableRecordingDiagnostics: boolean;
   enableAutoRecording: boolean;
   minAutoRaidRecordingSeconds: number;
   enableAutoUpdate: boolean;
+  showFullscreenEventsPanel: boolean;
+  appTheme: AppTheme;
   markerHotkey: MarkerHotkey;
 }
 
@@ -33,10 +40,13 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   wowFolder: '',
   maxStorageGB: 30,
   enableSystemAudio: false,
+  audioCaptureMode: 'wow',
   enableRecordingDiagnostics: false,
   enableAutoRecording: false,
   minAutoRaidRecordingSeconds: 25,
   enableAutoUpdate: true,
+  showFullscreenEventsPanel: true,
+  appTheme: DEFAULT_APP_THEME,
   markerHotkey: 'F9',
 };
 
@@ -57,7 +67,7 @@ export const HOTKEY_OPTIONS = [
   { value: "F10", label: "F10" },
   { value: "F11", label: "F11" },
   { value: "F12", label: "F12" },
-  { value: "none", label: "None (Disabled)" },
+  { value: "none", label: "None (disabled)" },
 ] as const;
 
 export const RECORDING_EVENT_TIMEOUT_MS = 15000;

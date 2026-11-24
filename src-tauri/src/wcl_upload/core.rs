@@ -1,5 +1,8 @@
 use regex::Regex;
-use reqwest::blocking::{Client, RequestBuilder, Response};
+use reqwest::blocking::{
+    multipart::{Form, Part},
+    Client, RequestBuilder, Response,
+};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -13,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
+use crate::combat_log::find_latest_combat_log_path;
 use crate::wcl_upload::constants::{
     BASE_URL, BATCH_SIZE, CHROME_VERSION_FALLBACK, CLIENT_VERSION_FALLBACK,
     ELECTRON_VERSION_FALLBACK, LIVE_FLUSH_INTERVAL_MS, LIVE_MAX_READ_LINES_PER_POLL,
@@ -20,13 +24,11 @@ use crate::wcl_upload::constants::{
 };
 use crate::wcl_upload::error::UploadError;
 use crate::wcl_upload::events::{
-    emit_live_report_created, emit_live_upload_complete, emit_live_upload_error,
-    emit_live_upload_progress, emit_log_scan_progress, emit_upload_complete, emit_upload_error,
-    emit_upload_progress,
+    emit_live_report_created, emit_live_upload_complete, emit_log_scan_progress,
+    emit_upload_complete, emit_upload_error, emit_upload_progress,
 };
 use crate::wcl_upload::filesystem::{
-    check_node_runtime, find_latest_combat_log_path, resolve_node_binary_path,
-    resolve_parser_harness_path,
+    check_node_runtime, resolve_node_binary_path, resolve_parser_harness_path,
 };
 use crate::wcl_upload::parser::ParserBridge;
 use crate::wcl_upload::payload::{
@@ -50,60 +52,6 @@ use crate::wcl_upload::types::{
 };
 use crate::wcl_upload::upload_pipeline::UploadPipeline;
 use crate::wcl_upload::validation::{validate_live_request, validate_request};
-
-enum MultipartFieldValue {
-    Text(String),
-    File {
-        file_name: String,
-        content_type: String,
-        bytes: Vec<u8>,
-    },
-}
-
-struct MultipartBody {
-    boundary: String,
-    payload: Vec<u8>,
-}
-
-fn build_multipart_body(
-    fields: Vec<(String, MultipartFieldValue)>,
-    boundary: String,
-) -> MultipartBody {
-    let mut payload = Vec::<u8>::new();
-
-    for (name, value) in fields {
-        payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
-        match value {
-            MultipartFieldValue::Text(text) => {
-                payload.extend_from_slice(
-                    format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n").as_bytes(),
-                );
-                payload.extend_from_slice(text.as_bytes());
-                payload.extend_from_slice(b"\r\n");
-            }
-            MultipartFieldValue::File {
-                file_name,
-                content_type,
-                bytes,
-            } => {
-                payload.extend_from_slice(
-                    format!(
-                        "Content-Disposition: form-data; name=\"{name}\"; filename=\"{file_name}\"\r\n"
-                    )
-                    .as_bytes(),
-                );
-                payload
-                    .extend_from_slice(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
-                payload.extend_from_slice(&bytes);
-                payload.extend_from_slice(b"\r\n");
-            }
-        }
-    }
-
-    payload.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
-
-    MultipartBody { boundary, payload }
-}
 
 pub async fn scan_wcl_log(
     app_handle: AppHandle,
@@ -368,14 +316,6 @@ fn validate_scan_fingerprint(scan: &WclScanSession, requested_path: &str) -> Res
     Ok(())
 }
 
-fn random_multipart_boundary() -> String {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
-    format!("----WebKitFormBoundary{nonce:x}")
-}
-
 #[derive(Clone)]
 pub(crate) struct WclSession {
     client: Client,
@@ -610,39 +550,24 @@ impl WclSession {
     ) -> Result<(), UploadError> {
         let endpoint = format!("{BASE_URL}/desktop-client/set-report-master-table/{report_code}");
 
-        let body = build_multipart_body(
-            vec![
-                (
-                    "segmentId".to_string(),
-                    MultipartFieldValue::Text(segment_id.to_string()),
-                ),
-                (
-                    "isRealTime".to_string(),
-                    MultipartFieldValue::Text("false".to_string()),
-                ),
-                (
-                    "logfile".to_string(),
-                    MultipartFieldValue::File {
-                        file_name: "blob".to_string(),
-                        content_type: "application/zip".to_string(),
-                        bytes: zip_bytes.clone(),
-                    },
-                ),
-            ],
-            random_multipart_boundary(),
-        );
-
         self.request_with_retry(
             "POST /desktop-client/set-report-master-table/{reportCode}",
             || {
                 self.client
                     .post(&endpoint)
                     .header("User-Agent", &self.user_agent)
-                    .header(
-                        "Content-Type",
-                        format!("multipart/form-data; boundary={}", body.boundary),
+                    .multipart(
+                        Form::new()
+                            .text("segmentId", segment_id.to_string())
+                            .text("isRealTime", "false")
+                            .part(
+                                "logfile",
+                                Part::bytes(zip_bytes.clone())
+                                    .file_name("blob")
+                                    .mime_str("application/zip")
+                                    .expect("application/zip is a valid MIME type"),
+                            ),
                     )
-                    .body(body.payload.clone())
             },
         )?;
 
@@ -668,35 +593,21 @@ impl WclSession {
         })
         .to_string();
 
-        let body = build_multipart_body(
-            vec![
-                (
-                    "parameters".to_string(),
-                    MultipartFieldValue::Text(parameters.clone()),
-                ),
-                (
-                    "logfile".to_string(),
-                    MultipartFieldValue::File {
-                        file_name: "blob".to_string(),
-                        content_type: "application/zip".to_string(),
-                        bytes: request.zip_bytes.clone(),
-                    },
-                ),
-            ],
-            random_multipart_boundary(),
-        );
-
         let response = self.request_with_retry(
             "POST /desktop-client/add-report-segment/{reportCode}",
             || {
                 self.client
                     .post(&endpoint)
                     .header("User-Agent", &self.user_agent)
-                    .header(
-                        "Content-Type",
-                        format!("multipart/form-data; boundary={}", body.boundary),
+                    .multipart(
+                        Form::new().text("parameters", parameters.clone()).part(
+                            "logfile",
+                            Part::bytes(request.zip_bytes.clone())
+                                .file_name("blob")
+                                .mime_str("application/zip")
+                                .expect("application/zip is a valid MIME type"),
+                        ),
                     )
-                    .body(body.payload.clone())
             },
         )?;
 
@@ -755,7 +666,7 @@ pub async fn start_wcl_upload(
         }
         Err(error) => {
             let message = error.to_string();
-            emit_upload_error(&app_handle, &message);
+            emit_upload_error(&app_handle, "wcl-upload-error", &message);
             Err(message)
         }
     }
@@ -879,7 +790,11 @@ pub fn start_wcl_live_upload(
                     active.is_running = false;
                 }
             }
-            emit_live_upload_error(&worker_handle_clone, &error.to_string());
+            emit_upload_error(
+                &worker_handle_clone,
+                "wcl-live-upload-error",
+                &error.to_string(),
+            );
             set_live_report_info(None, None, false);
         }
 
@@ -952,26 +867,46 @@ fn run_live_upload(
         .ok_or_else(|| UploadError::Message("Invalid combat log filename".to_string()))?
         .to_string();
 
-    emit_live_upload_progress(&app_handle, "live", "Starting live upload session...", 2);
+    emit_upload_progress(
+        &app_handle,
+        "wcl-live-upload-progress",
+        "live",
+        "Starting live upload session...",
+        2,
+    );
     check_cancelled(&cancel_flag)?;
 
     let node_binary_path = resolve_node_binary_path(&app_handle)?;
     check_node_runtime(&node_binary_path)?;
 
-    emit_live_upload_progress(
+    emit_upload_progress(
         &app_handle,
+        "wcl-live-upload-progress",
         "auth",
         "Authenticating with WarcraftLogs...",
         4,
     );
     if let Some(user_name) = user_name {
-        emit_live_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 6);
+        emit_upload_progress(
+            &app_handle,
+            "wcl-live-upload-progress",
+            "auth",
+            &format!("Logged in as {user_name}"),
+            6,
+        );
     } else {
-        emit_live_upload_progress(&app_handle, "auth", "Authenticated with WarcraftLogs", 6);
+        emit_upload_progress(
+            &app_handle,
+            "wcl-live-upload-progress",
+            "auth",
+            "Authenticated with WarcraftLogs",
+            6,
+        );
     }
 
-    emit_live_upload_progress(
+    emit_upload_progress(
         &app_handle,
+        "wcl-live-upload-progress",
         "parser",
         "Fetching latest WarcraftLogs parser...",
         8,
@@ -1027,8 +962,9 @@ fn run_live_upload(
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or(0);
-    emit_live_upload_progress(
+    emit_upload_progress(
         &app_handle,
+        "wcl-live-upload-progress",
         "report",
         "Creating WarcraftLogs live report...",
         10,
@@ -1045,8 +981,9 @@ fn run_live_upload(
     })?;
     let report_url = format!("https://www.warcraftlogs.com/reports/{created_code}");
     runtime.report_code = Some(created_code.clone());
-    emit_live_upload_progress(
+    emit_upload_progress(
         &app_handle,
+        "wcl-live-upload-progress",
         "report",
         &format!("Live report created: {report_url}"),
         12,
@@ -1054,8 +991,9 @@ fn run_live_upload(
     emit_live_report_created(&app_handle, &report_url, &created_code);
     set_live_report_info(Some(report_url), Some(created_code), true);
 
-    emit_live_upload_progress(
+    emit_upload_progress(
         &app_handle,
+        "wcl-live-upload-progress",
         "live",
         if runtime.include_existing_contents {
             "Live upload is active. Processing existing combat log contents..."
@@ -1086,8 +1024,9 @@ fn run_live_upload(
             && runtime.file_offset >= runtime.initial_file_length
         {
             runtime.reported_existing_contents = true;
-            emit_live_upload_progress(
+            emit_upload_progress(
                 &app_handle,
+                "wcl-live-upload-progress",
                 "live",
                 "Existing combat log contents processed. Waiting for new lines...",
                 30,
@@ -1142,11 +1081,18 @@ fn run_upload(
         .ok_or_else(|| UploadError::Message("Invalid combat log filename".to_string()))?
         .to_string();
 
-    emit_upload_progress(&app_handle, "read", "Reading combat log metadata...", 2);
+    emit_upload_progress(
+        &app_handle,
+        "wcl-upload-progress",
+        "read",
+        "Reading combat log metadata...",
+        2,
+    );
     check_cancelled(&cancel_flag)?;
     let total_lines = count_file_lines(&log_path, &cancel_flag)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "read",
         &format!("Combat log contains {total_lines} lines"),
         4,
@@ -1156,6 +1102,7 @@ fn run_upload(
     let node_binary_path = resolve_node_binary_path(&app_handle)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "parser",
         &format!(
             "Using bundled Node runtime at {}",
@@ -1170,19 +1117,33 @@ fn run_upload(
     check_cancelled(&cancel_flag)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "auth",
         "Authenticating with WarcraftLogs...",
         6,
     );
     if let Some(user_name) = user_name {
-        emit_upload_progress(&app_handle, "auth", &format!("Logged in as {user_name}"), 8);
+        emit_upload_progress(
+            &app_handle,
+            "wcl-upload-progress",
+            "auth",
+            &format!("Logged in as {user_name}"),
+            8,
+        );
     } else {
-        emit_upload_progress(&app_handle, "auth", "Authenticated with WarcraftLogs", 8);
+        emit_upload_progress(
+            &app_handle,
+            "wcl-upload-progress",
+            "auth",
+            "Authenticated with WarcraftLogs",
+            8,
+        );
     }
 
     check_cancelled(&cancel_flag)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "parser",
         "Fetching latest WarcraftLogs parser...",
         10,
@@ -1190,6 +1151,7 @@ fn run_upload(
     let parser_assets = session.fetch_parser_assets()?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "parser",
         &format!("Loaded parser v{}", parser_assets.parser_version),
         12,
@@ -1199,6 +1161,7 @@ fn run_upload(
     let parser_harness_path = resolve_parser_harness_path(&app_handle)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "parser",
         &format!("Using parser harness at {}", parser_harness_path.display()),
         13,
@@ -1217,6 +1180,7 @@ fn run_upload(
 
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "parser",
         "Parser ready. Beginning upload...",
         14,
@@ -1328,6 +1292,7 @@ fn run_upload(
             };
             emit_upload_progress(
                 &app_handle,
+                "wcl-upload-progress",
                 "upload",
                 &format!("Processed {processed_lines}/{total_lines} lines"),
                 progress_percent.min(96),
@@ -1344,6 +1309,7 @@ fn run_upload(
     check_cancelled(&cancel_flag)?;
     emit_upload_progress(
         &app_handle,
+        "wcl-upload-progress",
         "finalize",
         "Finalizing WarcraftLogs report...",
         98,
@@ -1351,7 +1317,13 @@ fn run_upload(
     session.terminate_report(&report_code)?;
 
     let report_url = format!("https://www.warcraftlogs.com/reports/{report_code}");
-    emit_upload_progress(&app_handle, "done", "Upload complete", 100);
+    emit_upload_progress(
+        &app_handle,
+        "wcl-upload-progress",
+        "done",
+        "Upload complete",
+        100,
+    );
 
     Ok(StartWclUploadResponse {
         report_url,
@@ -1390,6 +1362,7 @@ fn process_batch(
         parser.clear_fights()?;
         emit_upload_progress(
             app_handle,
+            "wcl-upload-progress",
             "parse",
             &format!("Batch {batch_number}/{total_batches}: no fights found yet"),
             20,
@@ -1399,7 +1372,13 @@ fn process_batch(
 
     if report_code.is_none() {
         check_cancelled(cancel_flag)?;
-        emit_upload_progress(app_handle, "report", "Creating WarcraftLogs report...", 21);
+        emit_upload_progress(
+            app_handle,
+            "wcl-upload-progress",
+            "report",
+            "Creating WarcraftLogs report...",
+            21,
+        );
 
         let created_code = session.create_report(&CreateReportRequest {
             file_name: file_name.to_string(),
@@ -1415,6 +1394,7 @@ fn process_batch(
         *report_code = Some(created_code.clone());
         emit_upload_progress(
             app_handle,
+            "wcl-upload-progress",
             "report",
             &format!("Created report {created_code}"),
             22,
@@ -1441,10 +1421,17 @@ fn process_batch(
     } else {
         format!("Master table unchanged for segment {segment_number}")
     };
-    emit_upload_progress(app_handle, "master", &master_message, 23);
+    emit_upload_progress(
+        app_handle,
+        "wcl-upload-progress",
+        "master",
+        &master_message,
+        23,
+    );
 
     emit_upload_progress(
         app_handle,
+        "wcl-upload-progress",
         "segment",
         &format!("Uploading segment {segment_number}..."),
         24,
@@ -1453,6 +1440,7 @@ fn process_batch(
 
     emit_upload_progress(
         app_handle,
+        "wcl-upload-progress",
         "upload",
         &format!("Batch {batch_number}/{total_batches}: uploaded {total_events} events"),
         24,
@@ -1481,8 +1469,9 @@ fn flush_live_buffer(
     fights_data.fights.retain(is_encounter_fight_candidate);
     let filtered_count = fights_data.fights.len();
     if filtered_count != original_count {
-        emit_live_upload_progress(
+        emit_upload_progress(
             app_handle,
+            "wcl-live-upload-progress",
             "live",
             &format!("Encounter filter kept {filtered_count}/{original_count} fights"),
             34,
@@ -1502,10 +1491,9 @@ fn flush_live_buffer(
             non_challenge_fights
         };
 
-        emit_live_upload_progress(
-            app_handle,
-            "live",
-            "Encounter markers missing in this flush. Applying safe fallback to keep upload moving.",
+        emit_upload_progress(
+            app_handle, "wcl-live-upload-progress",  "live",
+            "Encounter markers are missing from this batch. Using fallback fight selection to continue uploading.",
             34,
         );
     }
@@ -1517,8 +1505,9 @@ fn flush_live_buffer(
         return Ok(());
     }
 
-    emit_live_upload_progress(
+    emit_upload_progress(
         app_handle,
+        "wcl-live-upload-progress",
         "live",
         &format!(
             "Live flush encounter fights: {} (pushFightIfNeeded={})",
@@ -1547,8 +1536,9 @@ fn flush_live_buffer(
     runtime.buffered_lines.clear();
     runtime.last_flush_at = Instant::now();
 
-    emit_live_upload_progress(
+    emit_upload_progress(
         app_handle,
+        "wcl-live-upload-progress",
         "live",
         &format!(
             "Uploaded live segment with {total_events} events. Total lines sent: {}",

@@ -1,16 +1,21 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { invoke } from '@tauri-apps/api/core';
+import { allowRecordingsFolderForPlayback } from '../utils/recording-playback';
+import { applyAppTheme, normalizeAppTheme, persistAppTheme } from '../utils/theme';
+import { saveRecordingSettings, SettingsSaveResult } from "../services/save-recording-settings";
 
 interface SettingsContextType {
+  playbackUnavailable: boolean;
   settings: RecordingSettings;
   isLoading: boolean;
-  updateSettings: (newSettings: RecordingSettings) => Promise<void>;
-  resetToDefaults: () => void;
+  updateSettings: (newSettings: RecordingSettings) => Promise<SettingsSaveResult>;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
+
+const FORK_IN_APP_UPDATES_KEY = "fork-in-app-updates-v1";
 
 function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null {
   if (defaultFolder.endsWith('\\FloorPoV')) {
@@ -26,6 +31,7 @@ function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null 
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
+  const [playbackUnavailable, setPlaybackUnavailable] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
 
@@ -54,10 +60,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const mergedSettings: RecordingSettings = {
           ...DEFAULT_SETTINGS,
           ...stored,
+          appTheme: normalizeAppTheme(stored.appTheme),
         };
 
         const defaultFolder = await invoke<string>('get_default_output_folder');
         const legacyDefaultFolder = getLegacyDefaultOutputFolderPath(defaultFolder);
+        const hasEnabledInAppUpdates =
+          (await store.get<boolean>(FORK_IN_APP_UPDATES_KEY)) === true;
         let shouldPersistMergedSettings = false;
 
         if (!mergedSettings.outputFolder) {
@@ -73,9 +82,27 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           shouldPersistMergedSettings = true;
         }
 
+        if (!hasEnabledInAppUpdates && !mergedSettings.enableAutoUpdate) {
+          mergedSettings.enableAutoUpdate = true;
+          shouldPersistMergedSettings = true;
+        }
+
         if (shouldPersistMergedSettings) {
           await store.set('recording-settings', mergedSettings);
+        }
+
+        if (!hasEnabledInAppUpdates) {
+          await store.set(FORK_IN_APP_UPDATES_KEY, true);
+        }
+
+        if (shouldPersistMergedSettings || !hasEnabledInAppUpdates) {
           await store.save();
+        }
+
+        try {
+          await allowRecordingsFolderForPlayback(mergedSettings.outputFolder);
+        } catch (error) {
+          console.error('Failed to allow recordings folder for playback:', error);
         }
 
         setSettings(mergedSettings);
@@ -90,8 +117,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       } else {
         const defaultFolder = await invoke<string>('get_default_output_folder');
         const initialSettings = { ...DEFAULT_SETTINGS, outputFolder: defaultFolder };
+        try {
+          await allowRecordingsFolderForPlayback(initialSettings.outputFolder);
+        } catch (error) {
+          console.error('Failed to allow recordings folder for playback:', error);
+        }
         setSettings(initialSettings);
         await store.set('recording-settings', initialSettings);
+        await store.set(FORK_IN_APP_UPDATES_KEY, true);
         await store.save();
         
         if (initialSettings.markerHotkey !== 'none') {
@@ -109,12 +142,26 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [store]);
 
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    persistAppTheme(applyAppTheme(settings.appTheme, document.documentElement));
+  }, [isLoading, settings.appTheme]);
+
   const updateSettings = async (newSettings: RecordingSettings) => {
-    if (!store) return;
-    
     try {
+      if (!store) {
+        throw new Error("Settings store is unavailable");
+      }
+
       const oldHotkey = settings.markerHotkey;
       const newHotkey = newSettings.markerHotkey;
+      const nextSettings: RecordingSettings = {
+        ...newSettings,
+        appTheme: normalizeAppTheme(newSettings.appTheme),
+      };
       
       if (oldHotkey !== newHotkey) {
         if (oldHotkey !== 'none') {
@@ -131,34 +178,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      await store.set('recording-settings', newSettings);
-      await store.save();
-      setSettings(newSettings);
+      const result = await saveRecordingSettings(
+        store,
+        nextSettings,
+        playbackUnavailable || settings.outputFolder !== nextSettings.outputFolder,
+      );
+      setSettings(nextSettings);
+      setPlaybackUnavailable(result === SettingsSaveResult.PlaybackUnavailable);
+      return result;
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;
     }
   };
 
-  const resetToDefaults = useCallback(async () => {
-    if (!store) return;
-    
-    try {
-      await store.set('recording-settings', DEFAULT_SETTINGS);
-      await store.save();
-      setSettings(DEFAULT_SETTINGS);
-      
-      if (settings.markerHotkey !== 'none') {
-        await invoke('unregister_marker_hotkey');
-      }
-    } catch (error) {
-      console.error('Failed to reset settings:', error);
-      throw error;
-    }
-  }, [store, settings.markerHotkey]);
-
   return (
-    <SettingsContext.Provider value={{ settings, isLoading, updateSettings, resetToDefaults }}>
+    <SettingsContext.Provider value={{ settings, isLoading, playbackUnavailable, updateSettings }}>
       {children}
     </SettingsContext.Provider>
   );

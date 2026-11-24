@@ -99,15 +99,15 @@ export function PlayerOverviewTable({ players }: PlayerOverviewTableProps) {
 
   if (sortedPlayers.length === 0) {
     return (
-      <p className="mt-2 text-xs text-neutral-500">
-        No COMBATANT_INFO player data is available for this recording.
+      <p className="mt-2 text-xs text-neutral-400">
+        This recording has no COMBATANT_INFO player data.
       </p>
     );
   }
 
   return (
-    <div className="mt-2 overflow-hidden rounded-sm border border-white/10 bg-black/20">
-      <table className="min-w-full text-left text-xs text-neutral-300">
+    <div className="mt-2 overflow-x-auto rounded-sm border border-white/10 bg-black/20">
+      <table className="min-w-[32rem] text-left text-xs text-neutral-300">
         <thead className="bg-(--surface-2) text-neutral-400">
           <tr>
             <th className="px-2 py-1.5 font-medium">Player</th>

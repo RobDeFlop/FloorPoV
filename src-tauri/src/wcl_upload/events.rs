@@ -29,13 +29,19 @@ pub(crate) fn emit_log_scan_progress(
     );
 }
 
-pub(crate) fn emit_upload_progress(app_handle: &AppHandle, step: &str, message: &str, percent: u8) {
+pub(crate) fn emit_upload_progress(
+    app_handle: &AppHandle,
+    event_name: &str,
+    step: &str,
+    message: &str,
+    percent: u8,
+) {
     let payload = WclUploadProgressEvent {
         step: step.to_string(),
         message: message.to_string(),
         percent,
     };
-    emit_event(app_handle, "wcl-upload-progress", payload);
+    emit_event(app_handle, event_name, payload);
 }
 
 pub(crate) fn emit_upload_complete(app_handle: &AppHandle, result: &StartWclUploadResponse) {
@@ -46,32 +52,11 @@ pub(crate) fn emit_upload_complete(app_handle: &AppHandle, result: &StartWclUplo
     emit_event(app_handle, "wcl-upload-complete", payload);
 }
 
-pub(crate) fn emit_upload_error(app_handle: &AppHandle, message: &str) {
+pub(crate) fn emit_upload_error(app_handle: &AppHandle, event_name: &str, message: &str) {
     let payload = WclUploadErrorEvent {
         message: message.to_string(),
     };
-    emit_event(app_handle, "wcl-upload-error", payload);
-}
-
-pub(crate) fn emit_live_upload_error(app_handle: &AppHandle, message: &str) {
-    let payload = WclUploadErrorEvent {
-        message: message.to_string(),
-    };
-    emit_event(app_handle, "wcl-live-upload-error", payload);
-}
-
-pub(crate) fn emit_live_upload_progress(
-    app_handle: &AppHandle,
-    step: &str,
-    message: &str,
-    percent: u8,
-) {
-    let payload = WclUploadProgressEvent {
-        step: step.to_string(),
-        message: message.to_string(),
-        percent,
-    };
-    emit_event(app_handle, "wcl-live-upload-progress", payload);
+    emit_event(app_handle, event_name, payload);
 }
 
 pub(crate) fn emit_live_upload_complete(

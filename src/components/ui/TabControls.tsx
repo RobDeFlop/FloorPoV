@@ -1,4 +1,5 @@
-import { type ComponentType, useId } from "react";
+import { type ComponentType, type ReactElement, useId, useRef } from "react";
+import { KeyCode } from "../../types/key-code";
 
 export interface TabControlItem<TValue extends string> {
   value: TValue;
@@ -14,31 +15,78 @@ interface TabControlsProps<TValue extends string> {
   idBase?: string;
 }
 
+export function getNextTabIndex(
+  currentIndex: number,
+  itemCount: number,
+  key: string,
+): number | null {
+  if (itemCount <= 0) {
+    return null;
+  }
+
+  if (key === KeyCode.ArrowRight || key === KeyCode.ArrowDown) {
+    return (currentIndex + 1) % itemCount;
+  }
+
+  if (key === KeyCode.ArrowLeft || key === KeyCode.ArrowUp) {
+    return (currentIndex - 1 + itemCount) % itemCount;
+  }
+
+  if (key === KeyCode.Home) {
+    return 0;
+  }
+
+  if (key === KeyCode.End) {
+    return itemCount - 1;
+  }
+
+  return null;
+}
+
 export function TabControls<TValue extends string>({
   value,
   onChange,
   items,
   ariaLabel = "Tabs",
   idBase,
-}: TabControlsProps<TValue>) {
+}: TabControlsProps<TValue>): ReactElement {
   const generatedId = useId();
   const baseId = idBase ?? `tab-controls-${generatedId}`;
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   return (
     <div className="border-b border-white/10 bg-(--surface-1) px-4 pt-2">
       <div className="-mb-px flex items-end gap-2" role="tablist" aria-label={ariaLabel}>
-        {items.map(({ value: itemValue, label, icon: Icon }) => {
+        {items.map(({ value: itemValue, label, icon: Icon }, index) => {
           const isActive = itemValue === value;
+          const focusAdjacentTab = (nextIndex: number) => {
+            const nextValue = items[nextIndex].value;
+            onChange(nextValue);
+            window.requestAnimationFrame(() => tabRefs.current[nextValue]?.focus());
+          };
           const tabId = `${baseId}-${itemValue}-tab`;
           const panelId = `${baseId}-${itemValue}-panel`;
 
           return (
             <button
               key={itemValue}
+              ref={(element) => {
+                tabRefs.current[itemValue] = element;
+              }}
               id={tabId}
               type="button"
               onClick={() => onChange(itemValue)}
+              onKeyDown={(event) => {
+                const nextIndex = getNextTabIndex(index, items.length, event.key);
+                if (nextIndex === null) {
+                  return;
+                }
+
+                event.preventDefault();
+                focusAdjacentTab(nextIndex);
+              }}
               role="tab"
+              tabIndex={isActive ? 0 : -1}
               aria-selected={isActive}
               aria-controls={panelId}
               className={`inline-flex min-h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${

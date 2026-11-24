@@ -10,15 +10,24 @@ import {
   Trophy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useMarker } from "../../contexts/MarkerContext";
+import { useRecording } from "../../contexts/RecordingContext";
+import { useVideo } from "../../contexts/VideoContext";
+import { useRecordingsList } from "../../hooks/useRecordingsList";
+import { useClearStalePlayback } from "../../hooks/useClearStalePlayback";
 import { RecordingMetadata } from "../../types/events";
 import { RecordingInfo } from "../../types/recording";
 import { type GameMode } from "../../types/ui";
-import { formatBytes, formatDate, formatEncounterCategory, formatTime, getEventTypeLabel } from "../../utils/format";
+import { formatBytes, formatCompactAmount, formatDate, formatEncounterCategory, formatTime, getEventTypeLabel } from "../../utils/format";
 import { getRecordingDisplayTitle } from "../../utils/recording-title";
 import { GameEvents } from "../events/GameEvents";
+import { PlaybackEventList } from "../events/PlaybackEventList";
+import { CompareVideoPlayer } from "../playback/CompareVideoPlayer";
+import { ExportAnalysisReportButton } from "../playback/ExportAnalysisReportButton";
 import { VideoPlayer } from "../playback/VideoPlayer";
+import { contentViewVariants, smoothTransition } from "../../lib/motion";
+import { PageHeader } from "../app/PageHeader";
 import { TabControls, type TabControlItem } from "../ui/TabControls";
 import { GameModeRecordingsBrowser } from "./GameModeRecordingsBrowser";
 import { PlayerOverviewTable } from "./PlayerOverviewTable";
@@ -29,12 +38,12 @@ type AnalysisTab = "video-analysis" | "log-analysis" | "metadata";
 const ANALYSIS_TAB_ITEMS: TabControlItem<AnalysisTab>[] = [
   {
     value: "video-analysis",
-    label: "Video Analysis",
+    label: "Video analysis",
     icon: Clapperboard,
   },
   {
     value: "log-analysis",
-    label: "Log Analysis",
+    label: "Log analysis",
     icon: FileSearch,
   },
   {
@@ -59,20 +68,20 @@ interface GameModeConfigItem {
 
 const gameModeConfig: Record<GameMode, GameModeConfigItem> = {
   "mythic-plus": {
-    overviewTitle: "Mythic+ Sessions",
-    analysisTitle: "Mythic+ Analysis",
+    overviewTitle: "Mythic+ sessions",
+    analysisTitle: "Mythic+ analysis",
     description: "Browse sessions and inspect pulls, events, and pace.",
     icon: Sword,
   },
   raid: {
-    overviewTitle: "Raid Sessions",
-    analysisTitle: "Raid Analysis",
+    overviewTitle: "Raid sessions",
+    analysisTitle: "Raid analysis",
     description: "Browse sessions and review timelines and key events.",
     icon: Shield,
   },
   pvp: {
-    overviewTitle: "PvP Sessions",
-    analysisTitle: "PvP Analysis",
+    overviewTitle: "PvP sessions",
+    analysisTitle: "PvP analysis",
     description: "Browse sessions and analyze footage and combat metadata.",
     icon: Trophy,
   },
@@ -95,6 +104,11 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   const [isEventsOpen, setIsEventsOpen] = useState(false);
   const metadataRequestPathRef = useRef<string | null>(null);
   const { setEncounters } = useMarker();
+  const reduceMotion = useReducedMotion();
+  const { playbackMetadataEpoch } = useRecording();
+  const { isCompareMode } = useVideo();
+  const { recordings, isLoading: isRecordingsLoading, error: recordingsError, loadRecordings, setRecordings } =
+    useRecordingsList();
 
   const filterEvent = useCallback(
     (targetKind: string | undefined, target: string | undefined) => {
@@ -149,6 +163,36 @@ export function GameModePage({ gameMode }: GameModePageProps) {
     [loadRecordingMetadata],
   );
 
+  const handleBackToSessions = useCallback(() => {
+    metadataRequestPathRef.current = null;
+    setSelectedRecording(null);
+    setRecordingMetadata(null);
+    setMetadataError(null);
+    setIsMetadataLoading(false);
+    setActiveTab("video-analysis");
+    setEncounters([]);
+  }, [setEncounters]);
+  const handleStalePlaybackCleared = useCallback(() => {
+    setSelectedRecording(null);
+    setRecordingMetadata(null);
+    setMetadataError(null);
+    metadataRequestPathRef.current = null;
+  }, []);
+
+  useClearStalePlayback(
+    recordings,
+    !isRecordingsLoading && !recordingsError,
+    handleStalePlaybackCleared,
+  );
+
+  useEffect(() => {
+    if (!selectedRecording || playbackMetadataEpoch === 0) {
+      return;
+    }
+
+    void loadRecordingMetadata(selectedRecording.file_path);
+  }, [loadRecordingMetadata, playbackMetadataEpoch, selectedRecording]);
+
   const sortedEventCounts = useMemo(() => {
     if (!recordingMetadata?.importantEventCounts) {
       return [] as [string, number][];
@@ -183,18 +227,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
       return "Unknown";
     };
 
-    const kickCounts: Record<string, number> = {};
-    const dispelCounts: Record<string, number> = {};
     const deathCounts: Record<string, number> = {};
 
     for (const event of events) {
-      if (event.eventType === "SPELL_INTERRUPT" && event.source) {
-        const key = toPlayerLabel(event.source);
-        kickCounts[key] = (kickCounts[key] ?? 0) + 1;
-      } else if (event.eventType === "SPELL_DISPEL" && event.source) {
-        const key = toPlayerLabel(event.source);
-        dispelCounts[key] = (dispelCounts[key] ?? 0) + 1;
-      } else if (event.eventType === "UNIT_DIED" && event.target && event.targetKind === "PLAYER") {
+      if (event.eventType === "UNIT_DIED" && event.target && event.targetKind === "PLAYER") {
         const key = toPlayerLabel(event.target);
         deathCounts[key] = (deathCounts[key] ?? 0) + 1;
       }
@@ -212,8 +248,6 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         });
 
     return {
-      kicks: toSorted(kickCounts),
-      dispels: toSorted(dispelCounts),
       deaths: toSorted(deathCounts),
     };
   }, [recordingMetadata?.importantEvents]);
@@ -229,50 +263,61 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   }, [recordingMetadata?.encounters, gameMode, setEncounters]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {!selectedRecording ? (
-        <>
-          <header className="border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
-            <div className="flex items-center gap-3">
-              <Icon className="h-5 w-5 text-neutral-300" />
-              <div>
-                <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
-                  {config.overviewTitle}
-                </h1>
-                <p className="text-xs uppercase tracking-[0.12em] text-neutral-500">
-                  {config.description}
-                </p>
-              </div>
-            </div>
-          </header>
-          <GameModeRecordingsBrowser
-            gameMode={gameMode}
-            onRecordingActivate={handleRecordingActivate}
-          />
-        </>
-      ) : (
-        <>
-          <header className="border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
-            <div className="flex items-center gap-3">
-              <Icon className="h-5 w-5 text-neutral-300" />
-              <div>
-                <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
-                  {config.analysisTitle}
-                </h1>
-                <p className="max-w-[60ch] truncate text-xs text-neutral-400">
-                  {getRecordingDisplayTitle(selectedRecording, gameMode)}
-                </p>
-              </div>
-            </div>
-          </header>
-          <TabControls
-            value={activeTab}
-            onChange={setActiveTab}
-            items={ANALYSIS_TAB_ITEMS}
-            ariaLabel="Recording analysis tabs"
-            idBase={ANALYSIS_TABS_ID_BASE}
-          />
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+      <motion.div
+        className={`absolute inset-0 flex min-h-0 flex-col ${selectedRecording ? "pointer-events-none" : ""}`}
+        variants={contentViewVariants}
+        animate={selectedRecording ? "hidden" : "visible"}
+        transition={reduceMotion ? { duration: 0 } : smoothTransition}
+        aria-hidden={selectedRecording !== null}
+        inert={selectedRecording !== null}
+      >
+        <PageHeader icon={Icon} title={config.overviewTitle} description={config.description} />
+        <GameModeRecordingsBrowser
+          gameMode={gameMode}
+          recordings={recordings}
+          isLoading={isRecordingsLoading}
+          listError={recordingsError}
+          loadRecordings={loadRecordings}
+          setRecordings={setRecordings}
+          onRecordingActivate={handleRecordingActivate}
+        />
+      </motion.div>
+
+      <motion.div
+        className={`absolute inset-0 flex min-h-0 flex-col ${selectedRecording ? "" : "pointer-events-none"}`}
+        variants={contentViewVariants}
+        animate={selectedRecording ? "visible" : "hidden"}
+        transition={reduceMotion ? { duration: 0 } : smoothTransition}
+        aria-hidden={selectedRecording === null}
+        inert={selectedRecording === null}
+      >
+        {selectedRecording && (
+          <>
+            <PageHeader
+              icon={Icon}
+              title={config.analysisTitle}
+              action={<ExportAnalysisReportButton recordingPath={selectedRecording.file_path} />}
+              description={getRecordingDisplayTitle(selectedRecording, gameMode)}
+              backAction={{ label: "Back to sessions", onClick: handleBackToSessions }}
+            />
+            <TabControls
+              value={activeTab}
+              onChange={setActiveTab}
+              items={ANALYSIS_TAB_ITEMS}
+              ariaLabel="Recording analysis tabs"
+              idBase={ANALYSIS_TABS_ID_BASE}
+            />
             <div className="min-h-0 flex-1 overflow-hidden">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={activeTab}
+                  className="h-full min-h-0"
+                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+                  transition={reduceMotion ? { duration: 0 } : smoothTransition}
+                >
             {activeTab === "video-analysis" ? (
               <div
                 id={`${ANALYSIS_TABS_ID_BASE}-video-analysis-panel`}
@@ -280,10 +325,13 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 aria-labelledby={`${ANALYSIS_TABS_ID_BASE}-video-analysis-tab`}
                 className="flex h-full min-h-0 flex-col"
               >
-                <main className="min-h-0 flex-1 overflow-hidden">
-                  <VideoPlayer />
-                </main>
-                <GameEvents />
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                  <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                    {isCompareMode ? <CompareVideoPlayer /> : <VideoPlayer />}
+                  </main>
+                  {!isCompareMode && <PlaybackEventList />}
+                </div>
+                {isCompareMode && <GameEvents />}
               </div>
             ) : activeTab === "metadata" ? (
               <div
@@ -293,8 +341,8 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 className="h-full overflow-y-auto px-4 py-3 [scrollbar-gutter:stable]"
               >
                 <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
-                  <h2 className="text-sm font-semibold text-neutral-100">Recording Summary</h2>
-                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-neutral-300">
+                  <h2 className="text-sm font-semibold text-neutral-100">Recording summary</h2>
+                  <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-neutral-300 sm:grid-cols-2">
                     <div className="rounded-sm border border-white/10 bg-black/20 px-2 py-1.5">
                       <div className="text-[10px] uppercase tracking-[0.09em] text-neutral-500">File</div>
                       <div className="mt-1 truncate text-neutral-100" title={selectedRecording.file_path}>
@@ -355,29 +403,17 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   <>
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Player Overview
+                        Player overview
                       </h3>
                       <PlayerOverviewTable players={recordingMetadata.players ?? []} />
                     </section>
 
-                    {(playerStats.kicks.length > 0 ||
-                      playerStats.dispels.length > 0 ||
-                      playerStats.deaths.length > 0) && (
+                    {playerStats.deaths.length > 0 && (
                       <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                         <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                          Player Stats
+                          Player stats
                         </h3>
-                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-3">
-                          <PlayerStatChart
-                            title="Kicks"
-                            data={playerStats.kicks}
-                            color="#34d399"
-                          />
-                          <PlayerStatChart
-                            title="Dispels"
-                            data={playerStats.dispels}
-                            color="#60a5fa"
-                          />
+                        <div className="mt-3 grid grid-cols-1 gap-4">
                           <PlayerStatChart
                             title="Deaths"
                             data={playerStats.deaths}
@@ -389,7 +425,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
 
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Encounter Segments
+                        Encounter segments
                       </h3>
                       {encounters.length === 0 ? (
                         <p className="mt-2 text-xs text-neutral-500">No encounter segments in metadata.</p>
@@ -418,7 +454,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
 
                     <section className="mt-3 rounded-sm border border-white/10 bg-(--surface-1)/80 p-3">
                       <h3 className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-300">
-                        Event Counts
+                        Event counts
                       </h3>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {sortedEventCounts.length > 0 ? (
@@ -452,7 +488,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                           className={`h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform duration-200 ${isEventsOpen ? "rotate-180" : ""}`}
                         />
                         <h3 className="text-sm font-semibold uppercase tracking-caps text-neutral-200">
-                          Important Events
+                          Important events
                         </h3>
                         <div className="ml-1 flex items-center gap-2">
                           <div className="flex items-baseline gap-1.5">
@@ -461,7 +497,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                               {importantEvents.length}
                             </span>
                           </div>
-                          <span className="text-neutral-600">|</span>
+                          <span className="text-neutral-400">|</span>
                           <div className="flex items-baseline gap-1.5">
                             <span className="text-[10px] uppercase tracking-caps text-neutral-500">Total:</span>
                             <span className="rounded bg-white/10 px-2 py-0.5 text-xs font-medium text-neutral-300 border border-white/15">
@@ -524,14 +560,16 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                               {importantEvents.length === 0 ? (
                                 <p className="text-xs text-neutral-500">No important events in metadata.</p>
                               ) : (
-                                <div className="overflow-hidden rounded-sm border border-white/10 bg-black/20">
-                                  <table className="min-w-full text-left text-xs text-neutral-300">
+                                <div className="overflow-x-auto rounded-sm border border-white/10 bg-black/20">
+                                  <table className="min-w-[40rem] text-left text-xs text-neutral-300">
                                     <thead className="bg-(--surface-2) text-neutral-400">
                                       <tr>
                                         <th className="px-2 py-1.5 font-medium">Time</th>
                                         <th className="px-2 py-1.5 font-medium">Event</th>
+                                        <th className="px-2 py-1.5 font-medium">Ability</th>
                                         <th className="px-2 py-1.5 font-medium">Source</th>
                                         <th className="px-2 py-1.5 font-medium">Target</th>
+                                        <th className="px-2 py-1.5 font-medium">Amount</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -545,9 +583,16 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                                           </td>
                                           <td className="px-2 py-1.5 text-amber-200">
                                             {getEventTypeLabel(event.eventType)}
+                                            {event.abilityName ? ` · ${event.abilityName}` : ""}
+                                          </td>
+                                          <td className="px-2 py-1.5 text-neutral-300">
+                                            {event.abilityName || "-"}
                                           </td>
                                           <td className="px-2 py-1.5 text-neutral-300">{event.source || "-"}</td>
                                           <td className="px-2 py-1.5 text-neutral-300">{event.target || "-"}</td>
+                                          <td className="px-2 py-1.5 font-mono text-neutral-300">
+                                            {formatCompactAmount(event.amount) || "-"}
+                                          </td>
                                         </tr>
                                       ))}
                                     </tbody>
@@ -562,10 +607,13 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   </>
                 )}
               </div>
-            )}
-          </div>
-        </>
-      )}
+                )}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </>
+        )}
+      </motion.div>
     </div>
   );
 }

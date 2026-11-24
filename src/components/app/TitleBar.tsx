@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import floorpovIcon from "../../assets/floorpov-icon-master.png";
 
@@ -10,19 +11,19 @@ export function TitleBar() {
 
   const handleMaximize = async () => {
     try {
-      const isMaximized = await appWindow.isMaximized();
-      if (isMaximized) {
-        await appWindow.unmaximize();
-      } else {
-        await appWindow.maximize();
-      }
-    } catch (e) {
-      console.error('Maximize error:', e);
+      await appWindow.toggleMaximize();
+    } catch (error) {
+      console.error("Maximize error:", error);
     }
   };
 
   const handleClose = () => {
-    appWindow.close();
+    invoke("hide_to_tray").catch((error) => {
+      console.error("Failed to hide to tray:", error);
+      appWindow.hide().catch((hideError) => {
+        console.error("Failed to hide window:", hideError);
+      });
+    });
   };
 
   const handleDragStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -56,7 +57,7 @@ export function TitleBar() {
 
         <div className="h-4 w-px bg-white/15" />
 
-        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay Analyzer</div>
+        <div className="text-[11px] uppercase tracking-[0.14em] text-neutral-500">Gameplay analyzer</div>
 
       </div>
       <div className="flex h-full shrink-0">
@@ -86,8 +87,8 @@ export function TitleBar() {
           type="button"
           onClick={handleClose}
           className="flex h-full w-12 items-center justify-center text-neutral-400 transition-colors hover:bg-red-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
-          title="Close"
-          aria-label="Close window"
+          title="Close to tray"
+          aria-label="Hide window to tray"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor">
             <path d="M1 1L9 9M9 1L1 9" strokeWidth="1.2" />

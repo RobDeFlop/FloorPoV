@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::SystemTime;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -177,72 +176,6 @@ fn parse_node_major_version(version_text: &str) -> Option<u32> {
     let trimmed = version_text.trim();
     let normalized = trimmed.strip_prefix('v').unwrap_or(trimmed);
     normalized.split('.').next()?.parse::<u32>().ok()
-}
-
-pub(crate) fn build_combat_log_directory_path(wow_folder: &str) -> PathBuf {
-    let candidate_path = Path::new(wow_folder);
-    let is_logs_directory = candidate_path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .map(|value| value.eq_ignore_ascii_case("Logs"))
-        .unwrap_or(false);
-
-    if is_logs_directory {
-        candidate_path.to_path_buf()
-    } else {
-        candidate_path.join("Logs")
-    }
-}
-
-fn is_combat_log_file_name(file_name: &str) -> bool {
-    let lower_file_name = file_name.to_ascii_lowercase();
-    lower_file_name.starts_with("wowcombatlog") && lower_file_name.ends_with(".txt")
-}
-
-pub(crate) fn find_latest_combat_log_path(wow_folder: &str) -> Result<Option<PathBuf>, String> {
-    let logs_directory = build_combat_log_directory_path(wow_folder);
-    let directory_entries = match std::fs::read_dir(&logs_directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            if logs_directory.exists() {
-                return Err(error.to_string());
-            }
-            return Ok(None);
-        }
-    };
-
-    let mut latest_match: Option<(SystemTime, PathBuf)> = None;
-
-    for entry_result in directory_entries {
-        let entry = entry_result.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-
-        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-
-        if !is_combat_log_file_name(file_name) {
-            continue;
-        }
-
-        let modified_time = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-
-        if latest_match
-            .as_ref()
-            .map(|(latest_time, _)| modified_time > *latest_time)
-            .unwrap_or(true)
-        {
-            latest_match = Some((modified_time, path));
-        }
-    }
-
-    Ok(latest_match.map(|(_, path)| path))
 }
 
 pub(crate) fn read_child_stderr(

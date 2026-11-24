@@ -6,10 +6,9 @@ import {
   FileText,
   FolderOpen,
   RefreshCw,
-  ShieldOff,
   Skull,
   Sparkles,
-  Sword,
+  Zap,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { ParseCombatLogDebugResult } from "../../types/events";
@@ -34,6 +33,7 @@ interface EncounterTimelineMarker {
   timestamp: string;
   source?: string;
   target?: string;
+  abilityName?: string;
 }
 
 interface EncounterTimelineMarkerBucket {
@@ -49,6 +49,13 @@ interface TimelineTooltipState {
 }
 
 const MAX_MARKERS_PER_SEGMENT = 120;
+
+const ENCOUNTER_TIMELINE_LEGEND_TYPES = [
+  "ENCOUNTER_START",
+  "ENCOUNTER_END",
+  "UNIT_DIED",
+  "BLOODLUST",
+] as const;
 
 function getEncounterCategoryLabel(category: EncounterTimelineSegment["category"]): string {
   switch (category) {
@@ -78,14 +85,14 @@ function getEncounterCategoryClassName(category: EncounterTimelineSegment["categ
 
 function getEventMarkerClassName(eventType: string): string {
   switch (eventType) {
-    case "PARTY_KILL":
-      return "bg-neutral-200 border-neutral-50/85";
     case "UNIT_DIED":
       return "bg-rose-200 border-rose-50/85";
-    case "SPELL_INTERRUPT":
-      return "bg-amber-200 border-amber-50/85";
-    case "SPELL_DISPEL":
-      return "bg-neutral-300 border-neutral-100/85";
+    case "BLOODLUST":
+      return "bg-sky-200 border-sky-50/85";
+    case "ENCOUNTER_START":
+      return "bg-fuchsia-200 border-fuchsia-50/85";
+    case "ENCOUNTER_END":
+      return "bg-neutral-200 border-neutral-50/85";
     default:
       return "bg-neutral-200 border-neutral-50/80";
   }
@@ -93,14 +100,10 @@ function getEventMarkerClassName(eventType: string): string {
 
 function getEventMarkerIcon(eventType: string) {
   switch (eventType) {
-    case "PARTY_KILL":
-      return Sword;
     case "UNIT_DIED":
       return Skull;
-    case "SPELL_INTERRUPT":
-      return ShieldOff;
-    case "SPELL_DISPEL":
-      return Sparkles;
+    case "BLOODLUST":
+      return Zap;
     default:
       return Sparkles;
   }
@@ -108,17 +111,33 @@ function getEventMarkerIcon(eventType: string) {
 
 function getEventIconClassName(eventType: string): string {
   switch (eventType) {
-    case "PARTY_KILL":
-      return "text-neutral-950";
     case "UNIT_DIED":
       return "text-rose-950";
-    case "SPELL_INTERRUPT":
-      return "text-amber-950";
-    case "SPELL_DISPEL":
+    case "BLOODLUST":
+      return "text-sky-950";
+    case "ENCOUNTER_START":
+      return "text-fuchsia-950";
+    case "ENCOUNTER_END":
       return "text-neutral-950";
     default:
       return "text-neutral-900";
   }
+}
+
+function getTimelineMarkerTooltipLines(marker: EncounterTimelineMarker): string[] {
+  const lines = [
+    `Timestamp: ${marker.timestamp}`,
+    marker.source || marker.target
+      ? `Actors: ${marker.source || "Unknown"} -> ${marker.target || "Unknown"}`
+      : "Actors: Unknown",
+  ];
+
+  if (marker.abilityName) {
+    lines.push(`Ability: ${marker.abilityName}`);
+  }
+
+  lines.push(`Line: ${marker.lineNumber}`);
+  return lines;
 }
 
 export function CombatLogDebug() {
@@ -179,7 +198,7 @@ export function CombatLogDebug() {
         continue;
       }
 
-      const encounterName = event.encounterName || "Unknown Encounter";
+      const encounterName = event.encounterName || "Unknown encounter";
       const encounterCategory = event.encounterCategory || "unknown";
       const encounterKey = `${encounterName}:${encounterCategory}`;
 
@@ -241,7 +260,7 @@ export function CombatLogDebug() {
       return new Map<string, EncounterTimelineMarkerBucket>();
     }
 
-    const importantEventTypes = new Set(["PARTY_KILL", "UNIT_DIED", "SPELL_INTERRUPT", "SPELL_DISPEL"]);
+    const importantEventTypes = new Set<string>(ENCOUNTER_TIMELINE_LEGEND_TYPES);
     const markers = parseResult.parsedEvents
       .filter((event) => importantEventTypes.has(event.eventType))
       .map<EncounterTimelineMarker>((event) => ({
@@ -251,6 +270,7 @@ export function CombatLogDebug() {
         timestamp: event.logTimestamp,
         source: event.source,
         target: event.target,
+        abilityName: event.abilityName,
       }));
 
     const markerBuckets = new Map<string, EncounterTimelineMarkerBucket>();
@@ -273,7 +293,7 @@ export function CombatLogDebug() {
       const selected = await open({
         multiple: false,
         directory: false,
-        filters: [{ name: "Combat Logs", extensions: ["txt", "log"] }],
+        filters: [{ name: "Combat logs", extensions: ["txt", "log"] }],
       });
 
       if (typeof selected === "string") {
@@ -320,7 +340,7 @@ export function CombatLogDebug() {
       <div className="shrink-0 border-b border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
         <h1 className="inline-flex items-center gap-2 text-lg font-semibold text-neutral-100">
           <Bug className="h-4 w-4 text-amber-400" />
-          Combat Log Debug
+          Combat log debug
         </h1>
         <p className="mt-1 text-xs uppercase tracking-[0.12em] text-neutral-500">
           Select a combat log file and inspect parsed events
@@ -336,7 +356,7 @@ export function CombatLogDebug() {
                 className="inline-flex items-center gap-2 rounded-sm border border-white/25 bg-white/6 px-4 py-2 text-sm text-neutral-100 transition-colors hover:bg-white/12"
               >
                 <FolderOpen className="h-4 w-4" />
-                Select Combat Log
+                Select combat log
               </button>
               <button
                 onClick={handleParseCombatLog}
@@ -358,19 +378,19 @@ export function CombatLogDebug() {
             <>
               <section className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">File Size</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">File size</div>
                   <div className="mt-1 text-sm text-neutral-100">{formatBytes(parseResult.fileSizeBytes)}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Lines Scanned</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Lines scanned</div>
                   <div className="mt-1 text-sm text-neutral-100">{parseResult.totalLines.toLocaleString()}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Important Events</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Important events</div>
                   <div className="mt-1 text-sm text-neutral-100">{totalImportantEvents.toLocaleString()}</div>
                 </div>
                 <div className="rounded-sm border border-white/12 bg-black/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Events Shown</div>
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-neutral-500">Events shown</div>
                   <div className="mt-1 text-sm text-neutral-100">
                     {parseResult.parsedEvents.length.toLocaleString()}
                     {parseResult.truncated ? " (truncated)" : ""}
@@ -380,7 +400,7 @@ export function CombatLogDebug() {
 
               <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Event Counts
+                  Event counts
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {Object.entries(parseResult.eventCounts).map(([eventType, count]) => (
@@ -403,10 +423,10 @@ export function CombatLogDebug() {
                 className="relative rounded-sm border border-white/10 bg-(--surface-1)/80 p-4"
               >
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Encounter Timeline
+                  Encounter timeline
                 </h2>
                 <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-neutral-400">
-                  {["PARTY_KILL", "UNIT_DIED", "SPELL_INTERRUPT", "SPELL_DISPEL"].map((eventType) => {
+                  {ENCOUNTER_TIMELINE_LEGEND_TYPES.map((eventType) => {
                     const MarkerIcon = getEventMarkerIcon(eventType);
                     return (
                       <span
@@ -482,22 +502,18 @@ export function CombatLogDebug() {
                                   className={`absolute top-1/2 inline-flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border transition-transform duration-150 hover:scale-110 ${getEventMarkerClassName(marker.eventType)}`}
                                   style={{ left: `${markerPercent}%` }}
                                   onMouseEnter={(event) =>
-                                    showTimelineTooltip(event, getEventTypeLabel(marker.eventType), [
-                                      `Timestamp: ${marker.timestamp}`,
-                                      marker.source || marker.target
-                                        ? `Actors: ${marker.source || "Unknown"} -> ${marker.target || "Unknown"}`
-                                        : "Actors: Unknown",
-                                      `Line: ${marker.lineNumber}`,
-                                    ])
+                                    showTimelineTooltip(
+                                      event,
+                                      getEventTypeLabel(marker.eventType),
+                                      getTimelineMarkerTooltipLines(marker),
+                                    )
                                   }
                                   onMouseMove={(event) =>
-                                    showTimelineTooltip(event, getEventTypeLabel(marker.eventType), [
-                                      `Timestamp: ${marker.timestamp}`,
-                                      marker.source || marker.target
-                                        ? `Actors: ${marker.source || "Unknown"} -> ${marker.target || "Unknown"}`
-                                        : "Actors: Unknown",
-                                      `Line: ${marker.lineNumber}`,
-                                    ])
+                                    showTimelineTooltip(
+                                      event,
+                                      getEventTypeLabel(marker.eventType),
+                                      getTimelineMarkerTooltipLines(marker),
+                                    )
                                   }
                                 >
                                   <MarkerIcon
@@ -550,7 +566,7 @@ export function CombatLogDebug() {
 
               <section className="rounded-sm border border-white/10 bg-(--surface-1)/80 p-4">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-neutral-200">
-                  Important Happenings
+                  Important events
                 </h2>
                 <div className="mt-3 max-h-96 overflow-auto rounded-sm border border-white/10 bg-black/20">
                   <table className="min-w-full text-left text-xs text-neutral-300">
@@ -561,6 +577,7 @@ export function CombatLogDebug() {
                         <th className="px-3 py-2 font-medium">Event</th>
                         <th className="px-3 py-2 font-medium">Source</th>
                         <th className="px-3 py-2 font-medium">Target</th>
+                        <th className="px-3 py-2 font-medium">Ability</th>
                         <th className="px-3 py-2 font-medium">Context</th>
                       </tr>
                     </thead>
@@ -569,7 +586,10 @@ export function CombatLogDebug() {
                         <tr key={`${event.lineNumber}-${event.eventType}`} className="border-t border-white/8">
                           <td className="px-3 py-2 text-neutral-400">{event.lineNumber}</td>
                           <td className="px-3 py-2 text-neutral-300">{event.logTimestamp}</td>
-                          <td className="px-3 py-2 text-amber-200">{event.eventType}</td>
+                          <td className="px-3 py-2 text-amber-200">
+                            {event.eventType}
+                            {event.abilityName ? ` · ${event.abilityName}` : ""}
+                          </td>
                           <td className="px-3 py-2 text-neutral-300">{event.source || "-"}</td>
                           <td className="px-3 py-2 text-neutral-300">
                             {event.target ? (
@@ -585,6 +605,7 @@ export function CombatLogDebug() {
                               "-"
                             )}
                           </td>
+                          <td className="px-3 py-2 text-neutral-300">{event.abilityName || "-"}</td>
                           <td className="px-3 py-2 text-neutral-300">
                             <span className="block text-[11px] text-neutral-400">
                               Zone: {event.zoneName || "Unknown"}
@@ -597,7 +618,7 @@ export function CombatLogDebug() {
                       ))}
                       {parseResult.parsedEvents.length === 0 && (
                         <tr>
-                          <td className="px-3 py-3 text-neutral-500" colSpan={6}>
+                          <td className="px-3 py-3 text-neutral-500" colSpan={7}>
                             No important happenings found in this file.
                           </td>
                         </tr>
