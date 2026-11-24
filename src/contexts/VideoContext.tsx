@@ -41,6 +41,10 @@ interface VideoContextType {
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
+type WindowHiddenToTray = {
+  placementRestored: boolean;
+};
+
 type FullscreenPhase = "windowed" | "entering" | "fullscreen" | "exiting";
 
 export function VideoProvider({ children }: { children: ReactNode }) {
@@ -61,7 +65,6 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   const fullscreenTransitionRef = useRef<Promise<void> | null>(null);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
   const needsPlacementRestoreRef = useRef(false);
-  const closeAfterFullscreenExitRef = useRef(false);
   const isFullscreen = fullscreenPhase !== "windowed";
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
   const [isCompareMode, setIsCompareMode] = useState(false);
@@ -242,57 +245,6 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     }
   }, [exitFullscreen, restorePlaybackWindow, setFullscreenPhase]);
 
-  useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
-
-    const appWindow = getCurrentWindow();
-    let isCancelled = false;
-    let unsubscribe: (() => void) | undefined;
-
-    void appWindow
-      .onCloseRequested((event) => {
-        if (
-          fullscreenPhaseRef.current === "windowed" ||
-          closeAfterFullscreenExitRef.current
-        ) {
-          return;
-        }
-
-        event.preventDefault();
-        closeAfterFullscreenExitRef.current = true;
-
-        void (async () => {
-          try {
-            await exitFullscreen();
-
-            if (fullscreenPhaseRef.current === "windowed") {
-              await appWindow.close();
-              return;
-            }
-          } finally {
-            closeAfterFullscreenExitRef.current = false;
-          }
-        })();
-      })
-      .then((unlisten) => {
-        if (isCancelled) {
-          unlisten();
-        } else {
-          unsubscribe = unlisten;
-        }
-      })
-      .catch((error) => {
-        console.error("Fullscreen close listener failed:", error);
-      });
-
-    return () => {
-      isCancelled = true;
-      unsubscribe?.();
-    };
-  }, [exitFullscreen]);
-
   const clearSinglePlayback = useCallback(() => {
     if (loadingTimeoutRef.current !== null) {
       clearTimeout(loadingTimeoutRef.current);
@@ -410,14 +362,21 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, [isPlaying]);
 
   useEffect(() => {
-    const unlistenHiddenToTray = listen("window-hidden-to-tray", () => {
+    const unlistenHiddenToTray = listen<WindowHiddenToTray>("window-hidden-to-tray", async (event) => {
       videoRef.current?.pause();
+      if (event.payload.placementRestored) {
+        // The native close handler already restored the window's placement.
+        await fullscreenTransitionRef.current;
+        needsPlacementRestoreRef.current = false;
+        setFullscreenError(null);
+        setFullscreenPhase("windowed");
+      }
     });
 
     return () => {
       unlistenHiddenToTray.then((unsubscribe) => unsubscribe());
     };
-  }, []);
+  }, [setFullscreenPhase]);
 
   useEffect(() => {
     return () => {

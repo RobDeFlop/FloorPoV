@@ -23,6 +23,7 @@ export interface RecordingSettings {
   enableRecordingDiagnostics: boolean;
   enableAutoRecording: boolean;
   minAutoRaidRecordingSeconds: number;
+  closeToTray: boolean;
   enableAutoUpdate: boolean;
   showFullscreenEventsPanel: boolean;
   appTheme: AppTheme;
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: RecordingSettings = {
   enableRecordingDiagnostics: false,
   enableAutoRecording: false,
   minAutoRaidRecordingSeconds: 25,
+  closeToTray: false,
   enableAutoUpdate: true,
   showFullscreenEventsPanel: true,
   appTheme: DEFAULT_APP_THEME,

@@ -34,6 +34,7 @@ pub(super) fn clear_recording_state(state: &SharedRecordingState) {
     recording_state.is_stopping = false;
     recording_state.current_output_path = None;
     recording_state.stop_tx = None;
+    recording_state.completion = None;
 }
 
 pub(super) fn signal_audio_threads_stop(

@@ -120,16 +120,28 @@ pub(crate) fn output_folder_from_settings_value(value: &serde_json::Value) -> Op
         .map(ToOwned::to_owned)
 }
 
-pub(crate) fn read_stored_output_folder(app_handle: &AppHandle) -> Option<String> {
+fn read_saved_settings(app_handle: &AppHandle) -> Option<serde_json::Value> {
     let app_data_dir = app_handle.path().app_data_dir().ok()?;
     let settings_path = app_data_dir.join("settings.json");
     let contents = std::fs::read_to_string(settings_path).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&contents).ok()?;
-    output_folder_from_settings_value(&value)
+    serde_json::from_str(&contents).ok()
+}
+
+fn close_to_tray_from_settings(value: &serde_json::Value) -> bool {
+    value["recording-settings"]["closeToTray"].as_bool() == Some(true)
+}
+
+pub(crate) fn read_saved_close_to_tray(app_handle: &AppHandle) -> bool {
+    read_saved_settings(app_handle)
+        .as_ref()
+        .is_some_and(close_to_tray_from_settings)
 }
 
 pub(crate) fn resolve_startup_recordings_folder(app_handle: &AppHandle) -> Result<String, String> {
-    if let Some(stored_folder) = read_stored_output_folder(app_handle) {
+    if let Some(stored_folder) = read_saved_settings(app_handle)
+        .as_ref()
+        .and_then(output_folder_from_settings_value)
+    {
         return Ok(stored_folder);
     }
 
@@ -424,7 +436,26 @@ pub fn cleanup_old_recordings(
 
 #[cfg(test)]
 mod tests {
-    use super::output_folder_from_settings_value;
+    use super::{close_to_tray_from_settings, output_folder_from_settings_value};
+
+    #[test]
+    fn close_to_tray_requires_a_saved_true_preference() {
+        use serde_json::json;
+
+        assert!(!close_to_tray_from_settings(&json!({})));
+        for value in [
+            json!({}),
+            json!({ "closeToTray": false }),
+            json!({ "closeToTray": "true" }),
+        ] {
+            assert!(!close_to_tray_from_settings(
+                &json!({ "recording-settings": value })
+            ));
+        }
+        assert!(close_to_tray_from_settings(
+            &json!({ "recording-settings": { "closeToTray": true } })
+        ));
+    }
 
     #[test]
     fn reads_custom_output_folder_from_stored_settings() {

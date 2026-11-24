@@ -1,30 +1,33 @@
-//! System tray so closing the window keeps recording and combat watch alive.
+//! System tray and window visibility controls.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use serde::Serialize;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager};
 
 pub(crate) struct AppExitState {
     pub(crate) allow_exit: AtomicBool,
+    pub(crate) window_close_pending: AtomicBool,
 }
 
 impl AppExitState {
     pub(crate) fn new() -> Self {
         Self {
             allow_exit: AtomicBool::new(false),
+            window_close_pending: AtomicBool::new(false),
         }
     }
 }
 
-#[tauri::command]
-pub(crate) fn hide_to_tray(app_handle: AppHandle) -> Result<(), String> {
-    hide_main_window(&app_handle);
-    Ok(())
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowHiddenToTray {
+    placement_restored: bool,
 }
 
-pub(crate) fn hide_main_window(app_handle: &AppHandle) {
+pub(crate) fn hide_main_window(app_handle: &AppHandle, placement_restored: bool) {
     let Some(window) = app_handle.get_webview_window("main") else {
         tracing::warn!("Cannot hide to tray because the main window is missing");
         return;
@@ -38,7 +41,8 @@ pub(crate) fn hide_main_window(app_handle: &AppHandle) {
         tracing::warn!("Failed to hide FloorPoV from the taskbar: {error}");
     }
 
-    if let Err(error) = app_handle.emit("window-hidden-to-tray", ()) {
+    let payload = WindowHiddenToTray { placement_restored };
+    if let Err(error) = app_handle.emit("window-hidden-to-tray", payload) {
         tracing::warn!("Failed to emit window-hidden-to-tray: {error}");
     }
 }

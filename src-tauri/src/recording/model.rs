@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, watch, RwLock};
 
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Graphics::Gdi::HMONITOR;
@@ -141,7 +141,22 @@ pub struct RecordingState {
     pub(crate) is_stopping: bool,
     pub(crate) current_output_path: Option<String>,
     pub(crate) stop_tx: Option<mpsc::Sender<()>>,
+    pub(crate) completion: Option<RecordingCompletion>,
+    pub(crate) starts_blocked_for_quit: bool,
 }
+
+impl RecordingState {
+    pub(crate) fn take_stop_signal(&mut self) -> Option<mpsc::Sender<()>> {
+        if self.is_stopping {
+            return None;
+        }
+        let stop_tx = self.stop_tx.take()?;
+        self.is_stopping = true;
+        Some(stop_tx)
+    }
+}
+
+pub(crate) type RecordingCompletion = watch::Receiver<Option<Result<(), String>>>;
 
 pub type SharedRecordingState = Arc<RwLock<RecordingState>>;
 
