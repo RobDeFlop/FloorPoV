@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Columns2,
@@ -15,22 +14,10 @@ import {
 } from "lucide-react";
 import { KeyCode } from "../../types/key-code";
 import { useVideo } from "../../contexts/VideoContext";
-import { VOLUME_MIN } from "../../types/settings";
-import {
-  COMPARE_SLOT_INDEXES,
-  clampCompareVolume,
-  clampMediaTime,
-  compareClockSlotIndex,
-  compareResyncTime,
-  compareSeekTimes,
-  otherCompareSlotIndex,
-  sharedCompareDuration,
-  shouldRestartSharedCompare,
-  shouldResumeCompareSlot,
-  type CompareSlotIndex,
-} from "../../utils/compare-playback";
+import { COMPARE_SLOT_INDEXES } from "../../utils/compare-playback";
 import { formatTime } from "../../utils/format";
 import { ControlIconButton } from "./ControlIconButton";
+import { useComparePlayback } from "./useComparePlayback";
 
 const COMPARE_PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const COMPARE_SKIP_SECONDS = 10;
@@ -48,31 +35,6 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   }
 
   return target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
-}
-
-interface CompareSlotPlaybackState {
-  currentTime: number;
-  duration: number;
-  volume: number;
-  isMuted: boolean;
-  hasError: boolean;
-}
-
-type CompareSlotPlaybackStates = [CompareSlotPlaybackState, CompareSlotPlaybackState];
-
-function createSlotPlaybackState(index: CompareSlotIndex): CompareSlotPlaybackState {
-  return {
-    currentTime: 0,
-    duration: 0,
-    volume: 1,
-    // Only the first recording starts audible so the two soundtracks do not overlap.
-    isMuted: index !== 0,
-    hasError: false,
-  };
-}
-
-function createSlotPlaybackStates(): CompareSlotPlaybackStates {
-  return [createSlotPlaybackState(0), createSlotPlaybackState(1)];
 }
 
 interface CompareTimelineProps {
@@ -242,256 +204,23 @@ function CompareVolumeSlider({ label, volume, onVolumeChange }: CompareVolumeSli
 
 export function CompareVideoPlayer() {
   const { compareVideos, compareSeekMode, setCompareSeekMode, exitCompareMode } = useVideo();
-  const videoElementsRef = useRef<[HTMLVideoElement | null, HTMLVideoElement | null]>([null, null]);
-  // A new ref callback on a playback update would detach the video and pause it.
-  const videoSlotRefs = useMemo(() => COMPARE_SLOT_INDEXES.map((index) => (
-    (element: HTMLVideoElement | null) => {
-      videoElementsRef.current[index] = element;
-      if (!element) return;
-
-      return () => {
-        element.pause();
-        videoElementsRef.current[index] = null;
-      };
-    }
-  )), []);
+  const {
+    slots,
+    isPlaying,
+    isSharedSeek,
+    sharedTime,
+    sharedDuration,
+    playbackRate,
+    setPlaybackRate,
+    togglePlayAll,
+    seekBothSlots,
+    seekSlot,
+    skipBySeconds,
+    toggleSlotMute,
+    setSlotVolume,
+  } = useComparePlayback(compareVideos, compareSeekMode);
   const speedMenuRef = useRef<HTMLDivElement>(null);
-  const [slotStates, setSlotStates] = useState<CompareSlotPlaybackStates>(createSlotPlaybackStates);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
-
-  const isSharedSeek = compareSeekMode === "shared";
-
-  const updateSlotState = useCallback(
-    (index: CompareSlotIndex, patch: Partial<CompareSlotPlaybackState>) => {
-      setSlotStates((currentStates) => {
-        const nextStates: CompareSlotPlaybackStates = [currentStates[0], currentStates[1]];
-        nextStates[index] = { ...nextStates[index], ...patch };
-        return nextStates;
-      });
-    },
-    [],
-  );
-
-  const syncPlayingState = useCallback(() => {
-    const isAnySlotPlaying = videoElementsRef.current.some((element) => {
-      return element !== null && !element.paused && !element.ended;
-    });
-    setIsPlaying(isAnySlotPlaying);
-  }, []);
-
-  const readSharedTime = useCallback((): number => {
-    const [leftElement, rightElement] = videoElementsRef.current;
-    const clockIndex = compareClockSlotIndex(
-      leftElement?.duration ?? 0,
-      rightElement?.duration ?? 0,
-    );
-    return videoElementsRef.current[clockIndex]?.currentTime ?? 0;
-  }, []);
-
-  const seekBothSlots = useCallback((time: number) => {
-    const [leftElement, rightElement] = videoElementsRef.current;
-    const { leftTime, rightTime } = compareSeekTimes(
-      time,
-      leftElement?.duration ?? 0,
-      rightElement?.duration ?? 0,
-    );
-
-    if (leftElement) {
-      leftElement.currentTime = leftTime;
-    }
-
-    if (rightElement) {
-      rightElement.currentTime = rightTime;
-    }
-
-    setSlotStates((currentStates) => [
-      { ...currentStates[0], currentTime: leftTime },
-      { ...currentStates[1], currentTime: rightTime },
-    ]);
-  }, []);
-
-  const seekSlot = useCallback(
-    (index: CompareSlotIndex, time: number) => {
-      const element = videoElementsRef.current[index];
-      if (!element) {
-        return;
-      }
-
-      const nextTime = clampMediaTime(time, element.duration);
-      element.currentTime = nextTime;
-      updateSlotState(index, { currentTime: nextTime });
-    },
-    [updateSlotState],
-  );
-
-  const skipBySeconds = useCallback(
-    (deltaSeconds: number) => {
-      if (isSharedSeek) {
-        seekBothSlots(readSharedTime() + deltaSeconds);
-        return;
-      }
-
-      COMPARE_SLOT_INDEXES.forEach((index) => {
-        const element = videoElementsRef.current[index];
-        if (!element) {
-          return;
-        }
-
-        seekSlot(index, element.currentTime + deltaSeconds);
-      });
-    },
-    [isSharedSeek, readSharedTime, seekBothSlots, seekSlot],
-  );
-
-  const togglePlayAll = useCallback(() => {
-    const shouldPause = videoElementsRef.current.some((element) => {
-      return element !== null && !element.paused;
-    });
-
-    if (shouldPause) {
-      videoElementsRef.current.forEach((element) => {
-        element?.pause();
-      });
-      return;
-    }
-
-    const [leftElement, rightElement] = videoElementsRef.current;
-    if (isSharedSeek) {
-      const resumeTime = shouldRestartSharedCompare(
-        Boolean(leftElement?.ended),
-        Boolean(rightElement?.ended),
-      )
-        ? 0
-        : readSharedTime();
-      seekBothSlots(resumeTime);
-
-      COMPARE_SLOT_INDEXES.forEach((index) => {
-        const element = videoElementsRef.current[index];
-        if (!element || !shouldResumeCompareSlot(resumeTime, element.duration)) {
-          return;
-        }
-
-        element.play().catch((playError: unknown) => {
-          console.error("[CompareVideoPlayer] Could not start playback", playError);
-        });
-      });
-      return;
-    }
-
-    videoElementsRef.current.forEach((element) => {
-      if (!element) {
-        return;
-      }
-
-      element.play().catch((playError: unknown) => {
-        console.error("[CompareVideoPlayer] Could not start playback", playError);
-      });
-    });
-  }, [isSharedSeek, readSharedTime, seekBothSlots]);
-
-  const toggleSlotMute = useCallback(
-    (index: CompareSlotIndex) => {
-      const element = videoElementsRef.current[index];
-      if (!element) {
-        return;
-      }
-
-      const nextMuted = !element.muted;
-      element.muted = nextMuted;
-      updateSlotState(index, { isMuted: nextMuted });
-    },
-    [updateSlotState],
-  );
-
-  const setSlotVolume = useCallback(
-    (index: CompareSlotIndex, volume: number) => {
-      const nextVolume = clampCompareVolume(volume);
-      const shouldUnmute = nextVolume > VOLUME_MIN;
-      const element = videoElementsRef.current[index];
-
-      if (element) {
-        element.volume = nextVolume;
-        if (shouldUnmute) {
-          element.muted = false;
-        }
-      }
-
-      updateSlotState(
-        index,
-        shouldUnmute ? { volume: nextVolume, isMuted: false } : { volume: nextVolume },
-      );
-    },
-    [updateSlotState],
-  );
-
-  useEffect(() => {
-    setSlotStates(createSlotPlaybackStates());
-    setIsPlaying(false);
-  }, [compareVideos]);
-
-  useEffect(() => {
-    videoElementsRef.current.forEach((element) => {
-      if (element) {
-        element.playbackRate = playbackRate;
-      }
-    });
-  }, [playbackRate]);
-
-  useEffect(() => {
-    if (!isPlaying) {
-      return;
-    }
-
-    let frameId = 0;
-    const syncPlaybackFrame = () => {
-      const [leftElement, rightElement] = videoElementsRef.current;
-
-      if (isSharedSeek && leftElement && rightElement) {
-        const clockIndex = compareClockSlotIndex(leftElement.duration, rightElement.duration);
-        const trailingIndex = otherCompareSlotIndex(clockIndex);
-        const clockElement = videoElementsRef.current[clockIndex];
-        const trailingElement = videoElementsRef.current[trailingIndex];
-
-        if (clockElement && trailingElement) {
-          const resyncTime = compareResyncTime(
-            clockElement.currentTime,
-            trailingElement.currentTime,
-            trailingElement.duration,
-          );
-
-          if (resyncTime !== null) {
-            trailingElement.currentTime = resyncTime;
-          }
-        }
-      }
-
-      setSlotStates((currentStates) => {
-        const leftTime = leftElement?.currentTime ?? currentStates[0].currentTime;
-        const rightTime = rightElement?.currentTime ?? currentStates[1].currentTime;
-
-        if (
-          leftTime === currentStates[0].currentTime &&
-          rightTime === currentStates[1].currentTime
-        ) {
-          return currentStates;
-        }
-
-        return [
-          { ...currentStates[0], currentTime: leftTime },
-          { ...currentStates[1], currentTime: rightTime },
-        ];
-      });
-
-      frameId = window.requestAnimationFrame(syncPlaybackFrame);
-    };
-
-    frameId = window.requestAnimationFrame(syncPlaybackFrame);
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [isPlaying, isSharedSeek]);
 
   useEffect(() => {
     if (!showSpeedMenu) {
@@ -509,18 +238,6 @@ export function CompareVideoPlayer() {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [showSpeedMenu]);
-
-  useEffect(() => {
-    const unlistenHiddenToTray = listen("window-hidden-to-tray", () => {
-      videoElementsRef.current.forEach((element) => {
-        element?.pause();
-      });
-    });
-
-    return () => {
-      unlistenHiddenToTray.then((unsubscribe) => unsubscribe());
-    };
-  }, []);
 
   useEffect(() => {
     const handleSkipShortcut = (event: KeyboardEvent) => {
@@ -579,9 +296,6 @@ export function CompareVideoPlayer() {
     return null;
   }
 
-  const sharedDuration = sharedCompareDuration(slotStates[0].duration, slotStates[1].duration);
-  const clockSlotIndex = compareClockSlotIndex(slotStates[0].duration, slotStates[1].duration);
-  const sharedTime = slotStates[clockSlotIndex].currentTime;
   const hasPlayableDuration = sharedDuration > 0;
 
   return (
@@ -626,7 +340,7 @@ export function CompareVideoPlayer() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 p-2 md:grid-cols-2">
         {COMPARE_SLOT_INDEXES.map((index) => {
           const slot = compareVideos[index];
-          const slotState = slotStates[index];
+          const slotState = slots[index];
 
           return (
             <div
@@ -644,43 +358,13 @@ export function CompareVideoPlayer() {
 
               <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-neutral-950">
                 <video
-                  ref={videoSlotRefs[index]}
+                  {...slotState.videoProps}
                   src={slot.src}
                   className="h-full w-full object-contain"
                   controls={false}
                   playsInline
                   disablePictureInPicture
                   preload="auto"
-                  muted={slotState.isMuted}
-                  onLoadedMetadata={(event) => {
-                    const element = event.currentTarget;
-                    element.volume = slotState.volume;
-                    element.muted = slotState.isMuted;
-                    element.playbackRate = playbackRate;
-                    updateSlotState(index, { duration: element.duration, hasError: false });
-                  }}
-                  onTimeUpdate={(event) => {
-                    updateSlotState(index, { currentTime: event.currentTarget.currentTime });
-                  }}
-                  onPlay={syncPlayingState}
-                  onPause={syncPlayingState}
-                  onEnded={syncPlayingState}
-                  onError={(event) => {
-                    const mediaError = event.currentTarget.error;
-                    console.error("[CompareVideoPlayer] Video load error", {
-                      code: mediaError?.code,
-                      message: mediaError?.message,
-                      filePath: slot.filePath,
-                    });
-
-                    // Swapping the compared recordings aborts the pending load, which is
-                    // not a failure the viewer needs to see.
-                    if (mediaError?.code === MediaError.MEDIA_ERR_ABORTED) {
-                      return;
-                    }
-
-                    updateSlotState(index, { hasError: true });
-                  }}
                 />
 
                 {slotState.hasError && (

@@ -13,7 +13,7 @@ import {
   sharedCompareDuration,
   shouldExitCompareMode,
   shouldPreserveCompareSession,
-  shouldRestartSharedCompare,
+  shouldRestartBothRecordings,
   shouldResumeCompareSlot,
   type CompareVideoSlot,
 } from "./compare-playback";
@@ -189,11 +189,11 @@ describe("shouldPreserveCompareSession", () => {
   });
 });
 
-describe("shouldRestartSharedCompare", () => {
-  test("rewinds only after both recordings have ended", () => {
-    expect(shouldRestartSharedCompare(true, true)).toBe(true);
-    expect(shouldRestartSharedCompare(true, false)).toBe(false);
-    expect(shouldRestartSharedCompare(false, false)).toBe(false);
+describe("shouldRestartBothRecordings", () => {
+  test("restarts the pair only after both recordings have ended", () => {
+    expect(shouldRestartBothRecordings(true, true)).toBe(true);
+    expect(shouldRestartBothRecordings(true, false)).toBe(false);
+    expect(shouldRestartBothRecordings(false, false)).toBe(false);
   });
 });
 
