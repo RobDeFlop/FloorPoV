@@ -1164,7 +1164,7 @@ export function Settings({
               <span role="alert" className="text-xs text-rose-300">{saveError}</span>
             ) : playbackUnavailable ? (
               <span role="alert" className="text-xs text-amber-200">
-                FloorPoV could not access the folder.
+                Recording folder set, but the app can't access it.
               </span>
             ) : (
               <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
