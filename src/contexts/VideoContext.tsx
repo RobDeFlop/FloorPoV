@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { VIDEO_LOADING_TIMEOUT_MS, VOLUME_MAX, VOLUME_MIN } from "../types/settings";
 import type { CompareSeekMode, CompareVideoSlot } from "../utils/compare-playback";
@@ -41,9 +40,24 @@ interface VideoContextType {
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
-type WindowHiddenToTray = {
-  placementRestored: boolean;
-};
+interface TrayPlacementRestored {
+  trayGeneration: number;
+}
+
+enum FullscreenEntryOutcome {
+  Entered = "entered",
+  Skipped = "skipped",
+}
+
+interface FullscreenEntry {
+  outcome: FullscreenEntryOutcome;
+  trayGeneration: number;
+}
+
+interface FullscreenTransition {
+  completion: Promise<void>;
+  entry?: { invalidated: boolean };
+}
 
 type FullscreenPhase = "windowed" | "entering" | "fullscreen" | "exiting";
 
@@ -62,9 +76,9 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [fullscreenPhase, setFullscreenPhaseState] = useState<FullscreenPhase>("windowed");
   const fullscreenPhaseRef = useRef<FullscreenPhase>("windowed");
-  const fullscreenTransitionRef = useRef<Promise<void> | null>(null);
+  const fullscreenTransitionRef = useRef<FullscreenTransition | null>(null);
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
-  const needsPlacementRestoreRef = useRef(false);
+  const trayGenerationRef = useRef<number | null>(null);
   const isFullscreen = fullscreenPhase !== "windowed";
   const [loadedFilePath, setLoadedFilePath] = useState<string | null>(null);
   const [isCompareMode, setIsCompareMode] = useState(false);
@@ -163,46 +177,33 @@ export function VideoProvider({ children }: { children: ReactNode }) {
     setFullscreenPhaseState(phase);
   }, []);
 
-  const restorePlaybackWindow = useCallback(async () => {
+  const restorePlaybackWindow = useCallback(async (trayGeneration: number) => {
     try {
       await invoke<void>("exit_playback_fullscreen");
-      needsPlacementRestoreRef.current = false;
-      setFullscreenPhase("windowed");
+      if (trayGeneration === trayGenerationRef.current) setFullscreenPhase("windowed");
     } catch (error) {
       console.error("Fullscreen exit failed:", error);
+      if (trayGeneration !== trayGenerationRef.current) return;
       setFullscreenError("Could not restore the playback window.");
-      needsPlacementRestoreRef.current = true;
-      // Playback fullscreen uses Win32 monitor bounds, not Tauri's fullscreen flag.
-      try {
-        const appWindow = getCurrentWindow();
-        const [monitor, position, size] = await Promise.all([
-          currentMonitor(), appWindow.outerPosition(), appWindow.outerSize(),
-        ]);
-        if (!monitor) throw new Error("No current monitor");
-        const coversMonitor = (
-          position.x === monitor.position.x && position.y === monitor.position.y &&
-          size.width === monitor.size.width && size.height === monitor.size.height
-        );
-        setFullscreenPhase(coversMonitor ? "fullscreen" : "windowed");
-      } catch (queryError) {
-        console.error("Could not check playback window bounds:", queryError);
-        // Keep Exit available so the user can retry the native restore.
-        setFullscreenPhase("fullscreen");
-      }
+      // Only native restoration can confirm completion. Keep Exit available for a retry.
+      setFullscreenPhase("fullscreen");
     }
   }, [setFullscreenPhase]);
 
   const exitFullscreen = useCallback(async () => {
     if (!isTauri()) return;
-    await fullscreenTransitionRef.current;
-    if (fullscreenPhaseRef.current !== "fullscreen") return;
+    const pending = fullscreenTransitionRef.current;
+    if (pending) await pending.completion;
+    if (pending?.entry?.invalidated || fullscreenPhaseRef.current !== "fullscreen") return;
 
+    const trayGeneration = trayGenerationRef.current;
+    if (trayGeneration === null) return;
     setFullscreenError(null);
     setFullscreenPhase("exiting");
-    const transition = restorePlaybackWindow();
+    const transition = { completion: restorePlaybackWindow(trayGeneration) };
     fullscreenTransitionRef.current = transition;
     try {
-      await transition;
+      await transition.completion;
     } finally {
       if (fullscreenTransitionRef.current === transition) {
         fullscreenTransitionRef.current = null;
@@ -216,28 +217,43 @@ export function VideoProvider({ children }: { children: ReactNode }) {
       await exitFullscreen();
       return;
     }
-    if (fullscreenPhaseRef.current !== "windowed") return;
+    if (fullscreenPhaseRef.current !== "windowed" || fullscreenTransitionRef.current) return;
 
     setFullscreenError(null);
     setFullscreenPhase("entering");
-    const transition = (async () => {
+    const entry = { invalidated: false };
+    const completion = (async () => {
+      let trayGeneration = trayGenerationRef.current;
       try {
-        // A failed frame refresh can leave a saved native placement in a windowed UI.
-        if (needsPlacementRestoreRef.current) {
-          await invoke<void>("exit_playback_fullscreen");
-          needsPlacementRestoreRef.current = false;
+        if (trayGeneration === null) {
+          // The native generation survives a webview reload.
+          trayGeneration = await invoke<number>("get_playback_tray_generation");
+          if (entry.invalidated) return;
+          trayGenerationRef.current = trayGeneration;
         }
-        await invoke<void>("enter_playback_fullscreen");
-        setFullscreenPhase("fullscreen");
+        const result = await invoke<FullscreenEntry>("enter_playback_fullscreen", { trayGeneration });
+        if (entry.invalidated) return;
+        trayGenerationRef.current = result.trayGeneration;
+        setFullscreenPhase(
+          result.outcome === FullscreenEntryOutcome.Entered ? "fullscreen" : "windowed",
+        );
       } catch (error) {
         console.error("Fullscreen entry failed:", error);
+        if (entry.invalidated) return;
         setFullscreenError("Could not enter fullscreen.");
-        await restorePlaybackWindow();
+        if (trayGeneration === null) {
+          setFullscreenPhase("windowed");
+          return;
+        }
+        // An issued restore must settle before a new entry can change placement.
+        setFullscreenPhase("exiting");
+        await restorePlaybackWindow(trayGeneration);
       }
     })();
+    const transition = { completion, entry };
     fullscreenTransitionRef.current = transition;
     try {
-      await transition;
+      await completion;
     } finally {
       if (fullscreenTransitionRef.current === transition) {
         fullscreenTransitionRef.current = null;
@@ -362,19 +378,62 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, [isPlaying]);
 
   useEffect(() => {
-    const unlistenHiddenToTray = listen<WindowHiddenToTray>("window-hidden-to-tray", async (event) => {
-      videoRef.current?.pause();
-      if (event.payload.placementRestored) {
-        // The native close handler already restored the window's placement.
-        await fullscreenTransitionRef.current;
-        needsPlacementRestoreRef.current = false;
-        setFullscreenError(null);
-        setFullscreenPhase("windowed");
+    if (!isTauri()) return;
+
+    let disposed = false;
+    const subscribe = (
+      eventName: string,
+      onPayload: (payload: TrayPlacementRestored) => void,
+    ) => {
+      const register = async () => {
+        try {
+          return await listen<TrayPlacementRestored>(eventName, ({ payload }) => {
+            if (!disposed) onPayload(payload);
+          });
+        } catch (error) {
+          console.error(`Failed to listen for ${eventName}:`, error);
+        }
+      };
+      const registration = register();
+
+      return async () => {
+        const unlisten = await registration;
+        if (!unlisten) return;
+        try {
+          await unlisten();
+        } catch (error) {
+          console.error(`Failed to unlisten from ${eventName}:`, error);
+        }
+      };
+    };
+
+    const acknowledgePlacementRestore = ({ trayGeneration }: TrayPlacementRestored) => {
+      const currentGeneration = trayGenerationRef.current;
+      if (currentGeneration !== null && trayGeneration <= currentGeneration) return;
+      trayGenerationRef.current = trayGeneration;
+      const transition = fullscreenTransitionRef.current;
+      if (fullscreenPhaseRef.current === "entering" && transition?.entry) {
+        // The old entry cannot affect the restored window. Don't wait for its IPC reply.
+        transition.entry.invalidated = true;
+        fullscreenTransitionRef.current = null;
       }
+      setFullscreenError(null);
+      setFullscreenPhase("windowed");
+    };
+
+    const unlistenHiddenToTray = subscribe("window-hidden-to-tray", (payload) => {
+      videoRef.current?.pause();
+      acknowledgePlacementRestore(payload);
     });
+    const unlistenPlacementRestored = subscribe(
+      "playback-placement-restored",
+      acknowledgePlacementRestore,
+    );
 
     return () => {
-      unlistenHiddenToTray.then((unsubscribe) => unsubscribe());
+      disposed = true;
+      void unlistenHiddenToTray();
+      void unlistenPlacementRestored();
     };
   }, [setFullscreenPhase]);
 

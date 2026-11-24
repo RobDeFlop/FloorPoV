@@ -103,6 +103,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             is_debug_build,
+            playback_window::get_playback_tray_generation,
             playback_window::enter_playback_fullscreen,
             playback_window::exit_playback_fullscreen,
             recording::start_recording,

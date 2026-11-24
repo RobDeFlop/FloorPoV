@@ -126,14 +126,21 @@ enum CloseAction {
 
 fn schedule_window_close(app: &AppHandle, action: CloseAction) {
     let handle = app.clone();
-    if let Err(error) = app.run_on_main_thread(move || {
-        let placement_restored = restore_playback_window(&handle);
-        match action {
-            CloseAction::Hide => {
-                tray::hide_main_window(&handle, placement_restored);
-                release_close_request(&handle);
+    if let Err(error) = app.run_on_main_thread(move || match action {
+        CloseAction::Hide => match tray::hide_main_window(&handle) {
+            Ok(()) => release_close_request(&handle),
+            Err(error) => {
+                tracing::warn!("Could not close to tray: {error}");
+                show_close_error(
+                    handle,
+                    "Could not close FloorPoV. Try closing the window again.",
+                    "Window not closed",
+                );
             }
-            CloseAction::Quit => tray::request_quit(&handle),
+        },
+        CloseAction::Quit => {
+            restore_playback_before_quit(&handle);
+            tray::request_quit(&handle);
         }
     }) {
         tracing::error!("Could not schedule window close: {error}");
@@ -145,18 +152,13 @@ fn schedule_window_close(app: &AppHandle, action: CloseAction) {
     }
 }
 
-fn restore_playback_window(app: &AppHandle) -> bool {
-    #[cfg(target_os = "windows")]
+fn restore_playback_before_quit(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
-        // Restore placement before hiding or letting the window-state plugin save on exit.
+        // Let the window-state plugin save the windowed placement on exit.
         if let Err(error) = crate::playback_window::exit_playback_fullscreen(window, app.state()) {
-            tracing::warn!("Could not restore playback window before closing: {error}");
-            return false;
+            tracing::warn!("Could not restore playback window before quitting: {error}");
         }
     }
-    #[cfg(not(target_os = "windows"))]
-    let _ = app;
-    true
 }
 
 async fn cancel_quit(app: &AppHandle) {
