@@ -331,7 +331,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                   </main>
                   {!isCompareMode && <PlaybackEventList />}
                 </div>
-                <GameEvents />
+                {isCompareMode && <GameEvents />}
               </div>
             ) : activeTab === "metadata" ? (
               <div

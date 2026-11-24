@@ -22,6 +22,7 @@ import {
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { installAvailableAppUpdate } from "../../services/app-updater";
+import { SettingsSaveResult } from "../../services/save-recording-settings";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { FormField } from "../ui/FormField";
@@ -104,7 +105,6 @@ const FIELD_IDS = {
   enableAutoRecording: "settings-enable-auto-recording",
   minAutoRaidRecordingSeconds: "settings-min-auto-raid-recording-seconds",
   enableAutoUpdate: "settings-enable-auto-update",
-  startMinimized: "settings-start-minimized",
   showFullscreenEventsPanel: "settings-show-fullscreen-events-panel",
   appTheme: "settings-app-theme",
 };
@@ -220,7 +220,7 @@ export function Settings({
   onNavigationHandled,
   onNavigateWithoutGuard,
 }: SettingsProps) {
-  const { settings, updateSettings } = useSettings();
+  const { settings, playbackUnavailable, updateSettings } = useSettings();
   const { isRecording, isSelectedWindowAlive } = useRecording();
   const [formData, setFormData] = useState<RecordingSettings>(settings);
   const [folderSize, setFolderSize] = useState<number>(0);
@@ -296,7 +296,7 @@ export function Settings({
   }, [hasChanges, onDirtyChange]);
 
   useEffect(() => {
-    if (!navigationRequest) {
+    if (!navigationRequest || isLeaveDialogOpen) {
       return;
     }
 
@@ -306,7 +306,7 @@ export function Settings({
     }
 
     onNavigateWithoutGuard(navigationRequest);
-  }, [hasChanges, navigationRequest, onNavigateWithoutGuard]);
+  }, [hasChanges, isLeaveDialogOpen, navigationRequest, onNavigateWithoutGuard]);
 
   useEffect(() => {
     applyAppTheme(formData.appTheme, document.documentElement);
@@ -432,8 +432,15 @@ export function Settings({
     setIsSaving(true);
     setSaveError(null);
     try {
-      await updateSettings(formData);
+      const result = await updateSettings(formData);
       setHasChanges(false);
+      if (result === SettingsSaveResult.PlaybackUnavailable) {
+        if (navigationRequest) {
+          setIsLeaveDialogOpen(false);
+          onNavigationHandled();
+        }
+        return false;
+      }
       return true;
     } catch {
       setSaveError("Could not save settings. Try again.");
@@ -1038,18 +1045,6 @@ export function Settings({
                 </p>
               </div>
               <SettingsToggleField
-                id={FIELD_IDS.startMinimized}
-                checked={formData.startMinimized}
-                onChange={(checked) => {
-                  setFormData({
-                    ...formData,
-                    startMinimized: checked,
-                  });
-                }}
-                label="Start Minimized to Tray"
-                description="Launch in the tray. The X button hides the window; quit from the tray icon."
-              />
-              <SettingsToggleField
                 id={FIELD_IDS.showFullscreenEventsPanel}
                 checked={formData.showFullscreenEventsPanel}
                 onChange={(checked) => {
@@ -1155,8 +1150,12 @@ export function Settings({
 
         <div className="shrink-0 border-t border-white/10 bg-(--surface-1) px-4 py-4 md:px-6">
           <div className="flex flex-wrap items-center justify-between gap-3 pr-2">
-            {saveError && hasChanges && !isLeaveDialogOpen ? (
+            {saveError && (hasChanges || playbackUnavailable) && !isLeaveDialogOpen ? (
               <span role="alert" className="text-xs text-rose-300">{saveError}</span>
+            ) : playbackUnavailable ? (
+              <span role="alert" className="text-xs text-amber-200">
+                FloorPoV could not access the folder.
+              </span>
             ) : (
               <span className={`text-xs ${hasChanges ? "text-amber-200" : "text-neutral-500"}`}>
                 {isSaving ? "Saving changes…" : hasChanges ? "Changes are not saved" : "All changes saved"}
@@ -1173,9 +1172,9 @@ export function Settings({
               <Button
                 variant="primary"
                 onClick={() => void handleSave()}
-                disabled={!hasChanges}
+                disabled={!hasChanges && !playbackUnavailable}
               >
-                Save changes
+                {playbackUnavailable && !hasChanges ? "Retry" : "Save changes"}
               </Button>
             </div>
           </div>

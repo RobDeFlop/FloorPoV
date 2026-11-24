@@ -20,6 +20,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { useVideo } from "../../contexts/VideoContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useMarker } from "../../contexts/MarkerContext";
@@ -34,14 +35,12 @@ import { EVENT_SEEK_OFFSET_SECONDS, isVideoSeekBarEvent, type GameEvent } from "
 import { getErrorMessage } from "../../services/tauri";
 import { formatTime } from "../../utils/format";
 import { saveRecordingNote } from "../../utils/recording-notes";
-import {
-  screenshotFileNameFromPath,
-  screenshotFileStemFromPath,
-} from "../../utils/playback-screenshot";
+import { screenshotFileStemFromPath } from "../../utils/playback-screenshot";
 import {
   documentHasOpenModalDialog,
   isEditableKeyboardTarget,
   isPlayerKeyboardFocus,
+  PlaybackShortcutAction,
   resolvePlaybackShortcut,
 } from "../../utils/playback-shortcuts";
 import { smoothTransition } from "../../lib/motion";
@@ -96,27 +95,18 @@ export function VideoPlayer() {
   const reduceMotion = useReducedMotion();
   const prefersReducedMotion = reduceMotion !== false;
 
-  const inlineSurfaceHostRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
   const speedMenuRef = useRef<HTMLDivElement>(null);
   const shortcutHelpRef = useRef<HTMLDivElement>(null);
   const immersiveSurfaceRef = useRef<HTMLDivElement>(null);
   const fullscreenEventsTabRef = useRef<HTMLButtonElement>(null);
-  const previousImmersiveModeRef = useRef(false);
-  const tweenSurfaceUntilRef = useRef(0);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [volumeBeforeMute, setVolumeBeforeMute] = useState(1);
-  const [isImmersiveLayerActive, setIsImmersiveLayerActive] = useState(false);
   const [isFullscreenEventsOpen, setIsFullscreenEventsOpen] = useState(false);
-  const [inlineSurfaceRect, setInlineSurfaceRect] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [videoNativeSize, setVideoNativeSize] = useState({ width: 0, height: 0 });
   const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1);
-  const [viewportSize, setViewportSize] = useState(() => ({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }));
   const [immersiveViewportSize, setImmersiveViewportSize] = useState({ width: 0, height: 0 });
   const [hoveredSeekBarEvent, setHoveredSeekBarEvent] = useState<GameEvent | null>(null);
   const [seekBarTooltipX, setSeekBarTooltipX] = useState(0);
@@ -230,29 +220,9 @@ export function VideoPlayer() {
     void toggleFullscreen();
   }, [isImmersiveMode, toggleFullscreen]);
 
-  useLayoutEffect(() => {
-    if (isImmersiveMode) {
-      immersiveSurfaceRef.current?.focus({ preventScroll: true });
-    } else if (fullscreenTriggerRef.current) {
-      const trigger = fullscreenTriggerRef.current;
-      (trigger.isConnected ? trigger : immersiveSurfaceRef.current)?.focus({ preventScroll: true });
-      fullscreenTriggerRef.current = null;
-    }
-  }, [isImmersiveMode]);
   const toggleFullscreenEventsPanel = () => {
     setIsFullscreenEventsOpen((currentValue) => !currentValue);
   };
-
-  const hasInlineSurfaceRect = inlineSurfaceRect.width > 0 && inlineSurfaceRect.height > 0;
-  const surfacePosition = isImmersiveMode
-    ? { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
-    : hasInlineSurfaceRect
-      ? inlineSurfaceRect
-      : null;
-  const shouldTweenSurface =
-    !prefersReducedMotion &&
-    (previousImmersiveModeRef.current !== isImmersiveMode ||
-      performance.now() < tweenSurfaceUntilRef.current);
 
   const handleVolumeToggle = useCallback(() => {
     if (volume === 0) {
@@ -306,7 +276,7 @@ export function VideoPlayer() {
       });
       setScreenshotNotice({
         kind: "success",
-        message: `Saved ${screenshotFileNameFromPath(savedPath)}`,
+        message: `Saved to ${savedPath}`,
       });
     } catch (error) {
       setScreenshotNotice({
@@ -352,9 +322,9 @@ export function VideoPlayer() {
     isImmersiveMode && immersiveVideoStyle?.width
       ? { width: immersiveVideoStyle.width }
       : undefined;
-  const playerSurfaceClassName = isImmersiveLayerActive
-    ? "theme-on-media fixed z-[200] flex items-center justify-center overflow-hidden bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45"
-    : "theme-on-media fixed z-40 overflow-hidden bg-neutral-950/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45";
+  const playerSurfaceClassName = isImmersiveMode
+    ? "theme-on-media fixed inset-0 m-0 h-full w-full border-0 p-0 flex items-center justify-center overflow-hidden bg-neutral-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45"
+    : "theme-on-media relative h-full w-full overflow-hidden bg-neutral-950/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/45";
 
   useEffect(() => {
     if (!showSpeedMenu && !showShortcutHelp) {
@@ -373,7 +343,7 @@ export function VideoPlayer() {
     };
 
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
+      if (event.key !== KeyCode.Escape) {
         return;
       }
 
@@ -402,7 +372,7 @@ export function VideoPlayer() {
 
     const handleFullscreenKey = (event: KeyboardEvent) => {
       const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
-      if (event.key === "Tab" && !event.defaultPrevented) {
+      if (event.key === KeyCode.Tab && !event.defaultPrevented) {
         const root = dialog ?? immersiveSurfaceRef.current;
         if (!root) return;
         // Tab must see the newly revealed controls before the browser moves focus.
@@ -421,7 +391,7 @@ export function VideoPlayer() {
         (next ?? root).focus();
         return;
       }
-      if (event.key !== "Escape" || dialog || event.defaultPrevented) {
+      if (event.key !== KeyCode.Escape || dialog || event.defaultPrevented) {
         return;
       }
 
@@ -446,37 +416,26 @@ export function VideoPlayer() {
     };
   }, [showControls, resetControlsHideTimer, exitFullscreen, isFullscreenEventsOpen, isImmersiveMode, isNoteEditorOpen, showShortcutHelp, showSpeedMenu]);
 
-  useEffect(() => {
-    if (isImmersiveMode) {
-      setIsImmersiveLayerActive(true);
+  useLayoutEffect(() => {
+    const surface = immersiveSurfaceRef.current;
+    if (!isImmersiveMode) {
+      const trigger = fullscreenTriggerRef.current;
+      if (trigger) {
+        fullscreenTriggerRef.current = null;
+        (trigger.isConnected ? trigger : surface)?.focus({ preventScroll: true });
+      }
       return;
     }
 
-    if (prefersReducedMotion) {
-      setIsImmersiveLayerActive(false);
-      return;
-    }
+    if (!surface) return;
 
-    const timeoutId = window.setTimeout(() => {
-      setIsImmersiveLayerActive(false);
-    }, smoothTransition.duration * 1000);
-
+    // The top layer escapes the panel's clipping without reparenting the video.
+    surface.showPopover();
+    surface.focus({ preventScroll: true });
     return () => {
-      window.clearTimeout(timeoutId);
+      if (surface.matches(":popover-open")) surface.hidePopover();
     };
-  }, [isImmersiveMode, prefersReducedMotion]);
-
-  useEffect(() => {
-    if (previousImmersiveModeRef.current === isImmersiveMode) {
-      return;
-    }
-
-    if (!prefersReducedMotion) {
-      tweenSurfaceUntilRef.current = performance.now() + smoothTransition.duration * 1000;
-    }
-
-    previousImmersiveModeRef.current = isImmersiveMode;
-  }, [isImmersiveMode, prefersReducedMotion]);
+  }, [isImmersiveMode]);
 
   useEffect(() => {
     if (!canShowFullscreenEvents) {
@@ -497,7 +456,7 @@ export function VideoPlayer() {
         !event.metaKey &&
         !isEditableKeyboardTarget(event.target) &&
         !documentHasOpenModalDialog() &&
-        (event.key === "s" || event.key === "S")
+        event.key.toLowerCase() === KeyCode.S
       ) {
         event.preventDefault();
         void capturePlaybackScreenshot();
@@ -511,7 +470,7 @@ export function VideoPlayer() {
         !event.metaKey &&
         !isEditableKeyboardTarget(event.target) &&
         !documentHasOpenModalDialog() &&
-        (event.key === "n" || event.key === "N")
+        event.key.toLowerCase() === KeyCode.N
       ) {
         event.preventDefault();
         openNoteEditor();
@@ -520,12 +479,12 @@ export function VideoPlayer() {
 
       if (!event.defaultPrevented && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey &&
           !isEditableKeyboardTarget(event.target) && !documentHasOpenModalDialog()) {
-        if (event.key.toLowerCase() === "m") {
+        if (event.key.toLowerCase() === KeyCode.M) {
           event.preventDefault();
           handleVolumeToggle();
           return;
         }
-        if (event.key.toLowerCase() === "f") {
+        if (event.key.toLowerCase() === KeyCode.F) {
           event.preventDefault();
           toggleImmersiveMode();
           return;
@@ -549,28 +508,28 @@ export function VideoPlayer() {
 
       event.preventDefault();
 
-      if (action === "toggle-play") {
+      if (action === PlaybackShortcutAction.TogglePlay) {
         togglePlay();
         return;
       }
 
-      if (action === "seek-start") {
+      if (action === PlaybackShortcutAction.SeekStart) {
         seek(0);
         return;
       }
 
-      if (action === "seek-end") {
+      if (action === PlaybackShortcutAction.SeekEnd) {
         seek(duration);
         return;
       }
 
       const seekDeltaSeconds = {
-        "seek-back": -SKIP_SEEK_SECONDS,
-        "seek-forward": SKIP_SEEK_SECONDS,
-        "seek-back-fine": -FINE_SEEK_SECONDS,
-        "seek-forward-fine": FINE_SEEK_SECONDS,
-        "seek-back-coarse": -COARSE_SEEK_SECONDS,
-        "seek-forward-coarse": COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBack]: -SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForward]: SKIP_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackFine]: -FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardFine]: FINE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekBackCoarse]: -COARSE_SEEK_SECONDS,
+        [PlaybackShortcutAction.SeekForwardCoarse]: COARSE_SEEK_SECONDS,
       }[action];
 
       skipPlaybackBySeconds(seekDeltaSeconds);
@@ -631,69 +590,8 @@ export function VideoPlayer() {
   }, [screenshotNotice]);
 
   useEffect(() => {
-    const updateInlineSurfaceRect = () => {
-      const hostRect = inlineSurfaceHostRef.current?.getBoundingClientRect();
-      if (!hostRect) {
-        setInlineSurfaceRect({ left: 0, top: 0, width: 0, height: 0 });
-        return;
-      }
-
-      const nextRect = {
-        left: Math.round(hostRect.left),
-        top: Math.round(hostRect.top),
-        width: Math.max(0, Math.round(hostRect.width)),
-        height: Math.max(0, Math.round(hostRect.height)),
-      };
-
-      setInlineSurfaceRect((currentRect) => {
-        if (
-          currentRect.left === nextRect.left &&
-          currentRect.top === nextRect.top &&
-          currentRect.width === nextRect.width &&
-          currentRect.height === nextRect.height
-        ) {
-          return currentRect;
-        }
-
-        return nextRect;
-      });
-    };
-
-    updateInlineSurfaceRect();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateInlineSurfaceRect);
-      window.addEventListener("scroll", updateInlineSurfaceRect, true);
-      return () => {
-        window.removeEventListener("resize", updateInlineSurfaceRect);
-        window.removeEventListener("scroll", updateInlineSurfaceRect, true);
-      };
-    }
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateInlineSurfaceRect();
-    });
-
-    if (inlineSurfaceHostRef.current) {
-      resizeObserver.observe(inlineSurfaceHostRef.current);
-    }
-
-    window.addEventListener("resize", updateInlineSurfaceRect);
-    window.addEventListener("scroll", updateInlineSurfaceRect, true);
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", updateInlineSurfaceRect);
-      window.removeEventListener("scroll", updateInlineSurfaceRect, true);
-    };
-  }, []);
-
-  useEffect(() => {
     const handleResize = () => {
       setDevicePixelRatio(window.devicePixelRatio || 1);
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
     };
 
     window.addEventListener("resize", handleResize);
@@ -828,8 +726,9 @@ export function VideoPlayer() {
   };
 
   const playerSurface = (
-    <motion.div
+    <div
       ref={immersiveSurfaceRef}
+      popover={isImmersiveMode ? "manual" : undefined}
       onPointerMove={resetControlsHideTimer}
       onFocusCapture={resetControlsHideTimer}
       onKeyDownCapture={resetControlsHideTimer}
@@ -837,19 +736,6 @@ export function VideoPlayer() {
       tabIndex={showVideo ? 0 : undefined}
       role={showVideo ? "region" : undefined}
       aria-label={showVideo ? "Video player" : undefined}
-      initial={false}
-      animate={
-        surfacePosition
-          ? {
-              left: surfacePosition.left,
-              top: surfacePosition.top,
-              width: surfacePosition.width,
-              height: surfacePosition.height,
-            }
-          : undefined
-      }
-      style={surfacePosition ? undefined : { visibility: "hidden" }}
-      transition={shouldTweenSurface ? smoothTransition : { duration: 0 }}
       aria-busy={isVideoLoading}
     >
       {showVideo && (
@@ -975,7 +861,7 @@ export function VideoPlayer() {
           ) : (
             <Camera className="mt-0.5 h-4 w-4 shrink-0" />
           )}
-          <p className="min-w-0 flex-1 text-xs leading-5">{screenshotNotice.message}</p>
+          <p className="min-w-0 flex-1 break-all text-xs leading-5">{screenshotNotice.message}</p>
           {screenshotNotice.kind === "error" && (
             <button
               type="button"
@@ -1052,29 +938,32 @@ export function VideoPlayer() {
                   className="group relative h-2 w-20 cursor-pointer rounded-full border border-white/15 bg-neutral-700/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45"
                   onClick={handleVolumeClick}
                   onKeyDown={(event) => {
-                    if (isImmersiveMode && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+                    if (
+                      isImmersiveMode &&
+                      (event.key === KeyCode.ArrowLeft || event.key === KeyCode.ArrowRight)
+                    ) {
                       return;
                     }
 
-                    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+                    if (event.key === KeyCode.ArrowLeft || event.key === KeyCode.ArrowDown) {
                       event.preventDefault();
                       setVolume(Math.max(0, volume - 0.05));
                       return;
                     }
 
-                    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+                    if (event.key === KeyCode.ArrowRight || event.key === KeyCode.ArrowUp) {
                       event.preventDefault();
                       setVolume(Math.min(1, volume + 0.05));
                       return;
                     }
 
-                    if (event.key === "Home") {
+                    if (event.key === KeyCode.Home) {
                       event.preventDefault();
                       setVolume(0);
                       return;
                     }
 
-                    if (event.key === "End") {
+                    if (event.key === KeyCode.End) {
                       event.preventDefault();
                       setVolume(1);
                     }
@@ -1101,9 +990,6 @@ export function VideoPlayer() {
               <span className="text-xs font-mono text-white">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <span className="hidden text-[10px] uppercase tracking-[0.12em] text-neutral-500 sm:inline">
-                Space play/pause · J/L ±10s
-              </span>
             </div>
 
             <div
@@ -1119,31 +1005,34 @@ export function VideoPlayer() {
                   return;
                 }
 
-                if (isImmersiveMode && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+                if (
+                  isImmersiveMode &&
+                  (event.key === KeyCode.ArrowLeft || event.key === KeyCode.ArrowRight)
+                ) {
                   return;
                 }
 
                 const seekStep = event.shiftKey ? COARSE_SEEK_SECONDS : FINE_SEEK_SECONDS;
 
-                if (event.key === "ArrowLeft") {
+                if (event.key === KeyCode.ArrowLeft) {
                   event.preventDefault();
                   seek(Math.max(0, currentTime - seekStep));
                   return;
                 }
 
-                if (event.key === "ArrowRight") {
+                if (event.key === KeyCode.ArrowRight) {
                   event.preventDefault();
                   seek(Math.min(duration, currentTime + seekStep));
                   return;
                 }
 
-                if (event.key === "Home") {
+                if (event.key === KeyCode.Home) {
                   event.preventDefault();
                   seek(0);
                   return;
                 }
 
-                if (event.key === "End") {
+                if (event.key === KeyCode.End) {
                   event.preventDefault();
                   seek(duration);
                 }
@@ -1366,12 +1255,12 @@ export function VideoPlayer() {
           </motion.div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 
   return (
-    <div ref={inlineSurfaceHostRef} className="relative h-full w-full">
-      {createPortal(playerSurface, document.body)}
+    <>
+      {playerSurface}
       {isNoteEditorOpen
         ? createPortal(
             <NoteEditorDialog
@@ -1391,9 +1280,9 @@ export function VideoPlayer() {
                 setNoteError(null);
               }}
             />,
-            document.body,
+            (isImmersiveMode && immersiveSurfaceRef.current) || document.body,
           )
         : null}
-    </div>
+    </>
   );
 }

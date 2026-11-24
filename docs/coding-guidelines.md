@@ -23,6 +23,8 @@ Before finishing a copy change, read the surrounding text as a whole and check t
 
 ## TypeScript and React Naming
 
+Use an enum for operation outcomes shared across modules. Compare enum members rather than string literals.
+
 Prefer:
 
 - `unsubscribe` instead of `fn`
@@ -38,6 +40,12 @@ Allowed professional abbreviations when context is clear:
 - short closure variables like `e` in `catch (e)` or small callbacks
 
 Avoid abbreviations that make readers guess intent.
+
+## Keyboard handlers
+
+Compare `KeyboardEvent.key` against the shared `KeyCode` enum in `src/types/key-code.ts`.
+Add new shortcut keys there. For case-insensitive letter shortcuts, compare `event.key.toLowerCase()`
+against the lowercase enum value. Keep display labels separate from event values.
 
 ## Rust Naming
 

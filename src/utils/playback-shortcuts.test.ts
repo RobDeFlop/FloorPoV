@@ -3,6 +3,7 @@ import {
   documentHasOpenModalDialog,
   isEditableKeyboardTarget,
   isPlayerKeyboardFocus,
+  PlaybackShortcutAction,
   resolvePlaybackShortcut,
 } from "./playback-shortcuts";
 
@@ -106,15 +107,15 @@ describe("resolvePlaybackShortcut", () => {
   const playerFocused = { ...idleContext, isPlayerFocused: true };
 
   test("keeps J and L seek when the player is not focused", () => {
-    expect(resolvePlaybackShortcut(shortcutEvent("j"), idleContext)).toBe("seek-back");
-    expect(resolvePlaybackShortcut(shortcutEvent("J"), idleContext)).toBe("seek-back");
-    expect(resolvePlaybackShortcut(shortcutEvent("l"), idleContext)).toBe("seek-forward");
-    expect(resolvePlaybackShortcut(shortcutEvent("L"), idleContext)).toBe("seek-forward");
+    expect(resolvePlaybackShortcut(shortcutEvent("j"), idleContext)).toBe(PlaybackShortcutAction.SeekBack);
+    expect(resolvePlaybackShortcut(shortcutEvent("J"), idleContext)).toBe(PlaybackShortcutAction.SeekBack);
+    expect(resolvePlaybackShortcut(shortcutEvent("l"), idleContext)).toBe(PlaybackShortcutAction.SeekForward);
+    expect(resolvePlaybackShortcut(shortcutEvent("L"), idleContext)).toBe(PlaybackShortcutAction.SeekForward);
   });
 
   test("toggles play only when the player is focused", () => {
     expect(resolvePlaybackShortcut(shortcutEvent(" "), idleContext)).toBe(null);
-    expect(resolvePlaybackShortcut(shortcutEvent(" "), playerFocused)).toBe("toggle-play");
+    expect(resolvePlaybackShortcut(shortcutEvent(" "), playerFocused)).toBe(PlaybackShortcutAction.TogglePlay);
   });
 
   test("does not steal keys from inputs, dialogs, or modified presses", () => {
@@ -144,23 +145,27 @@ describe("resolvePlaybackShortcut", () => {
 
   test("plain fullscreen arrows seek five seconds without Shift", () => {
     const fullscreen = { ...playerFocused, isFullscreen: true };
-    expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), fullscreen)).toBe("seek-back-coarse");
-    expect(resolvePlaybackShortcut(shortcutEvent("ArrowRight"), fullscreen)).toBe("seek-forward-coarse");
+    expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), fullscreen)).toBe(
+      PlaybackShortcutAction.SeekBackCoarse,
+    );
+    expect(resolvePlaybackShortcut(shortcutEvent("ArrowRight"), fullscreen)).toBe(
+      PlaybackShortcutAction.SeekForwardCoarse,
+    );
   });
 
   test("seeks with arrows and Home/End only when the player is focused", () => {
     expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), idleContext)).toBe(null);
-    expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), playerFocused)).toBe("seek-back-fine");
+    expect(resolvePlaybackShortcut(shortcutEvent("ArrowLeft"), playerFocused)).toBe(PlaybackShortcutAction.SeekBackFine);
     expect(
       resolvePlaybackShortcut(shortcutEvent("ArrowLeft", { shiftKey: true }), playerFocused),
-    ).toBe("seek-back-coarse");
+    ).toBe(PlaybackShortcutAction.SeekBackCoarse);
     expect(resolvePlaybackShortcut(shortcutEvent("ArrowRight"), playerFocused)).toBe(
-      "seek-forward-fine",
+      PlaybackShortcutAction.SeekForwardFine,
     );
     expect(
       resolvePlaybackShortcut(shortcutEvent("ArrowRight", { shiftKey: true }), playerFocused),
-    ).toBe("seek-forward-coarse");
-    expect(resolvePlaybackShortcut(shortcutEvent("Home"), playerFocused)).toBe("seek-start");
-    expect(resolvePlaybackShortcut(shortcutEvent("End"), playerFocused)).toBe("seek-end");
+    ).toBe(PlaybackShortcutAction.SeekForwardCoarse);
+    expect(resolvePlaybackShortcut(shortcutEvent("Home"), playerFocused)).toBe(PlaybackShortcutAction.SeekStart);
+    expect(resolvePlaybackShortcut(shortcutEvent("End"), playerFocused)).toBe(PlaybackShortcutAction.SeekEnd);
   });
 });

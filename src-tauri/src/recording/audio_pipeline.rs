@@ -115,32 +115,53 @@ fn initialize_capture_client(
     Ok((audio_client, capture_client))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum LoopbackTarget {
+    WowProcess,
+    Desktop,
+}
+
+fn select_loopback_target(audio_capture_mode: &str) -> Result<LoopbackTarget, String> {
+    match audio_capture_mode {
+        "wow" => Ok(LoopbackTarget::WowProcess),
+        "desktop" => Ok(LoopbackTarget::Desktop),
+        _ => Err(
+            "Unknown audio capture mode. Choose WoW only or Entire desktop in Settings."
+                .to_string(),
+        ),
+    }
+}
+
 fn build_loopback_capture_context(
     audio_capture_mode: &str,
 ) -> Result<(AudioClient, wasapi::AudioCaptureClient, WaveFormat), String> {
+    let target = select_loopback_target(audio_capture_mode)?;
     initialize_mta()
         .ok()
         .map_err(|error| format!("Failed to initialize COM for system audio capture: {error}"))?;
 
     let wave_format = desired_wave_format();
 
-    if audio_capture_mode == "wow" {
-        let process_id = find_wow_process_id()?;
-        tracing::info!(process_id, "Capturing audio from the WoW process");
-        let audio_client = AudioClient::new_application_loopback_client(process_id, true)
-            .map_err(|error| format!("Failed to create WoW process audio loopback: {error}"))?;
-        let (audio_client, capture_client) = initialize_capture_client(audio_client, &wave_format)?;
-        return Ok((audio_client, capture_client, wave_format));
-    }
-
-    let enumerator = DeviceEnumerator::new()
-        .map_err(|error| format!("Failed to enumerate audio devices: {error}"))?;
-    let device = enumerator
-        .get_default_device(&Direction::Render)
-        .map_err(|error| format!("Failed to access default output audio device: {error}"))?;
-    let audio_client = device
-        .get_iaudioclient()
-        .map_err(|error| format!("Failed to create WASAPI audio client: {error}"))?;
+    let audio_client = match target {
+        LoopbackTarget::WowProcess => {
+            let process_id = find_wow_process_id()?;
+            tracing::info!(process_id, "Capturing audio from the WoW process");
+            AudioClient::new_application_loopback_client(process_id, true)
+                .map_err(|error| format!("Failed to create WoW process audio loopback: {error}"))?
+        }
+        LoopbackTarget::Desktop => {
+            let enumerator = DeviceEnumerator::new()
+                .map_err(|error| format!("Failed to enumerate audio devices: {error}"))?;
+            let device = enumerator
+                .get_default_device(&Direction::Render)
+                .map_err(|error| {
+                    format!("Failed to access default output audio device: {error}")
+                })?;
+            device
+                .get_iaudioclient()
+                .map_err(|error| format!("Failed to create WASAPI audio client: {error}"))?
+        }
+    };
     let (audio_client, capture_client) = initialize_capture_client(audio_client, &wave_format)?;
 
     Ok((audio_client, capture_client, wave_format))
@@ -289,7 +310,28 @@ pub(crate) fn is_expected_audio_disconnect_error(error: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::is_wow_process_name;
+    use super::{is_wow_process_name, select_loopback_target, LoopbackTarget};
+
+    #[test]
+    fn select_loopback_target_for_wow() {
+        assert_eq!(
+            select_loopback_target("wow"),
+            Ok(LoopbackTarget::WowProcess)
+        );
+    }
+
+    #[test]
+    fn select_loopback_target_for_desktop() {
+        assert_eq!(
+            select_loopback_target("desktop"),
+            Ok(LoopbackTarget::Desktop)
+        );
+    }
+
+    #[test]
+    fn select_loopback_target_rejects_unknown_mode() {
+        assert!(select_loopback_target("unknown").is_err());
+    }
 
     #[test]
     fn recognizes_wow_process_names() {

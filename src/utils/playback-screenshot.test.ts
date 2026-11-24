@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   getVideoFrameCaptureError,
-  screenshotFileNameFromPath,
   screenshotFileStemFromPath,
 } from "./playback-screenshot";
 
@@ -48,13 +47,5 @@ describe("getVideoFrameCaptureError", () => {
         videoHeight: 1080,
       }),
     ).toBeNull();
-  });
-});
-
-describe("screenshotFileNameFromPath", () => {
-  test("returns the file name from a windows path", () => {
-    expect(
-      screenshotFileNameFromPath("C:\\Videos\\FloorPoV\\screenshots\\key_recording_20260101.png"),
-    ).toBe("key_recording_20260101.png");
   });
 });

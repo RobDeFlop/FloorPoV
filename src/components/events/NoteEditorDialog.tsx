@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { StickyNote } from "lucide-react";
+import { KeyCode } from "../../types/key-code";
 import { Button } from "../ui/Button";
 import { formatTime } from "../../utils/format";
 import { MAX_NOTE_TEXT_LENGTH, normalizeNoteText } from "../../utils/note-text";
@@ -76,7 +77,7 @@ export function NoteEditorDialog({
           disabled={isSaving}
           onChange={(event) => setDraftText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Escape") {
+            if (event.key === KeyCode.Escape) {
               event.preventDefault();
               event.stopPropagation();
               if (!isSaving) {
