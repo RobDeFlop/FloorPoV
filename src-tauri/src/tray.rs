@@ -7,6 +7,8 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Emitter, Manager};
 
+use crate::playback_window::restore_playback_for_tray;
+
 pub(crate) struct AppExitState {
     pub(crate) allow_exit: AtomicBool,
     pub(crate) window_close_pending: AtomicBool,
@@ -23,28 +25,53 @@ impl AppExitState {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct WindowHiddenToTray {
-    placement_restored: bool,
+struct TrayPlacementRestored {
+    tray_generation: u32,
 }
 
-pub(crate) fn hide_main_window(app_handle: &AppHandle, placement_restored: bool) {
-    let Some(window) = app_handle.get_webview_window("main") else {
-        tracing::warn!("Cannot hide to tray because the main window is missing");
-        return;
+pub(crate) fn hide_main_window(app_handle: &AppHandle) -> Result<(), String> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "Cannot hide to tray because the main window is missing".to_string())?;
+    hide_to_tray(
+        || restore_playback_for_tray(&window, app_handle.state()),
+        || {
+            window
+                .hide()
+                .map_err(|error| format!("Failed to hide FloorPoV to the tray: {error}"))
+        },
+        || {
+            if let Err(error) = window.set_skip_taskbar(true) {
+                tracing::warn!("Failed to hide FloorPoV from the taskbar: {error}");
+            }
+        },
+        |event, payload| {
+            if let Err(error) = app_handle.emit(event, payload) {
+                tracing::warn!("Failed to emit {event}: {error}");
+            }
+        },
+    )
+}
+
+fn hide_to_tray(
+    restore: impl FnOnce() -> Result<u32, String>,
+    hide: impl FnOnce() -> Result<(), String>,
+    skip_taskbar: impl FnOnce(),
+    emit: impl FnOnce(&'static str, TrayPlacementRestored),
+) -> Result<(), String> {
+    let payload = TrayPlacementRestored {
+        tray_generation: restore()?,
     };
 
-    if let Err(error) = window.hide() {
-        tracing::warn!("Failed to hide FloorPoV to the tray: {error}");
+    if let Err(error) = hide() {
+        // Placement is already restored, but playback should only pause on a successful hide.
+        emit("playback-placement-restored", payload);
+        return Err(error);
     }
 
-    if let Err(error) = window.set_skip_taskbar(true) {
-        tracing::warn!("Failed to hide FloorPoV from the taskbar: {error}");
-    }
-
-    let payload = WindowHiddenToTray { placement_restored };
-    if let Err(error) = app_handle.emit("window-hidden-to-tray", payload) {
-        tracing::warn!("Failed to emit window-hidden-to-tray: {error}");
-    }
+    skip_taskbar();
+    emit("window-hidden-to-tray", payload);
+    Ok(())
 }
 
 pub(crate) fn show_main_window(app_handle: &AppHandle) {
@@ -115,4 +142,42 @@ pub(crate) fn install_tray(app: &App) -> Result<(), String> {
         .map_err(|error| format!("Failed to install the system tray icon: {error}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use super::hide_to_tray;
+
+    #[test]
+    fn failed_hide_acknowledges_restore_without_announcing_hide() {
+        let calls = RefCell::new(Vec::new());
+        let result = hide_to_tray(
+            || {
+                calls.borrow_mut().push(("restore", None));
+                Ok(7)
+            },
+            || {
+                calls.borrow_mut().push(("hide", None));
+                Err("native hide failed".to_string())
+            },
+            || calls.borrow_mut().push(("skip taskbar", None)),
+            |event, payload| {
+                calls
+                    .borrow_mut()
+                    .push((event, Some(payload.tray_generation)))
+            },
+        );
+
+        assert_eq!(result, Err("native hide failed".to_string()));
+        assert_eq!(
+            calls.into_inner(),
+            [
+                ("restore", None),
+                ("hide", None),
+                ("playback-placement-restored", Some(7)),
+            ]
+        );
+    }
 }
