@@ -144,8 +144,8 @@ export function shouldPreserveCompareSession(
   return comparedFilePaths !== null && !shouldExitCompareMode(comparedFilePaths, recordings);
 }
 
-/** After both recordings finish, play-all should rewind the shared clock instead of no-op. */
-export function shouldRestartSharedCompare(leftEnded: boolean, rightEnded: boolean): boolean {
+/** Play-all restarts the pair only after both recordings have finished. */
+export function shouldRestartBothRecordings(leftEnded: boolean, rightEnded: boolean): boolean {
   return leftEnded && rightEnded;
 }
 
