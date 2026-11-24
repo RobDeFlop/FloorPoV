@@ -2,13 +2,15 @@ import { createContext, useContext, useState, useEffect, useCallback, ReactNode 
 import { invoke } from '@tauri-apps/api/core';
 import { Store } from '@tauri-apps/plugin-store';
 import { RecordingSettings, DEFAULT_SETTINGS } from '../types/settings';
-import { allowRecordingsFolderForPlayback } from '../utils/recording-playback';
 import { applyAppTheme, normalizeAppTheme, persistAppTheme } from '../utils/theme';
-import { saveRecordingSettings, SettingsSaveResult } from "../services/save-recording-settings";
+import {
+  checkRecordingSettingsPlayback,
+  saveRecordingSettings,
+  SettingsSaveResult,
+  type RecordingSettingsState,
+} from "../services/save-recording-settings";
 
-interface SettingsContextType {
-  playbackUnavailable: boolean;
-  settings: RecordingSettings;
+interface SettingsContextType extends RecordingSettingsState {
   isLoading: boolean;
   updateSettings: (newSettings: RecordingSettings) => Promise<SettingsSaveResult>;
 }
@@ -30,8 +32,11 @@ function getLegacyDefaultOutputFolderPath(defaultFolder: string): string | null 
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<RecordingSettings>(DEFAULT_SETTINGS);
-  const [playbackUnavailable, setPlaybackUnavailable] = useState(false);
+  const [recordingSettings, setRecordingSettings] = useState<RecordingSettingsState>({
+    settings: DEFAULT_SETTINGS,
+    playbackUnavailable: false,
+  });
+  const { settings } = recordingSettings;
   const [isLoading, setIsLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
 
@@ -99,13 +104,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           await store.save();
         }
 
-        try {
-          await allowRecordingsFolderForPlayback(mergedSettings.outputFolder);
-        } catch (error) {
-          console.error('Failed to allow recordings folder for playback:', error);
-        }
-
-        setSettings(mergedSettings);
+        setRecordingSettings(await checkRecordingSettingsPlayback(mergedSettings));
         
         if (mergedSettings.markerHotkey && mergedSettings.markerHotkey !== 'none') {
           try {
@@ -117,12 +116,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       } else {
         const defaultFolder = await invoke<string>('get_default_output_folder');
         const initialSettings = { ...DEFAULT_SETTINGS, outputFolder: defaultFolder };
-        try {
-          await allowRecordingsFolderForPlayback(initialSettings.outputFolder);
-        } catch (error) {
-          console.error('Failed to allow recordings folder for playback:', error);
-        }
-        setSettings(initialSettings);
+        setRecordingSettings(await checkRecordingSettingsPlayback(initialSettings));
         await store.set('recording-settings', initialSettings);
         await store.set(FORK_IN_APP_UPDATES_KEY, true);
         await store.save();
@@ -178,14 +172,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      const result = await saveRecordingSettings(
-        store,
-        nextSettings,
-        playbackUnavailable || settings.outputFolder !== nextSettings.outputFolder,
-      );
-      setSettings(nextSettings);
-      setPlaybackUnavailable(result === SettingsSaveResult.PlaybackUnavailable);
-      return result;
+      const saved = await saveRecordingSettings(store, nextSettings, recordingSettings);
+      setRecordingSettings(saved);
+      return saved.playbackUnavailable
+        ? SettingsSaveResult.PlaybackUnavailable
+        : SettingsSaveResult.Saved;
     } catch (error) {
       console.error('Failed to save settings:', error);
       throw error;
@@ -193,7 +184,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SettingsContext.Provider value={{ settings, isLoading, playbackUnavailable, updateSettings }}>
+    <SettingsContext.Provider value={{ ...recordingSettings, isLoading, updateSettings }}>
       {children}
     </SettingsContext.Provider>
   );
