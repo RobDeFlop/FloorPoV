@@ -26,6 +26,7 @@ interface PlaybackShortcutContext {
   isEditableTarget: boolean;
   isModalDialogOpen: boolean;
   isPlayerFocused: boolean;
+  isFullscreen: boolean;
 }
 
 interface KeyboardElementLike {
@@ -105,11 +106,15 @@ export function resolvePlaybackShortcut(
   }
 
   if (event.key === KeyCode.ArrowLeft) {
-    return event.shiftKey ? PlaybackShortcutAction.SeekBackCoarse : PlaybackShortcutAction.SeekBackFine;
+    return context.isFullscreen || event.shiftKey
+      ? PlaybackShortcutAction.SeekBackCoarse
+      : PlaybackShortcutAction.SeekBackFine;
   }
 
   if (event.key === KeyCode.ArrowRight) {
-    return event.shiftKey ? PlaybackShortcutAction.SeekForwardCoarse : PlaybackShortcutAction.SeekForwardFine;
+    return context.isFullscreen || event.shiftKey
+      ? PlaybackShortcutAction.SeekForwardCoarse
+      : PlaybackShortcutAction.SeekForwardFine;
   }
 
   if (event.key === KeyCode.Home) {
