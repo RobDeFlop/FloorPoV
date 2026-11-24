@@ -7,23 +7,36 @@ export enum SettingsSaveResult {
   PlaybackUnavailable = "playback-unavailable",
 }
 
+export interface RecordingSettingsState {
+  settings: RecordingSettings;
+  playbackUnavailable: boolean;
+}
+
+export async function checkRecordingSettingsPlayback(
+  settings: RecordingSettings,
+  allowPlayback = allowRecordingsFolderForPlayback,
+): Promise<RecordingSettingsState> {
+  try {
+    await allowPlayback(settings.outputFolder);
+    return { settings, playbackUnavailable: false };
+  } catch (error) {
+    console.error("Failed to allow recordings folder for playback:", settings.outputFolder, error);
+    return { settings, playbackUnavailable: true };
+  }
+}
+
 export async function saveRecordingSettings(
   store: Pick<Store, "set" | "save">,
   settings: RecordingSettings,
-  needsPlaybackAccess: boolean,
+  current: RecordingSettingsState,
   allowPlayback = allowRecordingsFolderForPlayback,
-): Promise<SettingsSaveResult> {
+): Promise<RecordingSettingsState> {
   await store.set("recording-settings", settings);
   await store.save();
 
-  if (needsPlaybackAccess) {
-    try {
-      await allowPlayback(settings.outputFolder);
-    } catch (error) {
-      console.error("Failed to allow saved recordings folder for playback:", error);
-      return SettingsSaveResult.PlaybackUnavailable;
-    }
+  if (current.playbackUnavailable || current.settings.outputFolder !== settings.outputFolder) {
+    return checkRecordingSettingsPlayback(settings, allowPlayback);
   }
 
-  return SettingsSaveResult.Saved;
+  return { settings, playbackUnavailable: false };
 }
