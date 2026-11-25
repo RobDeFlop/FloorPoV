@@ -49,7 +49,6 @@ export function SidebarNavButton({
     >
       <AnimatePresence initial={false}>
         {isActive && (
-          // The negative offsets cover the button's transparent border.
           <motion.span
             key="sidebar-nav-highlight"
             className={`absolute -top-px -right-px -bottom-px -left-0.5 rounded-sm border-l-2 ${toneClasses.indicator}`}

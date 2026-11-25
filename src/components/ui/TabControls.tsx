@@ -98,8 +98,6 @@ export function TabControls<TValue extends string>({
               }`}
             >
               {isActive && (
-                // The active tab surface slides between tabs. The id is scoped per instance so
-                // two tab rows never trade indicators. The negative offsets cover the border.
                 <motion.span
                   layoutId={`${baseId}-indicator`}
                   className="absolute -inset-x-px -top-px bottom-0 rounded-t-sm border border-b-0 border-emerald-300/40 bg-(--surface-0)"

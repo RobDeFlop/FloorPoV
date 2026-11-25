@@ -315,7 +315,6 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
           </p>
         ) : null}
       </div>
-      {/* layoutScroll lets the highlight measure positions correctly after the list scrolls. */}
       <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {!videoSrc && !isRecording ? (
           <p className="px-3 py-4 text-xs text-neutral-500">
@@ -339,8 +338,6 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
               return (
                 <motion.li key={event.id} className="relative" {...getListItemMotion(index)}>
                   {isActive && (
-                    // The highlight glides to the next event as playback moves on. The id is
-                    // scoped per list so the sidebar and overlay lists never trade highlights.
                     <motion.span
                       layoutId={`${eventListId}-active-highlight`}
                       className="absolute inset-0 bg-white/10"
