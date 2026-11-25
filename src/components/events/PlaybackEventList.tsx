@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createPortal } from "react-dom";
 import { Check, ListVideo, Pencil, Trash2, X } from "lucide-react";
+import { motion } from "motion/react";
 import { KeyCode } from "../../types/key-code";
 import { useMarker } from "../../contexts/MarkerContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
+import { getListItemMotion, indicatorTransition } from "../../lib/motion";
 import { getErrorMessage } from "../../services/tauri";
 import {
   EVENT_SEEK_OFFSET_SECONDS,
@@ -171,6 +173,7 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
   const listEvents = useMemo(() => filteredEvents.filter(isVideoSeekBarEvent), [filteredEvents]);
   const hasTimelineEvents = events.some(isVideoSeekBarEvent);
   const isOverlay = variant === "overlay";
+  const eventListId = useId();
   const canEditNotes = Boolean(loadedFilePath) && !isRecording;
 
   const activeEventId = useMemo(() => {
@@ -312,7 +315,7 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
           </p>
         ) : null}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      <motion.div layoutScroll className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {!videoSrc && !isRecording ? (
           <p className="px-3 py-4 text-xs text-neutral-500">
             Load a recording to see boss encounters, deaths, bloodlust, markers, and notes.
@@ -326,16 +329,24 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
           <p className="px-3 py-4 text-xs text-neutral-500">No events match the current filters.</p>
         ) : (
           <ul className="py-1">
-            {listEvents.map((event) => {
+            {listEvents.map((event, index) => {
               const isActive = event.id === activeEventId;
               const compactAmount = formatCompactAmount(event.amount);
               const isManualMarker = event.type === "manual";
               const isEditing = isManualMarker && event.id === editingEventId;
 
               return (
-                <li key={event.id} className={isActive ? "bg-white/10" : undefined}>
+                <motion.li key={event.id} className="relative" {...getListItemMotion(index)}>
+                  {isActive && (
+                    <motion.span
+                      layoutId={`${eventListId}-active-highlight`}
+                      className="absolute inset-0 bg-white/10"
+                      transition={indicatorTransition}
+                      aria-hidden="true"
+                    />
+                  )}
                   <div
-                    className={`flex w-full items-start gap-2 px-3 py-2 transition-colors ${
+                    className={`relative flex w-full items-start gap-2 px-3 py-2 transition-colors ${
                       isActive ? "" : "hover:bg-white/5"
                     }`}
                   >
@@ -419,12 +430,12 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
                       onCancel={stopEditing}
                     />
                   )}
-                </li>
+                </motion.li>
               );
             })}
           </ul>
         )}
-      </div>
+      </motion.div>
       {editingNote
         ? createPortal(
             <NoteEditorDialog

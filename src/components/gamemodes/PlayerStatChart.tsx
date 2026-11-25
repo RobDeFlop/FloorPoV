@@ -1,4 +1,5 @@
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
+import { getStaggerTransition } from "../../lib/motion";
 
 export interface PlayerStatEntry {
   player: string;
@@ -12,7 +13,6 @@ interface PlayerStatChartProps {
 }
 
 export function PlayerStatChart({ title, data, color }: PlayerStatChartProps) {
-  const reduceMotion = useReducedMotion();
   const sanitizedData = data.map((entry) => ({
     player: entry.player.trim() || "Unknown",
     count: Math.max(0, entry.count),
@@ -41,13 +41,9 @@ export function PlayerStatChart({ title, data, color }: PlayerStatChartProps) {
             <div className="h-5 min-w-0 flex-1 rounded-sm bg-white/5" title={`${entry.player}: ${entry.count}`}>
               <motion.div
                 className="h-full origin-left rounded-sm opacity-75"
-                initial={reduceMotion ? false : { scaleX: 0, opacity: 0.45 }}
+                initial={{ scaleX: 0, opacity: 0.45 }}
                 animate={{ scaleX: 1, opacity: 0.75 }}
-                transition={
-                  reduceMotion
-                    ? { duration: 0 }
-                    : { duration: 0.18, delay: Math.min(index, 6) * 0.025 }
-                }
+                transition={getStaggerTransition(index)}
                 style={{ width: `${(entry.count / maxCount) * 100}%`, backgroundColor: color }}
               />
             </div>

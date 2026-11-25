@@ -10,7 +10,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { ParseCombatLogDebugResult } from "../../types/events";
 import { formatBytes, getEventTypeLabel } from "../../utils/format";
 import { panelVariants, smoothTransition } from "../../lib/motion";
@@ -141,7 +141,6 @@ function getTimelineMarkerTooltipLines(marker: EncounterTimelineMarker): string[
 }
 
 export function CombatLogDebug() {
-  const reduceMotion = useReducedMotion();
   const [selectedFilePath, setSelectedFilePath] = useState("");
   const [parseResult, setParseResult] = useState<ParseCombatLogDebugResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -333,7 +332,7 @@ export function CombatLogDebug() {
     <motion.section
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-white/10 bg-(--surface-0) shadow-(--surface-glow)"
       variants={panelVariants}
-      initial={reduceMotion ? false : "initial"}
+      initial="initial"
       animate="animate"
       transition={smoothTransition}
     >
@@ -549,10 +548,10 @@ export function CombatLogDebug() {
                       top: timelineTooltip.y,
                       transform: "translate(-50%, -100%)",
                     }}
-                    initial={reduceMotion ? false : { opacity: 0, y: 4, scale: 0.98 }}
+                    initial={{ opacity: 0, y: 4, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={reduceMotion ? undefined : { opacity: 0, y: 4, scale: 0.98 }}
-                    transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
+                    exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                    transition={smoothTransition}
                   >
                     <div className="font-medium text-neutral-100">{timelineTooltip.title}</div>
                     {timelineTooltip.lines.map((line) => (
