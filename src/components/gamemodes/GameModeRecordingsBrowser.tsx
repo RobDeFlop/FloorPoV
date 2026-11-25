@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useVideo } from "../../contexts/VideoContext";
-import { getStaggerTransition, listItemEnter } from "../../lib/motion";
+import { getListItemMotion } from "../../lib/motion";
 import { RecordingInfo } from "../../types/recording";
 import { type GameMode } from "../../types/ui";
 import { formatBytes, formatDate } from "../../utils/format";
@@ -323,7 +323,7 @@ export function GameModeRecordingsBrowser({
 
       {!settings.outputFolder ? (
         <p className="text-xs text-neutral-400">Select an output folder to browse recordings.</p>
-      ) : isLoading ? (
+      ) : isLoading && recordings.length === 0 ? (
         <div className="flex items-center gap-2 py-6 text-sm text-neutral-300" role="status" aria-live="polite">
           <LoaderCircle className="h-4 w-4 animate-spin text-emerald-300" aria-hidden="true" />
           Loading recordings...
@@ -342,7 +342,7 @@ export function GameModeRecordingsBrowser({
           tabIndex={-1}
           className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
         >
-          <AnimatePresence initial={false}>
+          <AnimatePresence>
             {filteredRecordings.map((recording, index) => {
               const isActivating = activatingRecordingPath === recording.file_path;
               const displayTitle = getRecordingDisplayTitle(recording, gameMode);
@@ -350,10 +350,8 @@ export function GameModeRecordingsBrowser({
               return (
                 <motion.li
                   key={`${recording.file_path}-${recording.created_at}`}
-                  initial={listItemEnter.initial}
-                  animate={listItemEnter.animate}
+                  {...getListItemMotion(index)}
                   exit={{ opacity: 0, y: -4 }}
-                  transition={getStaggerTransition(index)}
                 >
                   <div className="flex items-center gap-2 rounded-sm border border-white/15 bg-black/25 p-3 transition-colors hover:border-emerald-300/45 hover:bg-emerald-500/10">
                     <button

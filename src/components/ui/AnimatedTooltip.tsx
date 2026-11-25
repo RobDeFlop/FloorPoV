@@ -11,7 +11,6 @@ interface AnimatedTooltipProps {
  * Consumers are responsible for wrapping with AnimatePresence.
  */
 export function AnimatedTooltip({ x, children }: AnimatedTooltipProps) {
-
   return (
     <motion.div
       className="absolute bottom-full mb-2 px-2 py-1 bg-neutral-900 border border-neutral-700 text-neutral-200 text-xs rounded whitespace-nowrap pointer-events-none z-[45] -translate-x-1/2"

@@ -332,7 +332,7 @@ export function CombatLogDebug() {
     <motion.section
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-sm border border-white/10 bg-(--surface-0) shadow-(--surface-glow)"
       variants={panelVariants}
-      initial={"initial"}
+      initial="initial"
       animate="animate"
       transition={smoothTransition}
     >

@@ -7,7 +7,7 @@ import { KeyCode } from "../../types/key-code";
 import { useMarker } from "../../contexts/MarkerContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
-import { getStaggerTransition, listItemEnter } from "../../lib/motion";
+import { getListItemMotion } from "../../lib/motion";
 import { getErrorMessage } from "../../services/tauri";
 import {
   EVENT_SEEK_OFFSET_SECONDS,
@@ -338,9 +338,7 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
                 <motion.li
                   key={event.id}
                   className={isActive ? "bg-white/10" : undefined}
-                  initial={listItemEnter.initial}
-                  animate={listItemEnter.animate}
-                  transition={getStaggerTransition(index)}
+                  {...getListItemMotion(index)}
                 >
                   <div
                     className={`flex w-full items-start gap-2 px-3 py-2 transition-colors ${

@@ -41,20 +41,28 @@ export const panelVariants = {
   exit: { opacity: 0, scale: 1.005 },
 };
 
-export const listItemEnter = {
-  initial: { opacity: 0, y: 4 },
-  animate: { opacity: 1, y: 0 },
-};
-
 const STAGGER_STEP_SECONDS = 0.03;
 const STAGGER_ITEM_LIMIT = 12;
 
 /**
- * Items past the limit share the last delay so a long list settles in about a third of a second.
+ * Items past the limit share the last delay, so a long list settles in about half a second
+ * and lower rows never appear before the rows above them.
  */
 export function getStaggerTransition(index: number): typeof smoothTransition & { delay: number } {
   return {
     ...smoothTransition,
     delay: Math.min(index, STAGGER_ITEM_LIMIT - 1) * STAGGER_STEP_SECONDS,
+  };
+}
+
+/**
+ * Items animate once when they mount. Callers key rows by stable ids so a data refresh keeps
+ * existing rows mounted and does not replay the stagger.
+ */
+export function getListItemMotion(index: number) {
+  return {
+    initial: { opacity: 0, y: 4 },
+    animate: { opacity: 1, y: 0 },
+    transition: getStaggerTransition(index),
   };
 }

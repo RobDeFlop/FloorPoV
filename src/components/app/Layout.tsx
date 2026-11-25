@@ -167,7 +167,7 @@ function LayoutContent() {
               key="main-view"
               className="absolute inset-0 flex min-w-0 flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -179,7 +179,7 @@ function LayoutContent() {
               key="settings-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -198,7 +198,7 @@ function LayoutContent() {
               key="warcraftlogs-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -210,7 +210,7 @@ function LayoutContent() {
               key="mythic-plus-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -225,7 +225,7 @@ function LayoutContent() {
               key="raid-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -237,7 +237,7 @@ function LayoutContent() {
               key="pvp-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}
@@ -249,7 +249,7 @@ function LayoutContent() {
               key="debug-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={"initial"}
+              initial="initial"
               animate="animate"
               exit={"exit"}
               transition={smoothTransition}

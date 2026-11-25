@@ -7,13 +7,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useVideo } from '../../contexts/VideoContext';
 import { useRecordingsList } from '../../hooks/useRecordingsList';
 import { useClearStalePlayback } from '../../hooks/useClearStalePlayback';
-import {
-  getStaggerTransition,
-  listItemEnter,
-  panelVariants,
-  pressFeedback,
-  smoothTransition,
-} from "../../lib/motion";
+import { getListItemMotion, panelVariants, pressFeedback, smoothTransition } from '../../lib/motion';
 import { RecordingInfo } from '../../types/recording';
 import { type GameMode } from '../../types/ui';
 import { formatBytes, formatDate, formatEncounterCategory } from '../../utils/format';
@@ -321,7 +315,7 @@ export function RecordingsList({
     <motion.section
       className="flex flex-1 min-h-0 flex-col bg-(--surface-1) border-t border-white/10 px-4 py-3"
       variants={panelVariants}
-      initial={'initial'}
+      initial="initial"
       animate="animate"
       transition={smoothTransition}
     >
@@ -480,9 +474,7 @@ export function RecordingsList({
                           ? 'border-emerald-300/35 bg-emerald-500/10 hover:border-emerald-300/45'
                       : 'border-white/10 bg-black/20 hover:border-white/25'
                   }`}
-                  initial={listItemEnter.initial}
-                  animate={listItemEnter.animate}
-                  transition={getStaggerTransition(index)}
+                  {...getListItemMotion(index)}
                 >
                   {showManagementActions && (
                     <label className="ml-2 inline-flex h-6 w-6 items-center justify-center">
