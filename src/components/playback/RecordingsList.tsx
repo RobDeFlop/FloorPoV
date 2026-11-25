@@ -1,13 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { Clock3, Columns2, Film, HardDrive, RefreshCw, Trash2, XCircle } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecording } from '../../contexts/RecordingContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { useVideo } from '../../contexts/VideoContext';
 import { useRecordingsList } from '../../hooks/useRecordingsList';
 import { useClearStalePlayback } from '../../hooks/useClearStalePlayback';
-import { panelVariants, smoothTransition } from '../../lib/motion';
+import { panelVariants, pressFeedback, smoothTransition } from "../../lib/motion";
 import { RecordingInfo } from '../../types/recording';
 import { type GameMode } from '../../types/ui';
 import { formatBytes, formatDate, formatEncounterCategory } from '../../utils/format';
@@ -48,7 +48,6 @@ export function RecordingsList({
   const { settings } = useSettings();
   const { loadVideo, loadedFilePath, videoSrc, isVideoLoading, compareVideos, enterCompareMode } = useVideo();
   const { isRecording, loadPlaybackMetadata } = useRecording();
-  const reduceMotion = useReducedMotion();
   const { recordings, isLoading, error: listError, loadRecordings, setRecordings } = useRecordingsList();
   useClearStalePlayback(recordings, !isLoading && !listError);
   const [searchQuery, setSearchQuery] = useState("");
@@ -316,7 +315,7 @@ export function RecordingsList({
     <motion.section
       className="flex flex-1 min-h-0 flex-col bg-(--surface-1) border-t border-white/10 px-4 py-3"
       variants={panelVariants}
-      initial={reduceMotion ? false : 'initial'}
+      initial={'initial'}
       animate="animate"
       transition={smoothTransition}
     >
@@ -335,8 +334,7 @@ export function RecordingsList({
           onClick={loadRecordings}
           disabled={isLoading || !settings.outputFolder}
           className="inline-flex h-7 items-center gap-1 rounded-sm border border-white/20 bg-black/20 px-2 text-xs text-neutral-200 transition-colors hover:bg-white/10 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
-          whileHover={reduceMotion ? undefined : { y: -1 }}
-          whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+          {...pressFeedback}
         >
           <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`} />
           Refresh
@@ -449,8 +447,7 @@ export function RecordingsList({
                   onClick={loadRecordings}
                   disabled={isLoading || !settings.outputFolder}
                   className="inline-flex h-6 items-center gap-1 rounded-sm border border-white/20 bg-black/20 px-2 text-xs text-neutral-200 transition-colors hover:bg-white/10 hover:text-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/45 disabled:cursor-not-allowed disabled:opacity-50"
-                  whileHover={reduceMotion ? undefined : { y: -1 }}
-                  whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+                  {...pressFeedback}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin' : ''}`} />
                   Refresh
@@ -477,7 +474,7 @@ export function RecordingsList({
                           ? 'border-emerald-300/35 bg-emerald-500/10 hover:border-emerald-300/45'
                       : 'border-white/10 bg-black/20 hover:border-white/25'
                   }`}
-                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={smoothTransition}
                 >

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { Activity } from "lucide-react";
 import { EventTooltip } from "./EventTooltip";
 import { EventMarker } from "./EventMarker";
 import { useVideo } from "../../contexts/VideoContext";
 import { useMarker } from "../../contexts/MarkerContext";
+import { smoothTransition } from "../../lib/motion";
 import { EVENT_SEEK_OFFSET_SECONDS, GameEvent, RecordingEncounterMetadata } from "../../types/events";
 import { formatTime } from "../../utils/format";
 import { AnimatedTooltip } from "../ui/AnimatedTooltip";
@@ -40,7 +41,6 @@ function getEncounterSegmentColor(): { bg: string; border: string; hover: string
 export function GameEvents() {
   const { duration, seek } = useVideo();
   const { filteredEvents, encounters } = useMarker();
-  const reduceMotion = useReducedMotion();
   const [hoveredEvent, setHoveredEvent] = useState<GameEvent | null>(null);
   const [hoveredEncounter, setHoveredEncounter] = useState<RecordingEncounterMetadata | null>(null);
   const [tooltipX, setTooltipX] = useState(0);
@@ -123,9 +123,9 @@ export function GameEvents() {
               onMouseEnter={(e) => handleEventHover(event, e)}
               onMouseLeave={() => setHoveredEvent(null)}
               aria-label={`Seek to ${event.type} event at ${event.timestamp.toFixed(1)} seconds`}
-              initial={reduceMotion ? false : { opacity: 0, scale: 0.85 }}
+              initial={{ opacity: 0, scale: 0.85 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              transition={smoothTransition}
             >
               <EventMarker
                 type={event.type}

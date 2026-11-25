@@ -17,6 +17,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useWclUpload } from "../../contexts/WclUploadContext";
+import { MOTION_EASE, contentTransition, pressFeedback, recordingPulse } from "../../lib/motion";
 import { type AppView } from "../../types/ui";
 import { formatTime } from "../../utils/format";
 import { SidebarDividerBlock } from "./sidebar/SidebarDividerBlock";
@@ -96,15 +97,8 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
       return (
         <motion.span
           className="inline-flex h-3 w-3 rounded-full bg-rose-300"
-          animate={{
-            opacity: [0.55, 1, 0.55],
-            scale: [0.95, 1.05, 0.95],
-          }}
-          transition={{
-            duration: 1.2,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
+          animate={reduceMotion ? undefined : recordingPulse.animate}
+          transition={recordingPulse.transition}
         />
       );
     }
@@ -250,8 +244,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                 ? "border border-amber-300/40 bg-amber-500/15 shadow-[0_0_0_1px_rgba(251,191,36,0.22)] hover:bg-amber-500/20"
                 : "border border-emerald-300/20 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(16,185,129,0.14)] hover:bg-emerald-500/18"
           } disabled:opacity-50 disabled:cursor-not-allowed`}
-          whileHover={reduceMotion ? undefined : { y: -1 }}
-          whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+          {...pressFeedback}
           title={getRecordingTooltip()}
           aria-label={getRecordingTooltip()}
           role="button"
@@ -268,7 +261,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                   opacity: [0, 0.45, 0],
                 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.55, ease: "easeOut" }}
+                transition={{ duration: 0.55, ease: MOTION_EASE }}
               />
             )}
           </AnimatePresence>
@@ -296,7 +289,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      transition={contentTransition}
                     >
                       <span>
                         Recording <span className="font-mono">{formatTime(recordingDuration)}</span>
@@ -309,7 +302,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      transition={contentTransition}
                     >
                       {idleTheme === "amber" ? "Window not running." : "Ready to record."}
                     </motion.div>

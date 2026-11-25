@@ -27,8 +27,8 @@ export const pressFeedback = {
  */
 export const recordingPulse = {
   animate: { opacity: [0.55, 1, 0.55], scale: [0.95, 1.05, 0.95] },
-  transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
-} as const;
+  transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" as const },
+};
 
 export const contentViewVariants = {
   visible: { opacity: 1, y: 0 },

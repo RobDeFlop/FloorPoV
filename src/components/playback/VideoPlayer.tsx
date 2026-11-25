@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   AlertTriangle,
   Camera,
@@ -92,8 +92,6 @@ export function VideoPlayer() {
   const { isRecording, recordingWarning } = useRecording();
   const { addEvent, filteredEvents } = useMarker();
   const { settings } = useSettings();
-  const reduceMotion = useReducedMotion();
-  const prefersReducedMotion = reduceMotion !== false;
 
   const progressRef = useRef<HTMLDivElement>(null);
   const volumeRef = useRef<HTMLDivElement>(null);
@@ -1225,7 +1223,7 @@ export function VideoPlayer() {
             className="pointer-events-none ml-auto flex h-full"
             initial={false}
             animate={{ x: isFullscreenEventsOpen ? 0 : FULLSCREEN_EVENTS_PANEL_WIDTH_PX }}
-            transition={prefersReducedMotion ? { duration: 0 } : smoothTransition}
+            transition={smoothTransition}
           >
             <button
               ref={fullscreenEventsTabRef}

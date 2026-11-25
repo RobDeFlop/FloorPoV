@@ -10,7 +10,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useMarker } from "../../contexts/MarkerContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
@@ -26,7 +26,7 @@ import { PlaybackEventList } from "../events/PlaybackEventList";
 import { CompareVideoPlayer } from "../playback/CompareVideoPlayer";
 import { ExportAnalysisReportButton } from "../playback/ExportAnalysisReportButton";
 import { VideoPlayer } from "../playback/VideoPlayer";
-import { contentViewVariants, smoothTransition } from "../../lib/motion";
+import { contentTransition, contentViewVariants, smoothTransition } from "../../lib/motion";
 import { PageHeader } from "../app/PageHeader";
 import { TabControls, type TabControlItem } from "../ui/TabControls";
 import { GameModeRecordingsBrowser } from "./GameModeRecordingsBrowser";
@@ -104,7 +104,6 @@ export function GameModePage({ gameMode }: GameModePageProps) {
   const [isEventsOpen, setIsEventsOpen] = useState(false);
   const metadataRequestPathRef = useRef<string | null>(null);
   const { setEncounters } = useMarker();
-  const reduceMotion = useReducedMotion();
   const { playbackMetadataEpoch } = useRecording();
   const { isCompareMode } = useVideo();
   const { recordings, isLoading: isRecordingsLoading, error: recordingsError, loadRecordings, setRecordings } =
@@ -268,7 +267,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         className={`absolute inset-0 flex min-h-0 flex-col ${selectedRecording ? "pointer-events-none" : ""}`}
         variants={contentViewVariants}
         animate={selectedRecording ? "hidden" : "visible"}
-        transition={reduceMotion ? { duration: 0 } : smoothTransition}
+        transition={smoothTransition}
         aria-hidden={selectedRecording !== null}
         inert={selectedRecording !== null}
       >
@@ -288,7 +287,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
         className={`absolute inset-0 flex min-h-0 flex-col ${selectedRecording ? "" : "pointer-events-none"}`}
         variants={contentViewVariants}
         animate={selectedRecording ? "visible" : "hidden"}
-        transition={reduceMotion ? { duration: 0 } : smoothTransition}
+        transition={smoothTransition}
         aria-hidden={selectedRecording === null}
         inert={selectedRecording === null}
       >
@@ -313,10 +312,10 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                 <motion.div
                   key={activeTab}
                   className="h-full min-h-0"
-                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
-                  transition={reduceMotion ? { duration: 0 } : smoothTransition}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={smoothTransition}
                 >
             {activeTab === "video-analysis" ? (
               <div
@@ -514,7 +513,7 @@ export function GameModePage({ gameMode }: GameModePageProps) {
                             initial={{ height: 0, opacity: 0 }}
                             animate={{ height: "auto", opacity: 1 }}
                             exit={{ height: 0, opacity: 0 }}
-                            transition={{ duration: 0.2, ease: "easeInOut" }}
+                            transition={contentTransition}
                             style={{ overflow: "hidden" }}
                           >
                             <div className="flex flex-col gap-3 border-t border-white/10 px-4 pb-4 pt-3">

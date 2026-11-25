@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { TitleBar } from "./TitleBar";
 import { Sidebar } from "./Sidebar";
 import { GameModePage } from "../gamemodes/GameModePage";
@@ -38,7 +38,6 @@ function LayoutContent() {
   const [gameModeNavigationVersion, setGameModeNavigationVersion] = useState(0);
   const [isDebugBuild, setIsDebugBuild] = useState(false);
   const [autoUpdateBannerText, setAutoUpdateBannerText] = useState<string | null>(null);
-  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     const loadDebugFlag = async () => {
@@ -168,9 +167,9 @@ function LayoutContent() {
               key="main-view"
               className="absolute inset-0 flex min-w-0 flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <HomePage />
@@ -180,9 +179,9 @@ function LayoutContent() {
               key="settings-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <Settings
@@ -199,9 +198,9 @@ function LayoutContent() {
               key="warcraftlogs-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <WarcraftLogsUploadPage />
@@ -211,9 +210,9 @@ function LayoutContent() {
               key="mythic-plus-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <GameModePage
@@ -226,9 +225,9 @@ function LayoutContent() {
               key="raid-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <GameModePage key={`raid-page-${gameModeNavigationVersion}`} gameMode="raid" />
@@ -238,9 +237,9 @@ function LayoutContent() {
               key="pvp-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <GameModePage key={`pvp-page-${gameModeNavigationVersion}`} gameMode="pvp" />
@@ -250,9 +249,9 @@ function LayoutContent() {
               key="debug-view"
               className="absolute inset-0 min-w-0 min-h-0 flex flex-col rounded-sm border border-white/10 bg-(--surface-1) shadow-(--surface-glow) overflow-hidden"
               variants={panelVariants}
-              initial={reduceMotion ? false : "initial"}
+              initial={"initial"}
               animate="animate"
-              exit={reduceMotion ? undefined : "exit"}
+              exit={"exit"}
               transition={smoothTransition}
             >
               <CombatLogDebug />

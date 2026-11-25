@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, Clock3, Film, LoaderCircle, RefreshCw, Trash2 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useVideo } from "../../contexts/VideoContext";
+import { getStaggerTransition } from "../../lib/motion";
 import { RecordingInfo } from "../../types/recording";
 import { type GameMode } from "../../types/ui";
 import { formatBytes, formatDate } from "../../utils/format";
@@ -89,7 +90,6 @@ export function GameModeRecordingsBrowser({
   const [pendingDeleteRecording, setPendingDeleteRecording] = useState<RecordingInfo | null>(null);
   const [isDeletingRecording, setIsDeletingRecording] = useState(false);
   const recordingsListRef = useRef<HTMLUListElement>(null);
-  const reduceMotion = useReducedMotion();
 
   const copy = modeOverviewCopy[gameMode];
   const isActionLocked = isRecording || isVideoLoading || Boolean(activatingRecordingPath);
@@ -350,14 +350,10 @@ export function GameModeRecordingsBrowser({
               return (
                 <motion.li
                   key={`${recording.file_path}-${recording.created_at}`}
-                  initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
-                  transition={
-                    reduceMotion
-                      ? { duration: 0 }
-                      : { duration: 0.16, delay: Math.min(index, 5) * 0.025 }
-                  }
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={getStaggerTransition(index)}
                 >
                   <div className="flex items-center gap-2 rounded-sm border border-white/15 bg-black/25 p-3 transition-colors hover:border-emerald-300/45 hover:bg-emerald-500/10">
                     <button
