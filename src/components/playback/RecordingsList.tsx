@@ -7,7 +7,13 @@ import { useSettings } from '../../contexts/SettingsContext';
 import { useVideo } from '../../contexts/VideoContext';
 import { useRecordingsList } from '../../hooks/useRecordingsList';
 import { useClearStalePlayback } from '../../hooks/useClearStalePlayback';
-import { panelVariants, pressFeedback, smoothTransition } from "../../lib/motion";
+import {
+  getStaggerTransition,
+  listItemEnter,
+  panelVariants,
+  pressFeedback,
+  smoothTransition,
+} from "../../lib/motion";
 import { RecordingInfo } from '../../types/recording';
 import { type GameMode } from '../../types/ui';
 import { formatBytes, formatDate, formatEncounterCategory } from '../../utils/format';
@@ -457,7 +463,7 @@ export function RecordingsList({
             )}
 
             <ul className="space-y-1" role="list">
-            {filteredRecordings.map((recording) => {
+            {filteredRecordings.map((recording, index) => {
               const isLoadedRecording = loadedFilePath === recording.file_path;
               const isSelectedRecording = selectedRecordingPathSet.has(recording.file_path);
               const isActiveRecording = activeRecordingPath === recording.file_path;
@@ -474,9 +480,9 @@ export function RecordingsList({
                           ? 'border-emerald-300/35 bg-emerald-500/10 hover:border-emerald-300/45'
                       : 'border-white/10 bg-black/20 hover:border-white/25'
                   }`}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={smoothTransition}
+                  initial={listItemEnter.initial}
+                  animate={listItemEnter.animate}
+                  transition={getStaggerTransition(index)}
                 >
                   {showManagementActions && (
                     <label className="ml-2 inline-flex h-6 w-6 items-center justify-center">

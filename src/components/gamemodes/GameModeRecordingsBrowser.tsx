@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { useRecording } from "../../contexts/RecordingContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useVideo } from "../../contexts/VideoContext";
-import { getStaggerTransition } from "../../lib/motion";
+import { getStaggerTransition, listItemEnter } from "../../lib/motion";
 import { RecordingInfo } from "../../types/recording";
 import { type GameMode } from "../../types/ui";
 import { formatBytes, formatDate } from "../../utils/format";
@@ -350,8 +350,8 @@ export function GameModeRecordingsBrowser({
               return (
                 <motion.li
                   key={`${recording.file_path}-${recording.created_at}`}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={listItemEnter.initial}
+                  animate={listItemEnter.animate}
                   exit={{ opacity: 0, y: -4 }}
                   transition={getStaggerTransition(index)}
                 >

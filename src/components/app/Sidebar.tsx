@@ -155,16 +155,12 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
             label="Home"
             icon={Radar}
             isActive={isMain}
-            activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
-            defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("main")}
           />
           <SidebarNavButton
             label="Settings"
             icon={SlidersHorizontal}
             isActive={isSettings}
-            activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
-            defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
             onClick={() => onNavigate("settings")}
           />
         </nav>
@@ -180,8 +176,6 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
                 label={label}
                 icon={Icon}
                 isActive={currentView === view}
-                activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
-                defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
                 onClick={() => onNavigate(view)}
               />
             ))}
@@ -195,8 +189,6 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               label="Upload"
               icon={UploadCloud}
               isActive={isWarcraftLogs}
-              activeClassName="border-l-2 border-l-emerald-300/75 bg-emerald-500/10 text-neutral-100"
-              defaultClassName="border-l-2 border-l-transparent text-neutral-300 hover:border-white/20 hover:bg-white/5 hover:text-neutral-100"
               onClick={() => onNavigate("warcraftlogs")}
             />
             {isLiveUploading && (
@@ -226,8 +218,7 @@ export function Sidebar({ onNavigate, currentView, isDebugMode }: SidebarProps) 
               label="Debug"
               icon={Bug}
               isActive={isDebug}
-              activeClassName="border-l-2 border-l-neutral-300/70 bg-neutral-500/10 text-neutral-100"
-              defaultClassName="border-l-2 border-l-transparent text-neutral-500 hover:border-neutral-300/15 hover:bg-white/3 hover:text-neutral-300"
+              tone="muted"
               onClick={() => onNavigate("debug")}
             />
           </SidebarDividerBlock>

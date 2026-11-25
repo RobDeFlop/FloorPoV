@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { createPortal } from "react-dom";
 import { Check, ListVideo, Pencil, Trash2, X } from "lucide-react";
+import { motion } from "motion/react";
 import { KeyCode } from "../../types/key-code";
 import { useMarker } from "../../contexts/MarkerContext";
 import { useRecording } from "../../contexts/RecordingContext";
 import { useVideo } from "../../contexts/VideoContext";
+import { getStaggerTransition, listItemEnter } from "../../lib/motion";
 import { getErrorMessage } from "../../services/tauri";
 import {
   EVENT_SEEK_OFFSET_SECONDS,
@@ -326,14 +328,20 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
           <p className="px-3 py-4 text-xs text-neutral-500">No events match the current filters.</p>
         ) : (
           <ul className="py-1">
-            {listEvents.map((event) => {
+            {listEvents.map((event, index) => {
               const isActive = event.id === activeEventId;
               const compactAmount = formatCompactAmount(event.amount);
               const isManualMarker = event.type === "manual";
               const isEditing = isManualMarker && event.id === editingEventId;
 
               return (
-                <li key={event.id} className={isActive ? "bg-white/10" : undefined}>
+                <motion.li
+                  key={event.id}
+                  className={isActive ? "bg-white/10" : undefined}
+                  initial={listItemEnter.initial}
+                  animate={listItemEnter.animate}
+                  transition={getStaggerTransition(index)}
+                >
                   <div
                     className={`flex w-full items-start gap-2 px-3 py-2 transition-colors ${
                       isActive ? "" : "hover:bg-white/5"
@@ -419,7 +427,7 @@ export function PlaybackEventList({ variant = "sidebar" }: PlaybackEventListProp
                       onCancel={stopEditing}
                     />
                   )}
-                </li>
+                </motion.li>
               );
             })}
           </ul>

@@ -1,4 +1,6 @@
+import { motion } from "motion/react";
 import { type ComponentType, type ReactElement, useId, useRef } from "react";
+import { indicatorTransition } from "../../lib/motion";
 import { KeyCode } from "../../types/key-code";
 
 export interface TabControlItem<TValue extends string> {
@@ -89,14 +91,24 @@ export function TabControls<TValue extends string>({
               tabIndex={isActive ? 0 : -1}
               aria-selected={isActive}
               aria-controls={panelId}
-              className={`inline-flex min-h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${
+              className={`relative inline-flex min-h-9 items-center gap-1.5 rounded-t-sm border border-b-0 px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60 ${
                 isActive
-                  ? "border-emerald-300/40 bg-(--surface-0) text-emerald-100"
+                  ? "border-transparent text-emerald-100"
                   : "border-white/15 bg-black/20 text-neutral-300 hover:bg-white/8 hover:text-neutral-100"
               }`}
             >
-              {Icon && <Icon className="h-3.5 w-3.5" />}
-              {label}
+              {isActive && (
+                // The active tab surface slides between tabs. The id is scoped per instance so
+                // two tab rows never trade indicators. The negative offsets cover the border.
+                <motion.span
+                  layoutId={`${baseId}-indicator`}
+                  className="absolute -inset-x-px -top-px bottom-0 rounded-t-sm border border-b-0 border-emerald-300/40 bg-(--surface-0)"
+                  transition={indicatorTransition}
+                  aria-hidden="true"
+                />
+              )}
+              {Icon && <Icon className="relative h-3.5 w-3.5" />}
+              <span className="relative">{label}</span>
             </button>
           );
         })}

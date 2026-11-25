@@ -1,4 +1,9 @@
+import { motion } from "motion/react";
 import { forwardRef } from "react";
+import { pressFeedback } from "../../lib/motion";
+
+// Ghost buttons fill dense nav and toolbars, where a lift reads as jitter.
+const PRESSABLE_VARIANTS = new Set<ButtonProps["variant"]>(["primary", "secondary"]);
 
 interface ButtonProps {
   children: React.ReactNode;
@@ -42,17 +47,20 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
 
     const classes = `${baseClasses} ${variantClasses[variant]} ${sizeClasses[size]} ${className}`;
 
+    const motionProps = PRESSABLE_VARIANTS.has(variant) && !disabled ? pressFeedback : {};
+
     return (
-      <button
+      <motion.button
         ref={ref}
         type={type}
         onClick={onClick}
         disabled={disabled}
         className={classes}
         aria-label={ariaLabel}
+        {...motionProps}
       >
         {children}
-      </button>
+      </motion.button>
     );
   }
 );
