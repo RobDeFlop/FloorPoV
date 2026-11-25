@@ -41,6 +41,12 @@ export const panelVariants = {
   exit: { opacity: 0, scale: 1.005 },
 };
 
+interface StaggerTransition {
+  duration: number;
+  ease: typeof MOTION_EASE;
+  delay: number;
+}
+
 const STAGGER_STEP_SECONDS = 0.03;
 const STAGGER_ITEM_LIMIT = 12;
 
@@ -48,7 +54,7 @@ const STAGGER_ITEM_LIMIT = 12;
  * Items past the limit share the last delay, so a long list settles in about half a second
  * and lower rows never appear before the rows above them.
  */
-export function getStaggerTransition(index: number): typeof smoothTransition & { delay: number } {
+export function getStaggerTransition(index: number): StaggerTransition {
   return {
     ...smoothTransition,
     delay: Math.min(index, STAGGER_ITEM_LIMIT - 1) * STAGGER_STEP_SECONDS,

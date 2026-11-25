@@ -1,6 +1,6 @@
 import { type ComponentType } from "react";
-import { motion } from "motion/react";
-import { indicatorTransition } from "../../../lib/motion";
+import { AnimatePresence, motion } from "motion/react";
+import { smoothTransition } from "../../../lib/motion";
 import { Button } from "../../ui/Button";
 
 type SidebarNavTone = "accent" | "muted";
@@ -47,16 +47,20 @@ export function SidebarNavButton({
       }`}
       ariaLabel={label}
     >
-      {isActive && (
-        // A single layoutId across every section lets the highlight slide between any two items.
-        // The negative offsets cover the button's transparent border.
-        <motion.span
-          layoutId="sidebar-nav-indicator"
-          className={`absolute -top-px -right-px -bottom-px -left-0.5 rounded-sm border-l-2 ${toneClasses.indicator}`}
-          transition={indicatorTransition}
-          aria-hidden="true"
-        />
-      )}
+      <AnimatePresence initial={false}>
+        {isActive && (
+          // The negative offsets cover the button's transparent border.
+          <motion.span
+            key="sidebar-nav-highlight"
+            className={`absolute -top-px -right-px -bottom-px -left-0.5 rounded-sm border-l-2 ${toneClasses.indicator}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={smoothTransition}
+            aria-hidden="true"
+          />
+        )}
+      </AnimatePresence>
       {Icon && <Icon className="relative h-4 w-4" />}
       <span className="relative">{label}</span>
     </Button>
